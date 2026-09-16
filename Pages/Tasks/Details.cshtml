@@ -42,6 +42,23 @@
         </div>
     </div>
     <div class="d-flex gap-2 align-items-center">
+        @if (Model.Clock is not null)
+        {
+            var startedAt = DateTime.SpecifyKind(Model.Clock.StartedAt, DateTimeKind.Utc);
+            <form method="post" asp-page-handler="StopClock" asp-route-id="@t.Id" class="d-flex align-items-center gap-2 js-clock"
+                  data-clock-started="@startedAt.ToString("o")">
+                <span class="badge text-bg-success font-monospace fs-6 js-clock-elapsed" title="Clock running since @Ui.When(startedAt)">@((DateTime.UtcNow - startedAt).ToString(@"hh\:mm\:ss"))</span>
+                <button class="btn btn-danger btn-sm" type="submit">Stop Clock</button>
+            </form>
+            @* Submitted with navigator.sendBeacon when the user leaves the page while the clock is running. *@
+            <form method="post" asp-page-handler="StopClockBeacon" asp-route-id="@t.Id" class="d-none js-clock-beacon"></form>
+        }
+        else if (Model.CanStartClock)
+        {
+            <form method="post" asp-page-handler="StartClock" asp-route-id="@t.Id">
+                <button class="btn btn-success btn-sm" type="submit" title="Time yourself on this task; the time is logged when you stop the clock or leave the page">Start Clock</button>
+            </form>
+        }
         @if (Model.Statuses.Count > 1)
         {
             <form method="post" asp-page="/Tasks/Status" asp-route-id="@t.Id" asp-route-returnUrl="@returnUrl" class="d-flex align-items-center gap-1">

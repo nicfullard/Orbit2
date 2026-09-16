@@ -35,6 +35,9 @@ public class DetailsModel(
     public bool CanEdit { get; private set; }
     public bool CanLogTime { get; private set; }
     public bool CanLogForOthers { get; private set; }
+    /// <summary>The current user's clock, when it is running on this task.</summary>
+    public RunningClock? Clock { get; private set; }
+    public bool CanStartClock { get; private set; }
     public IReadOnlyList<TaskItemStatus> Statuses { get; private set; } = [];
 
     [BindProperty] public string? CommentBody { get; set; }
@@ -71,6 +74,40 @@ public class DetailsModel(
         return RedirectToPage(new { id });
     }
 
+    public async Task<IActionResult> OnPostStartClockAsync(Guid id, CancellationToken ct)
+    {
+        try
+        {
+            var started = await time.StartClockAsync(id, ct);
+            Success(started.Previous is null ? "Clock started." : $"Clock started. {StopMessage(started.Previous, includeTask: true)}");
+        }
+        catch (ValidationException ex) { Error(ex.Message); }
+        return RedirectToPage(new { id });
+    }
+
+    public async Task<IActionResult> OnPostStopClockAsync(Guid id, CancellationToken ct)
+    {
+        var stopped = await time.StopClockAsync(id, ct);
+        if (stopped is null) Error("No clock is running on this task.");
+        else Success(StopMessage(stopped, includeTask: false));
+        return RedirectToPage(new { id });
+    }
+
+    /// <summary>Called by <c>navigator.sendBeacon</c> when the user leaves the page while the clock is running.</summary>
+    public async Task<IActionResult> OnPostStopClockBeaconAsync(Guid id, CancellationToken ct)
+    {
+        await time.StopClockAsync(id, ct);
+        return new NoContentResult();
+    }
+
+    private static string StopMessage(ClockStopResult stopped, bool includeTask)
+    {
+        var on = includeTask ? $" on \"{Ui.Truncate(stopped.Task.Title, 60)}\"" : string.Empty;
+        return stopped.Entry is null
+            ? $"Stopped the clock{on} after less than a minute; nothing was logged."
+            : $"Stopped the clock{on} and logged {TimeFormat.Minutes(stopped.Minutes)}.";
+    }
+
     public async Task<IActionResult> OnPostDeleteTimeAsync(Guid id, Guid entryId, CancellationToken ct)
     {
         try
@@ -86,6 +123,21 @@ public class DetailsModel(
     {
         Actor = await actors.GetAsync(ct);
         Task = await tasks.GetAsync(id, ct);
+
+        // A clock still running on a different task means the browser never sent the page-leave beacon
+        // (crash, killed tab, ...). Opening another task counts as having left it, so stop and log it now.
+        var clock = await time.GetRunningClockAsync(ct);
+        if (clock is not null && clock.TaskId != id)
+        {
+            var stopped = await time.StopClockAsync(clock.TaskId, ct);
+            if (stopped is not null) Success(StopMessage(stopped, includeTask: true));
+        }
+        else
+        {
+            Clock = clock;
+        }
+        CanStartClock = Actor.UserId is Guid clockUser && AccessPolicy.CanLogTimeFor(Actor, Task, clockUser);
+
         Comments = await comments.ListAsync(id, ct);
         TimeEntries = await time.ListForTaskAsync(id, ct);
         Activity = (await audit.ListAsync(new AuditFilter { EntityId = id, From = Task.CreatedAt.AddSeconds(-1), To = DateTime.UtcNow.AddMinutes(1), PageSize = 30 }, ct)).Items;

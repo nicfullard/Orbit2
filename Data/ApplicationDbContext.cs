@@ -15,6 +15,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<RecurringTaskDefinition> RecurringTaskDefinitions => Set<RecurringTaskDefinition>();
     public DbSet<Comment> Comments => Set<Comment>();
     public DbSet<TimeEntry> TimeEntries => Set<TimeEntry>();
+    public DbSet<RunningClock> RunningClocks => Set<RunningClock>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
 
@@ -118,6 +119,17 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
                 .HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(t => t.TaskId);
             b.HasIndex(t => new { t.UserId, t.Date });
+        });
+
+        builder.Entity<RunningClock>(b =>
+        {
+            b.HasOne(c => c.Task).WithMany()
+                .HasForeignKey(c => c.TaskId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(c => c.User).WithMany()
+                .HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Cascade);
+            // One running clock per user, enforced at the database level as well.
+            b.HasIndex(c => c.UserId).IsUnique();
+            b.HasIndex(c => c.TaskId);
         });
 
         builder.Entity<AuditLog>(b =>

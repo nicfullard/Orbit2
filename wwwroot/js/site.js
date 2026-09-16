@@ -94,3 +94,34 @@ document.addEventListener('DOMContentLoaded', function () {
     try { localStorage.setItem(STORAGE_KEY, next); } catch (err) { /* storage unavailable: theme lasts for this page only */ }
   });
 })();
+
+// Task clock (task details page). Ticks the elapsed-time display every second, and when the user leaves the page
+// while the clock is running, stops it via navigator.sendBeacon so the time is logged (see §6.10 of the spec).
+(function () {
+  var clock = document.querySelector('.js-clock[data-clock-started]');
+  if (!clock) return;
+  var startedAt = new Date(clock.dataset.clockStarted).getTime();
+  var display = clock.querySelector('.js-clock-elapsed');
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function tick() {
+    var s = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+    if (display) display.textContent = pad(Math.floor(s / 3600)) + ':' + pad(Math.floor((s % 3600) / 60)) + ':' + pad(s % 60);
+  }
+  tick();
+  setInterval(tick, 1000);
+
+  // Posting a comment, logging time or changing status submits a form that comes straight back to this page,
+  // which is not "leaving": skip the beacon for those. A cancelled confirm() leaves the flag alone.
+  var stayingOnPage = false;
+  document.addEventListener('submit', function (e) {
+    if (!e.defaultPrevented) stayingOnPage = true;
+  });
+  window.addEventListener('pagehide', function () {
+    if (stayingOnPage || !navigator.sendBeacon) return;
+    var beacon = document.querySelector('form.js-clock-beacon');
+    if (!beacon) return;
+    navigator.sendBeacon(beacon.action, new FormData(beacon));
+  });
+  // Coming back via the back/forward cache would show a clock that was already stopped: reload instead.
+  window.addEventListener('pageshow', function (e) { if (e.persisted) location.reload(); });
+})();

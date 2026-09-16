@@ -109,6 +109,111 @@ public sealed class TimeEntryService(ApplicationDbContext db, IActorProvider act
         return entry.TaskId;
     }
 
+    // --- Start / Stop clock (§6.10) ---------------------------------------------------------------
+
+    private const int MaxEntryMinutes = 24 * 60;
+
+    /// <summary>The caller's running clock (on any task), or null.</summary>
+    public async Task<RunningClock?> GetRunningClockAsync(CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        if (actor.UserId is not Guid me) return null;
+        return await db.RunningClocks.AsNoTracking().Include(c => c.Task).FirstOrDefaultAsync(c => c.UserId == me, ct);
+    }
+
+    /// <summary>
+    /// Starts the caller's clock on a task. A clock already running for them - on this or any other task -
+    /// is stopped and logged first, since a user only ever has one clock.
+    /// </summary>
+    public async Task<ClockStartResult> StartClockAsync(Guid taskId, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        var me = actor.UserId ?? throw new ForbiddenException("Only signed-in users can run the clock.");
+        var task = await db.Tasks.AsNoTracking().FirstOrDefaultAsync(t => t.Id == taskId, ct)
+            ?? throw new NotFoundException("Task not found.");
+        AccessPolicy.Require(AccessPolicy.CanViewTask(actor, task), "This task belongs to another department.");
+        AccessPolicy.Require(AccessPolicy.CanLogTimeFor(actor, task, me), "You can only run the clock on tasks assigned to you.");
+
+        // The page-leave beacon can race a Start click; if the old clock vanished underneath us, just try again.
+        for (var attempt = 0; ; attempt++)
+        {
+            var previous = await StopClockCoreAsync(actor, me, onlyTaskId: null, ct);
+            var clock = new RunningClock { UserId = me, TaskId = task.Id, StartedAt = DateTime.UtcNow };
+            db.RunningClocks.Add(clock);
+            audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.ClockStarted, task.DepartmentId, task.Title, new { clock.StartedAt });
+            try
+            {
+                await db.SaveChangesAsync(ct);
+                return new ClockStartResult(clock, previous);
+            }
+            catch (DbUpdateConcurrencyException) when (attempt == 0)
+            {
+                db.ChangeTracker.Clear();
+            }
+            catch (DbUpdateException)
+            {
+                throw new ValidationException("A clock is already running. Reload the page to see it.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Stops the caller's running clock and logs the elapsed time as a time entry. Returns null when no clock was
+    /// running (or, if <paramref name="onlyTaskId"/> is given, when the clock is running on a different task).
+    /// Under half a minute is discarded rather than logged; anything over 24 hours is capped at 24 hours.
+    /// </summary>
+    public async Task<ClockStopResult?> StopClockAsync(Guid? onlyTaskId = null, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        if (actor.UserId is not Guid me) return null;
+        var result = await StopClockCoreAsync(actor, me, onlyTaskId, ct);
+        if (result is null) return null;
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Already stopped by a concurrent request (e.g. the Stop button and the page-leave beacon both firing).
+            db.ChangeTracker.Clear();
+            return null;
+        }
+        return result;
+    }
+
+    private async Task<ClockStopResult?> StopClockCoreAsync(Actor actor, Guid me, Guid? onlyTaskId, CancellationToken ct)
+    {
+        var clock = await db.RunningClocks.Include(c => c.Task).FirstOrDefaultAsync(c => c.UserId == me, ct);
+        if (clock is null || (onlyTaskId is Guid only && clock.TaskId != only)) return null;
+
+        var stoppedAt = DateTime.UtcNow;
+        var startedAt = DateTime.SpecifyKind(clock.StartedAt, DateTimeKind.Utc);
+        var minutes = (int)Math.Round((stoppedAt - startedAt).TotalMinutes, MidpointRounding.AwayFromZero);
+        minutes = Math.Clamp(minutes, 0, MaxEntryMinutes);
+        var task = clock.Task;
+
+        db.RunningClocks.Remove(clock);
+        TimeEntry? entry = null;
+        if (minutes >= 1)
+        {
+            entry = new TimeEntry
+            {
+                TaskId = task.Id,
+                UserId = me,
+                Date = DateOnly.FromDateTime(startedAt),
+                DurationMinutes = minutes,
+                Note = $"Clock {startedAt.ToLocalTime():HH:mm}-{stoppedAt.ToLocalTime():HH:mm}",
+                CreatedAt = stoppedAt
+            };
+            db.TimeEntries.Add(entry);
+            audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.TimeLogged, task.DepartmentId, task.Title,
+                new { timeEntryId = entry.Id, entry.UserId, entry.Date, entry.DurationMinutes, clock = true });
+        }
+        audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.ClockStopped, task.DepartmentId, task.Title,
+            new { startedAt, stoppedAt, minutes, timeEntryId = entry?.Id });
+        return new ClockStopResult(task, entry, minutes);
+    }
+
     private static void Validate(TimeEntryInput input)
     {
         if (input.DurationMinutes <= 0) throw new ValidationException("Duration must be at least one minute.");

@@ -116,6 +116,13 @@ A Sprint has no `ProjectId` **and no `DepartmentId`** — it's a company-wide pl
 - `Note` (optional free text)
 - `CreatedAt`
 
+**RunningClock** *(the "Start Clock" timer — see §6.10)*
+- `Id` (Guid)
+- `UserId` (FK → User) — unique: a user has at most one running clock
+- `TaskId` (FK → Task)
+- `StartedAt` (UTC)
+- Deleted when the clock stops; the elapsed time becomes a `TimeEntry`.
+
 **AuditLog** *(recommended for the API surface — see §9)*
 - `Id` (Guid)
 - `EntityType`, `EntityId` — what was changed
@@ -147,6 +154,7 @@ A Sprint has no `ProjectId` **and no `DepartmentId`** — it's a company-wide pl
 - User 1—* Project (as owner)
 - Task 1—* Comment
 - Task 1—* TimeEntry, User 1—* TimeEntry (as logger)
+- User 1—0..1 RunningClock, Task 1—* RunningClock (one per user currently timing that task)
 
 ## 6. Functional Requirements — Web UI (Razor Pages)
 
@@ -283,8 +291,14 @@ The `Done`/`Cancelled` status options are hidden or disabled in the UI for Membe
 - **Time logged per project:** project detail page shows total time logged across its tasks, for a quick "how much effort has this actually taken" view.
 - **My time:** a simple page (or dashboard widget) showing the current user's logged time, filterable by date range — useful for a weekly personal check rather than a full report.
 - Anyone can log time against a task they're assigned to; `DepartmentAdmin` can log or edit time entries for anyone in their own department, `SystemAdmin` for anyone anywhere (e.g. correcting an entry on someone's behalf).
+- **Start / Stop clock:** alongside manual entry, the task detail page has a **Start Clock** button for anyone who may log their own time on the task (same rule as above: assignee, or an admin for the task's department). While the clock runs the button becomes **Stop Clock** next to a live `hh:mm:ss` counter. The clock stops — and the elapsed time is logged as a normal time entry for the current user — when the user clicks **Stop Clock** *or leaves the task page* (any navigation, closing the tab, reloading). Details:
+  - **One clock per user, stored server-side** (`RunningClock`: user, task, started-at; unique per user), so it survives across requests and is enforced at the database level. Starting a clock while one is already running (on this or another task) stops and logs that one first.
+  - **Leaving the page:** the browser sends `navigator.sendBeacon` to a stop handler on `pagehide`. Form posts that return to the same page (comment, manual time entry, status change, delete entry) are not "leaving" and keep the clock running. If the beacon never arrives (crashed browser, killed tab), the clock is still running when the user next opens a *different* task, and that page stops and logs it then, with a message saying so.
+  - **What gets logged:** the entry's date is the day the clock started, its duration is the elapsed time rounded to the nearest minute, and its note is `Clock hh:mm-hh:mm`. Under 30 seconds nothing is logged (an accidental click doesn't create a 1-minute entry); over 24 hours is capped at 24 hours (the normal per-entry limit) — the entry stays editable afterwards like any other.
+  - **Audit:** `ClockStarted` and `ClockStopped` are recorded on the task, and the resulting entry is a normal `TimeLogged` (flagged `clock: true`), so the task history shows the full sequence.
+  - The clock is personal: admins can't run it on someone else's behalf (use manual entry for that).
 
-> **Assumption flagged:** kept deliberately simple — a duration + note per entry, not a start/stop timer or billable-rate tracking (billing is a non-goal per §3). Say if you want a running timer (start now / stop now) instead of manual duration entry.
+> **Assumption flagged:** the timer is "wall clock while on the page", not a pause/resume stopwatch, and there is no billable-rate tracking (billing is a non-goal per §3). Reloading the task page counts as leaving it — say if you'd rather a reload kept the clock running.
 
 ### 6.11 Appearance — light and dark theme
 - The UI ships with two themes, **light** (the original look) and **dark**, built on Bootstrap 5.3's colour modes: the active theme is the `data-bs-theme` attribute on the `<html>` element, and every page — including the Identity pages (login, account management), which share the same layout — follows it.
@@ -425,6 +439,7 @@ Earlier open questions, now resolved:
 19. **Configuration & deployment confirmed:** dev uses `appsettings.Development.json` for the connection string; production (Ubuntu Linux) uses environment variables loaded from an env file via systemd's `EnvironmentFile=`, with double-underscore key nesting, `chmod 600` file permissions, a least-privilege DB role, a persisted Data Protection key ring, and a one-time first-run admin seed that gets deleted after first login. See §10.
 21. **Cross-department project tasks (§6.2.1):** a project stays owned by one department, but a `SystemAdmin` can file tasks (and recurring definitions) under it for other departments — unassigned or assigned to a user in that department. The earlier "a task's department must match its project's" rule now applies only to `Member`/`DepartmentAdmin`; a task's own `DepartmentId` decides who sees and works it, a department with tasks on another department's project sees that project read-only, and moving a project between departments carries only the tasks that sat in its previous department. No schema change: `Task.DepartmentId` already existed independently of `Project.DepartmentId`.
 22. **Dark theme (§6.11):** a light/dark toggle in the navbar (icon to the left of the user name), implemented with Bootstrap 5.3 colour modes rather than a second stylesheet. The preference is per browser (`localStorage`), not per account — no schema or service change, and it applies on the login page too. With no saved preference the OS colour scheme is used.
+23. **Start / Stop clock (§6.10):** the earlier "manual duration only" assumption is superseded — the task page now also has a Start Clock / Stop Clock timer that logs the elapsed time as an ordinary `TimeEntry` when stopped or when the user leaves the page. It is a wall-clock timer (no pause/resume), one per user, stored server-side in a new `RunningClock` table (§5.1) so it is enforced across tabs and survives requests. Leaving the page is detected with `navigator.sendBeacon`; a clock the browser failed to stop is closed off the next time the user opens another task. Sub-30-second runs are discarded, runs over 24 hours are capped at 24 hours. Manual entry stays as it was, including admins logging on others' behalf.
 
 ## 14. Suggested Build Order
 
@@ -438,7 +453,7 @@ Earlier open questions, now resolved:
 8. Notifications: `IEmailSender` call sites for assignment/due-date emails (concrete sender implementation deferred).
 9. Reporting: `ReportingService` aggregate queries, Reports Razor Page, QuestPDF export.
 10. Backlog & Sprints: Sprint CRUD, backlog view, plan-into-sprint action, sprint board, start/complete workflow with auto-close-and-roll-forward transaction (`SystemAdmin`-only, company-wide).
-11. Time Tracking: TimeEntry logging on the task detail page, per-task/per-project totals, "My time" view.
+11. Time Tracking: TimeEntry logging on the task detail page, Start/Stop clock (`RunningClock` + page-leave beacon), per-task/per-project totals, "My time" view.
 12. Dashboard: three-tier (Member / Department Admin / System Admin) post-login landing pages pulling from Task/Project/Sprint/Comment/TimeEntry queries, per §6.9.
 13. Configuration & deployment: `appsettings.Development.json` for dev; production env-file/systemd setup, Data Protection key ring path, least-privilege DB role script, first-run admin seed (§10).
 14. Appearance: light/dark theme on Bootstrap colour modes, navbar toggle, per-browser persistence (§6.11).

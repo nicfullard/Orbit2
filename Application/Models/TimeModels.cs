@@ -29,3 +29,9 @@ public static class TimeFormat
         return h == 0 ? $"{m}m" : m == 0 ? $"{h}h" : $"{h}h {m}m";
     }
 }
+
+/// <summary>Outcome of stopping a running clock. <see cref="Entry"/> is null when too little time elapsed to log anything.</summary>
+public sealed record ClockStopResult(TaskItem Task, TimeEntry? Entry, int Minutes);
+
+/// <summary>Outcome of starting a clock. <see cref="Previous"/> is set when a clock already running elsewhere was stopped first.</summary>
+public sealed record ClockStartResult(RunningClock Clock, ClockStopResult? Previous);

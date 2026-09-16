@@ -101,6 +101,8 @@ public static class Ui
         "TimeLogged" => "logged time on",
         "TimeUpdated" => "edited a time entry on",
         "TimeDeleted" => "deleted a time entry on",
+        "ClockStarted" => "started the clock on",
+        "ClockStopped" => "stopped the clock on",
         "Paused" => "paused",
         "Resumed" => "resumed",
         "Generated" => "generated",
