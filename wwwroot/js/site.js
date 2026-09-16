@@ -69,3 +69,28 @@ document.addEventListener('change', function (e) {
 document.addEventListener('DOMContentLoaded', function () {
   document.querySelectorAll('select.js-department-select').forEach(orbitFilterAssignees);
 });
+
+// Light / dark theme toggle (navbar icon). The chosen theme is stored in localStorage and re-applied by the
+// inline script in _Layout.cshtml before first paint; this just flips it and keeps the button's label current.
+(function () {
+  var STORAGE_KEY = 'orbit-theme';
+  function currentTheme() {
+    return document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'dark' : 'light';
+  }
+  function applyTheme(theme) {
+    document.documentElement.setAttribute('data-bs-theme', theme);
+    var label = theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
+    document.querySelectorAll('.js-theme-toggle').forEach(function (btn) {
+      btn.title = label;
+      btn.setAttribute('aria-label', label);
+    });
+  }
+  document.addEventListener('DOMContentLoaded', function () { applyTheme(currentTheme()); });
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('.js-theme-toggle');
+    if (!btn) return;
+    var next = currentTheme() === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    try { localStorage.setItem(STORAGE_KEY, next); } catch (err) { /* storage unavailable: theme lasts for this page only */ }
+  });
+})();

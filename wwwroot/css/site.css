@@ -10,9 +10,32 @@ html {
   }
 }
 
+/* Theme tokens. Bootstrap 5.3 switches its own palette on [data-bs-theme]; these cover Orbit's custom surfaces.
+   The light values are the originals; the dark block below re-points them. */
+:root,
+[data-bs-theme="light"] {
+  --orbit-page-bg: #f6f7f9;
+  --orbit-surface-bg: #fff;
+  --orbit-surface-border: #e3e6ea;
+  --orbit-well-bg: #eef0f3;
+  --orbit-overdue: #b02a37;
+  --orbit-claude: #6f42c1;
+}
+
+[data-bs-theme="dark"] {
+  --orbit-page-bg: #1a1d21;
+  --orbit-surface-bg: #23272b;
+  --orbit-surface-border: #3a3f45;
+  --orbit-well-bg: #2b3035;
+  --orbit-overdue: #f1707a;
+  --orbit-claude: #8f66d6;
+  --bs-body-bg: var(--orbit-page-bg);
+  --bs-card-bg: var(--orbit-surface-bg);
+}
+
 body {
   margin-bottom: 60px;
-  background: #f6f7f9;
+  background: var(--orbit-page-bg);
 }
 
 .footer {
@@ -23,8 +46,26 @@ body {
   line-height: 60px;
 }
 
+/* Theme toggle icon in the navbar: show the moon in light mode, the sun in dark mode. */
+.js-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+}
+
+.theme-icon-sun {
+  display: none;
+}
+
+[data-bs-theme="dark"] .theme-icon-sun {
+  display: inline;
+}
+
+[data-bs-theme="dark"] .theme-icon-moon {
+  display: none;
+}
+
 .badge-claude {
-  background: #6f42c1;
+  background: var(--orbit-claude);
   color: #fff;
 }
 
@@ -37,14 +78,14 @@ body {
 }
 
 .task-title-overdue {
-  color: #b02a37;
+  color: var(--orbit-overdue);
 }
 
 .stat-tile {
   border-radius: .5rem;
   padding: 1rem 1.25rem;
-  background: #fff;
-  border: 1px solid #e3e6ea;
+  background: var(--orbit-surface-bg);
+  border: 1px solid var(--orbit-surface-border);
 }
 
 .stat-tile .stat-value {
@@ -54,12 +95,13 @@ body {
 }
 
 .stat-tile .stat-label {
-  color: #6c757d;
+  color: var(--bs-secondary-color);
   font-size: .85rem;
 }
 
 .card {
-  border-color: #e3e6ea;
+  --bs-card-bg: var(--orbit-surface-bg);
+  border-color: var(--orbit-surface-border);
 }
 
 .kanban {
@@ -70,15 +112,15 @@ body {
 }
 
 .kanban-column {
-  background: #eef0f3;
+  background: var(--orbit-well-bg);
   border-radius: .5rem;
   padding: .75rem;
   min-height: 12rem;
 }
 
 .kanban-card {
-  background: #fff;
-  border: 1px solid #e3e6ea;
+  background: var(--orbit-surface-bg);
+  border: 1px solid var(--orbit-surface-border);
   border-radius: .4rem;
   padding: .6rem .75rem;
   margin-bottom: .6rem;
@@ -90,7 +132,7 @@ body {
 
 .activity-feed li {
   padding: .35rem 0;
-  border-bottom: 1px solid #eef0f3;
+  border-bottom: 1px solid var(--orbit-well-bg);
 }
 
 .activity-feed li:last-child {
@@ -113,4 +155,28 @@ body {
 .key-box {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   word-break: break-all;
+}
+
+/* Bootstrap's "light" utilities keep a near-white background even in dark mode, which looks like a glare on a
+   dark page. The pages use them for neutral badges and table headers, so give them a dark-theme equivalent. */
+[data-bs-theme="dark"] .text-bg-light {
+  color: var(--bs-body-color) !important;
+  background-color: var(--orbit-well-bg) !important;
+}
+
+[data-bs-theme="dark"] .badge.text-bg-light.border {
+  border-color: var(--orbit-surface-border) !important;
+}
+
+[data-bs-theme="dark"] .table-light {
+  --bs-table-color: var(--bs-body-color);
+  --bs-table-bg: var(--orbit-well-bg);
+  --bs-table-border-color: var(--orbit-surface-border);
+  color: var(--bs-table-color);
+  border-color: var(--bs-table-border-color);
+}
+
+[data-bs-theme="dark"] .table-light > * {
+  color: var(--bs-table-color);
+  background-color: var(--bs-table-bg);
 }

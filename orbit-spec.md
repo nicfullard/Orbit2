@@ -35,6 +35,7 @@ A task/project tracker for the whole business — organized into departments, ea
 | Notifications | ASP.NET Core Identity's built-in `IEmailSender` interface |
 | Background jobs | Quartz.NET (`Quartz.Extensions.Hosting`), cron-scheduled jobs resolved from DI (see §6.4, §6.7) |
 | Reporting/PDF | QuestPDF (see §12) |
+| UI theme | Bootstrap 5.3 colour modes (`data-bs-theme` on `<html>`), light and dark, switched by a navbar toggle and remembered per browser in `localStorage` (see §6.11) |
 
 ## 5. Domain Model
 
@@ -285,6 +286,13 @@ The `Done`/`Cancelled` status options are hidden or disabled in the UI for Membe
 
 > **Assumption flagged:** kept deliberately simple — a duration + note per entry, not a start/stop timer or billable-rate tracking (billing is a non-goal per §3). Say if you want a running timer (start now / stop now) instead of manual duration entry.
 
+### 6.11 Appearance — light and dark theme
+- The UI ships with two themes, **light** (the original look) and **dark**, built on Bootstrap 5.3's colour modes: the active theme is the `data-bs-theme` attribute on the `<html>` element, and every page — including the Identity pages (login, account management), which share the same layout — follows it.
+- **Toggle:** an icon button sits at the right-hand end of the navbar, immediately to the left of the signed-in user's name (or of the Login link when signed out). It shows a moon in light mode ("Switch to dark theme") and a sun in dark mode ("Switch to light theme"); clicking it flips the theme instantly without a page reload. The button carries a matching `title`/`aria-label`, so it is usable by keyboard and screen reader.
+- **Persistence:** the choice is stored per browser in `localStorage` (key `orbit-theme`), not against the user account — it is a device preference rather than profile data, needs no round-trip or schema change, and works on the login page before anyone is signed in.
+- **Initial theme:** on each page load an inline script in the layout's `<head>` applies the saved choice before first paint (no light-to-dark flash). If nothing is saved, the OS/browser `prefers-color-scheme` setting decides, falling back to light. If `localStorage` is unavailable the toggle still works for the current page.
+- **Coverage:** Orbit's custom surfaces (page background, stat tiles, cards, kanban columns/cards, activity feed, overdue highlight, the "Claude" badge) are defined as CSS variables with a light and a dark value, and Bootstrap's `text-bg-light` badges and `table-light` headers get a dark-theme equivalent so no near-white blocks remain on a dark page. The navbar is dark in both themes.
+
 ## 7. Functional Requirements — Claude Integration (MCP Server)
 
 Orbit exposes an **MCP (Model Context Protocol) server** rather than a plain REST API, so Claude can connect to it directly as a tool provider (e.g. from a Claude Project's connector config) instead of needing a hand-rolled integration layer in between.
@@ -416,6 +424,7 @@ Earlier open questions, now resolved:
 20. **Background jobs on Quartz.NET:** the recurring-task generator and the due-date notifier are Quartz.NET jobs (`Quartz.Extensions.Hosting`, in-memory store, DI-scoped job instances, `[DisallowConcurrentExecution]`) driven by cron expressions in configuration, with an optional run-once-on-startup trigger and fire-and-proceed misfire handling. This replaces the earlier "hosted service or Quartz" option in §6.4 with a firm choice.
 19. **Configuration & deployment confirmed:** dev uses `appsettings.Development.json` for the connection string; production (Ubuntu Linux) uses environment variables loaded from an env file via systemd's `EnvironmentFile=`, with double-underscore key nesting, `chmod 600` file permissions, a least-privilege DB role, a persisted Data Protection key ring, and a one-time first-run admin seed that gets deleted after first login. See §10.
 21. **Cross-department project tasks (§6.2.1):** a project stays owned by one department, but a `SystemAdmin` can file tasks (and recurring definitions) under it for other departments — unassigned or assigned to a user in that department. The earlier "a task's department must match its project's" rule now applies only to `Member`/`DepartmentAdmin`; a task's own `DepartmentId` decides who sees and works it, a department with tasks on another department's project sees that project read-only, and moving a project between departments carries only the tasks that sat in its previous department. No schema change: `Task.DepartmentId` already existed independently of `Project.DepartmentId`.
+22. **Dark theme (§6.11):** a light/dark toggle in the navbar (icon to the left of the user name), implemented with Bootstrap 5.3 colour modes rather than a second stylesheet. The preference is per browser (`localStorage`), not per account — no schema or service change, and it applies on the login page too. With no saved preference the OS colour scheme is used.
 
 ## 14. Suggested Build Order
 
@@ -432,3 +441,4 @@ Earlier open questions, now resolved:
 11. Time Tracking: TimeEntry logging on the task detail page, per-task/per-project totals, "My time" view.
 12. Dashboard: three-tier (Member / Department Admin / System Admin) post-login landing pages pulling from Task/Project/Sprint/Comment/TimeEntry queries, per §6.9.
 13. Configuration & deployment: `appsettings.Development.json` for dev; production env-file/systemd setup, Data Protection key ring path, least-privilege DB role script, first-run admin seed (§10).
+14. Appearance: light/dark theme on Bootstrap colour modes, navbar toggle, per-browser persistence (§6.11).
