@@ -39,6 +39,19 @@ public sealed class UserDirectoryService(ApplicationDbContext db, IActorProvider
         return users.Select(u => ToSummary(u, roles)).ToList();
     }
 
+    /// <summary>
+    /// Everyone the caller could assign a task to, across every department they can see - the candidate list for
+    /// inline assignee controls on task lists that may mix departments (sprints, cross-department projects).
+    /// System Admin: all active users; otherwise the caller's own department plus System Admins.
+    /// The list control filters per row to the task's department plus System Admins.
+    /// </summary>
+    public async Task<IReadOnlyList<UserSummary>> GetQuickEditCandidatesAsync(CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        if (actor.IsSystemAdmin) return await ListAsync(null, null, false, ct);
+        return actor.DepartmentId is Guid d ? await GetAssignableAsync(d, ct) : [];
+    }
+
     public async Task<UserSummary?> FindAsync(Guid id, CancellationToken ct = default)
     {
         await actors.GetAsync(ct);

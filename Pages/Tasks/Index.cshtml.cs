@@ -21,6 +21,8 @@ public class IndexModel(
     public IReadOnlyList<SelectListItem> DepartmentItems { get; private set; } = [];
     public IReadOnlyList<SelectListItem> ProjectItems { get; private set; } = [];
     public IReadOnlyList<SelectListItem> AssigneeItems { get; private set; } = [];
+    /// <summary>Candidates for the inline assignee control: everyone the actor may assign to, across all listed departments.</summary>
+    public IReadOnlyList<UserSummary> QuickEditAssignees { get; private set; } = [];
 
     public async Task OnGetAsync(CancellationToken ct)
     {
@@ -41,6 +43,8 @@ public class IndexModel(
             ? await users.ListAsync(null, Filter.DepartmentId, false, ct)
             : await users.GetAssignableAsync(Actor.DepartmentId!.Value, ct);
         AssigneeItems = people.Select(u => new SelectListItem(u.DisplayName, u.Id.ToString(), u.Id == Filter.AssigneeId)).ToList();
+        // The filter list may be narrowed to one department; the inline control needs candidates for every listed task.
+        QuickEditAssignees = await users.GetQuickEditCandidatesAsync(ct);
     }
 
     public string PageUrl(int page) => Url.Page("/Tasks/Index", new

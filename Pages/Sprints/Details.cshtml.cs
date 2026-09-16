@@ -1,16 +1,19 @@
 using Microsoft.AspNetCore.Mvc;
 using Orbit.Application;
+using Orbit.Application.Models;
 using Orbit.Application.Services;
 using Orbit.Data.Entities;
 using ValidationException = Orbit.Application.ValidationException;
 
 namespace Orbit.Pages.Sprints;
 
-public class DetailsModel(SprintService sprints, TaskService tasks, IActorProvider actors) : OrbitPageModel
+public class DetailsModel(SprintService sprints, TaskService tasks, UserDirectoryService users, IActorProvider actors) : OrbitPageModel
 {
     public Actor Actor { get; private set; } = null!;
     public Sprint Sprint { get; private set; } = null!;
     public IReadOnlyList<TaskItem> Tasks { get; private set; } = [];
+    /// <summary>Candidates for the inline assignee control (a sprint spans departments).</summary>
+    public IReadOnlyList<UserSummary> QuickEditAssignees { get; private set; } = [];
     public IReadOnlyList<NameCountRow> ByDepartment { get; private set; } = [];
     public int Done => Tasks.Count(t => t.Status == TaskItemStatus.Done);
     public int Percent => Tasks.Count == 0 ? 0 : (int)Math.Round(Done * 100.0 / Tasks.Count);
@@ -27,6 +30,7 @@ public class DetailsModel(SprintService sprints, TaskService tasks, IActorProvid
             .ToList();
         ByDepartment = Tasks.GroupBy(t => t.Department.Name).OrderBy(g => g.Key)
             .Select(g => new NameCountRow(g.Key, g.Count(), g.Count(t => t.IsOpen))).ToList();
+        QuickEditAssignees = await users.GetQuickEditCandidatesAsync(ct);
         return Page();
     }
 

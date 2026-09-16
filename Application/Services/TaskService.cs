@@ -238,6 +238,48 @@ public sealed class TaskService(
         return task;
     }
 
+    /// <summary>Quick inline assignee change (the task list control). Same rights as a full edit.</summary>
+    public async Task<TaskItem> ChangeAssigneeAsync(Guid id, Guid? assigneeId, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        var task = await db.Tasks.Include(t => t.Assignee).FirstOrDefaultAsync(t => t.Id == id, ct)
+            ?? throw new NotFoundException("Task not found.");
+        AccessPolicy.Require(AccessPolicy.CanViewTask(actor, task), "This task belongs to another department.");
+        AccessPolicy.Require(AccessPolicy.CanEditTask(actor, task), "Members can only edit tasks they created or are assigned to.");
+        if (task.AssigneeId == assigneeId) return task;
+
+        var assignee = await ValidateAssigneeAsync(assigneeId, task.DepartmentId, ct);
+        var changes = new ChangeSet().Track("assigneeId", task.AssigneeId, assignee?.Id);
+        task.AssigneeId = assignee?.Id;
+        task.Assignee = assignee;
+        task.UpdatedAt = DateTime.UtcNow;
+        audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.Updated, task.DepartmentId, task.Title, changes.Changes);
+        await db.SaveChangesAsync(ct);
+
+        if (assignee is not null && assignee.Id != actor.UserId)
+            await notifications.TaskAssignedAsync(task, assignee, actor, ct);
+        return task;
+    }
+
+    /// <summary>Quick inline due-date change (the task list control). Same rights as a full edit.</summary>
+    public async Task<TaskItem> ChangeDueDateAsync(Guid id, DateOnly? dueDate, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        var task = await db.Tasks.FirstOrDefaultAsync(t => t.Id == id, ct)
+            ?? throw new NotFoundException("Task not found.");
+        AccessPolicy.Require(AccessPolicy.CanViewTask(actor, task), "This task belongs to another department.");
+        AccessPolicy.Require(AccessPolicy.CanEditTask(actor, task), "Members can only edit tasks they created or are assigned to.");
+        if (task.DueDate == dueDate) return task;
+
+        var changes = new ChangeSet().Track("dueDate", task.DueDate, dueDate);
+        task.DueDate = dueDate;
+        task.DueSoonNotifiedAt = null; // a new due date earns a fresh reminder
+        task.UpdatedAt = DateTime.UtcNow;
+        audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.Updated, task.DepartmentId, task.Title, changes.Changes);
+        await db.SaveChangesAsync(ct);
+        return task;
+    }
+
     /// <summary>Plan tasks into a sprint (or back to the backlog with a null sprint). Returns the number moved.</summary>
     public async Task<int> MoveToSprintAsync(IReadOnlyCollection<Guid> taskIds, Guid? sprintId, CancellationToken ct = default)
     {

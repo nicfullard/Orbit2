@@ -7,7 +7,7 @@ using ValidationException = Orbit.Application.ValidationException;
 
 namespace Orbit.Pages.Projects;
 
-public class DetailsModel(ProjectService projects, IActorProvider actors) : OrbitPageModel
+public class DetailsModel(ProjectService projects, UserDirectoryService users, IActorProvider actors) : OrbitPageModel
 {
     [BindProperty(SupportsGet = true)] public TaskItemStatus? Status { get; set; }
     [BindProperty(SupportsGet = true)] public Guid? AssigneeId { get; set; }
@@ -18,6 +18,8 @@ public class DetailsModel(ProjectService projects, IActorProvider actors) : Orbi
     public ProjectStatusSummary Summary { get; private set; } = null!;
     public IReadOnlyList<TaskItem> Tasks { get; private set; } = [];
     public IReadOnlyList<ApplicationUser> Assignees { get; private set; } = [];
+    /// <summary>Candidates for the inline assignee control (a cross-department project's tasks span departments).</summary>
+    public IReadOnlyList<UserSummary> QuickEditAssignees { get; private set; } = [];
     /// <summary>Departments with tasks on this project, for the filter (more than one on a cross-department project).</summary>
     public IReadOnlyList<Department> Departments { get; private set; } = [];
     public bool CanEdit { get; private set; }
@@ -51,6 +53,7 @@ public class DetailsModel(ProjectService projects, IActorProvider actors) : Orbi
             .DistinctBy(u => u.Id).OrderBy(u => u.DisplayName).ToList();
         Departments = Project.Tasks.Select(t => t.Department)
             .DistinctBy(x => x.Id).OrderBy(x => x.Name).ToList();
+        QuickEditAssignees = await users.GetQuickEditCandidatesAsync(ct);
         return Page();
     }
 

@@ -31,6 +31,7 @@ else
                     var canView = AccessPolicy.CanViewTask(Model.Actor, t);
                     var overdue = t.IsOverdue(Model.Today);
                     var statuses = Ui.AllowedStatuses(Model.Actor, t);
+                    var quickEdit = Model.QuickEditAssignees is not null && canView && AccessPolicy.CanEditTask(Model.Actor, t);
                     <tr>
                         @if (selectable)
                         {
@@ -75,9 +76,38 @@ else
                         <td><span class="badge @Ui.PriorityBadge(t.Priority)">@t.Priority</span></td>
                         @if (Model.ShowAssignee)
                         {
-                            <td>@(t.Assignee?.DisplayName ?? "-")</td>
+                            <td>
+                                @if (quickEdit)
+                                {
+                                    <form method="post" asp-page="/Tasks/Quick" asp-page-handler="Assignee" asp-route-id="@t.Id" asp-route-returnUrl="@Model.ReturnUrl" class="d-inline">
+                                        <select name="assigneeId" class="form-select form-select-sm assignee-select js-autosubmit" aria-label="Assignee">
+                                            <option value="" selected="@(t.AssigneeId is null)">Unassigned</option>
+                                            @foreach (var u in Model.QuickEditAssignees!.Where(u => u.DepartmentId == t.DepartmentId || u.Role == OrbitRole.SystemAdmin))
+                                            {
+                                                <option value="@u.Id" selected="@(u.Id == t.AssigneeId)">@u.DisplayName</option>
+                                            }
+                                        </select>
+                                    </form>
+                                }
+                                else
+                                {
+                                    @(t.Assignee?.DisplayName ?? "-")
+                                }
+                            </td>
                         }
-                        <td class="@(overdue ? "text-danger fw-semibold" : "")">@Ui.Day(t.DueDate)@(overdue ? " (overdue)" : "")</td>
+                        <td class="@(overdue ? "text-danger fw-semibold" : "")">
+                            @if (quickEdit)
+                            {
+                                var due = t.DueDate?.ToString("yyyy-MM-dd") ?? string.Empty;
+                                <form method="post" asp-page="/Tasks/Quick" asp-page-handler="DueDate" asp-route-id="@t.Id" asp-route-returnUrl="@Model.ReturnUrl" class="d-inline">
+                                    <input type="date" name="dueDate" value="@due" data-original="@due" class="form-control form-control-sm due-input js-autosubmit-delayed @(overdue ? "border-danger text-danger" : "")" aria-label="Due date" title="@(overdue ? "Overdue" : "Due date")" />
+                                </form>
+                            }
+                            else
+                            {
+                                @Ui.Day(t.DueDate)@(overdue ? " (overdue)" : "")
+                            }
+                        </td>
                         @if (Model.ShowSprint)
                         {
                             <td>

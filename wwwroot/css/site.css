@@ -180,3 +180,12 @@ body {
   color: var(--bs-table-color);
   background-color: var(--bs-table-bg);
 }
+
+.table-tasks .assignee-select {
+  min-width: 9rem;
+}
+
+.table-tasks .due-input {
+  min-width: 9.5rem;
+  max-width: 11rem;
+}

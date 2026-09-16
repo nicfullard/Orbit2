@@ -5,7 +5,7 @@
     var s = Model.Summary;
     ViewData["Title"] = p.Name;
     var statusItems = Ui.EnumItems<TaskItemStatus>(Model.Status, "All", x => x.Label());
-    var rows = new TaskRowsVm { Tasks = Model.Tasks, Actor = Model.Actor, ReturnUrl = Request.Path + Request.QueryString, ShowProject = false, ShowDepartment = Model.IsCrossDepartment, ShowSprint = true, EmptyMessage = "No tasks match." };
+    var rows = new TaskRowsVm { Tasks = Model.Tasks, Actor = Model.Actor, ReturnUrl = Request.Path + Request.QueryString, ShowProject = false, ShowDepartment = Model.IsCrossDepartment, ShowSprint = true, QuickEditAssignees = Model.QuickEditAssignees, EmptyMessage = "No tasks match." };
 }
 
 <nav aria-label="breadcrumb">

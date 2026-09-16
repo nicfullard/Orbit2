@@ -1,4 +1,5 @@
 using Orbit.Application;
+using Orbit.Application.Models;
 using Orbit.Data.Entities;
 
 namespace Orbit.Helpers;
@@ -9,6 +10,11 @@ public sealed class TaskRowsVm
     public required IReadOnlyList<TaskItem> Tasks { get; init; }
     public required Actor Actor { get; init; }
     public required string ReturnUrl { get; init; }
+    /// <summary>
+    /// When set, rows the actor may edit get inline assignee and due-date controls (like the inline status control).
+    /// Candidates are filtered per row to the task's department plus System Admins. Null = read-only cells.
+    /// </summary>
+    public IReadOnlyList<UserSummary>? QuickEditAssignees { get; init; }
     public bool ShowProject { get; init; } = true;
     public bool ShowDepartment { get; init; } = true;
     public bool ShowSprint { get; init; }

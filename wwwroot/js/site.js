@@ -125,3 +125,27 @@ document.addEventListener('DOMContentLoaded', function () {
   // Coming back via the back/forward cache would show a clock that was already stopped: reload instead.
   window.addEventListener('pageshow', function (e) { if (e.persisted) location.reload(); });
 })();
+
+// Inline due-date control: a date input fires "change" on every keystroke that yields a valid date, so submitting
+// straight away would cut keyboard entry short. Wait for a pause in typing; Enter or leaving the field submits at once.
+(function () {
+  var pending = null;
+  function submit(el) {
+    if (pending) { clearTimeout(pending); pending = null; }
+    if (el.form && el.value !== el.dataset.original) {
+      el.dataset.original = el.value;
+      el.form.requestSubmit ? el.form.requestSubmit() : el.form.submit();
+    }
+  }
+  function isDelayed(el) { return el && el.classList && el.classList.contains('js-autosubmit-delayed'); }
+  document.addEventListener('change', function (e) {
+    var el = e.target;
+    if (!isDelayed(el)) return;
+    if (pending) clearTimeout(pending);
+    pending = setTimeout(function () { submit(el); }, 700);
+  });
+  document.addEventListener('focusout', function (e) { if (isDelayed(e.target)) submit(e.target); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && isDelayed(e.target)) { e.preventDefault(); submit(e.target); }
+  });
+})();
