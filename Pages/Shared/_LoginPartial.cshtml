@@ -1,0 +1,26 @@
+@using Microsoft.AspNetCore.Identity
+@inject SignInManager<ApplicationUser> SignInManager
+
+<ul class="navbar-nav">
+@if (SignInManager.IsSignedIn(User))
+{
+    var displayName = User.FindFirst(OrbitClaims.DisplayName)?.Value ?? User.Identity?.Name;
+    var role = User.IsInRole(Roles.SystemAdmin) ? "System Admin" : User.IsInRole(Roles.DepartmentAdmin) ? "Department Admin" : "Member";
+    <li class="nav-item">
+        <a class="nav-link" asp-area="Identity" asp-page="/Account/Manage/Index" title="Manage account">
+            @displayName <span class="badge text-bg-secondary ms-1">@role</span>
+        </a>
+    </li>
+    <li class="nav-item">
+        <form class="form-inline" asp-area="Identity" asp-page="/Account/Logout" asp-route-returnUrl="@Url.Page("/Index", new { area = "" })">
+            <button type="submit" class="nav-link btn btn-link">Logout</button>
+        </form>
+    </li>
+}
+else
+{
+    <li class="nav-item">
+        <a class="nav-link" asp-area="Identity" asp-page="/Account/Login">Login</a>
+    </li>
+}
+</ul>

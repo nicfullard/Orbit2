@@ -1,0 +1,98 @@
+@page
+@model Orbit.Pages.Backlog.IndexModel
+@{
+    ViewData["Title"] = "Backlog";
+    var f = Model.Filter;
+    var priorityItems = Ui.EnumItems<TaskPriority>(f.Priority, "All");
+    var showDepartments = Model.Actor.IsSystemAdmin || f.AllDepartments;
+    var rows = new TaskRowsVm { Tasks = Model.Result.Items, Actor = Model.Actor, ReturnUrl = Request.Path + Request.QueryString, ShowDepartment = showDepartments, SelectionFormId = "planForm", EmptyMessage = "The backlog is empty." };
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+    <div>
+        <h1 class="h3 mb-0">Backlog <span class="text-muted fs-6">@Model.Result.TotalCount</span></h1>
+        <div class="text-muted small">Open tasks not yet planned into a sprint. Select tasks and choose a sprint to plan them.</div>
+    </div>
+    <a class="btn btn-primary btn-sm" asp-page="/Tasks/Create">New task</a>
+</div>
+
+<form method="get" class="card mb-3">
+    <div class="card-body py-2">
+        <div class="row g-2 align-items-end">
+            <div class="col-sm-6 col-lg-3">
+                <label class="form-label small mb-0">Search</label>
+                <input class="form-control form-control-sm" name="Search" value="@f.Search" />
+            </div>
+            @if (showDepartments)
+            {
+                <div class="col-sm-6 col-lg-2">
+                    <label class="form-label small mb-0">Department</label>
+                    <select class="form-select form-select-sm" name="DepartmentId">
+                        <option value="">All</option>
+                        @foreach (var i in Model.DepartmentItems) { <option value="@i.Value" selected="@i.Selected">@i.Text</option> }
+                    </select>
+                </div>
+            }
+            <div class="col-sm-6 col-lg-2">
+                <label class="form-label small mb-0">Project</label>
+                <select class="form-select form-select-sm" name="ProjectId">
+                    <option value="">All</option>
+                    @foreach (var i in Model.ProjectItems) { <option value="@i.Value" selected="@i.Selected">@i.Text</option> }
+                </select>
+            </div>
+            <div class="col-sm-6 col-lg-2">
+                <label class="form-label small mb-0">Priority</label>
+                <select class="form-select form-select-sm" name="Priority" asp-items="priorityItems"></select>
+            </div>
+            <div class="col-sm-6 col-lg-2">
+                <label class="form-label small mb-0">Assignee</label>
+                <select class="form-select form-select-sm" name="AssigneeId">
+                    <option value="">All</option>
+                    @foreach (var i in Model.AssigneeItems) { <option value="@i.Value" selected="@i.Selected">@i.Text</option> }
+                </select>
+            </div>
+            @if (!Model.Actor.IsSystemAdmin)
+            {
+                <div class="col-sm-6 col-lg-2">
+                    <div class="form-check mt-3">
+                        <input class="form-check-input" type="checkbox" name="AllDepartments" value="true" id="allDepts" checked="@f.AllDepartments" />
+                        <label class="form-check-label small" for="allDepts">Show all departments</label>
+                    </div>
+                </div>
+            }
+            <div class="col-auto">
+                <button class="btn btn-sm btn-outline-primary" type="submit">Filter</button>
+                <a class="btn btn-sm btn-link" asp-page="/Backlog/Index">Reset</a>
+            </div>
+        </div>
+    </div>
+</form>
+
+<div class="card">
+    <div class="card-header">
+        <form method="post" asp-page-handler="Plan" id="planForm" class="d-flex flex-wrap align-items-center gap-2"
+              asp-route-ProjectId="@f.ProjectId" asp-route-DepartmentId="@f.DepartmentId" asp-route-Priority="@f.Priority"
+              asp-route-AssigneeId="@f.AssigneeId" asp-route-AllDepartments="@f.AllDepartments" asp-route-Search="@f.Search">
+            <span class="fw-semibold">Plan selected into</span>
+            <select class="form-select form-select-sm w-auto" name="sprintId">
+                <option value="">- choose a sprint -</option>
+                @foreach (var s in Model.OpenSprints)
+                {
+                    <option value="@s.Id">@s.Name (@s.Status, @Ui.Day(s.StartDate) - @Ui.Day(s.EndDate))</option>
+                }
+            </select>
+            <button class="btn btn-sm btn-primary" type="submit" @(Model.OpenSprints.Count == 0 ? "disabled" : "")>Plan into sprint</button>
+            @if (Model.OpenSprints.Count == 0)
+            {
+                <span class="text-muted small">No planned or active sprint exists yet.</span>
+            }
+            @if (!Model.Actor.IsSystemAdmin)
+            {
+                <span class="text-muted small">You can plan your own department's tasks.</span>
+            }
+        </form>
+    </div>
+    <div class="card-body p-0 p-sm-2">
+        <partial name="_TaskRows" model="rows" />
+    </div>
+</div>

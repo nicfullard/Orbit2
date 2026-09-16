@@ -1,0 +1,239 @@
+@page "{id:guid}"
+@model Orbit.Pages.Tasks.DetailsModel
+@{
+    var t = Model.Task;
+    ViewData["Title"] = t.Title;
+    var today = DateOnly.FromDateTime(DateTime.UtcNow);
+    var overdue = t.IsOverdue(today);
+    var returnUrl = Request.Path.ToString();
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Tasks/Index">Tasks</a></li>
+        @if (t.Project is not null)
+        {
+            <li class="breadcrumb-item"><a asp-page="/Projects/Details" asp-route-id="@t.ProjectId">@t.Project.Name</a></li>
+        }
+        <li class="breadcrumb-item active" aria-current="page">@Ui.Truncate(t.Title, 60)</li>
+    </ol>
+</nav>
+
+<div class="d-flex flex-wrap justify-content-between align-items-start mb-3 gap-2">
+    <div>
+        <h1 class="h3 mb-1 @(overdue ? "task-title-overdue" : "")">@t.Title</h1>
+        <div class="d-flex flex-wrap gap-1 align-items-center">
+            <span class="badge @Ui.StatusBadge(t.Status)">@t.Status.Label()</span>
+            <span class="badge @Ui.PriorityBadge(t.Priority)">@t.Priority</span>
+            <span class="badge @Ui.SourceBadge(t.Source)">@Ui.SourceLabel(t.Source)</span>
+            <span class="badge text-bg-light border">@t.Department.Name</span>
+            @if (t.Sprint is not null)
+            {
+                <a asp-page="/Sprints/Details" asp-route-id="@t.SprintId" class="badge text-bg-light border text-decoration-none">Sprint: @t.Sprint.Name</a>
+            }
+            else
+            {
+                <span class="badge text-bg-light border">Backlog</span>
+            }
+            @if (overdue)
+            {
+                <span class="badge text-bg-danger">Overdue</span>
+            }
+        </div>
+    </div>
+    <div class="d-flex gap-2 align-items-center">
+        @if (Model.Statuses.Count > 1)
+        {
+            <form method="post" asp-page="/Tasks/Status" asp-route-id="@t.Id" asp-route-returnUrl="@returnUrl" class="d-flex align-items-center gap-1">
+                <label class="small text-muted" for="quickStatus">Status</label>
+                <select id="quickStatus" name="status" class="form-select form-select-sm status-select js-autosubmit">
+                    @foreach (var s in Model.Statuses)
+                    {
+                        <option value="@s" selected="@(s == t.Status)">@s.Label()</option>
+                    }
+                </select>
+            </form>
+        }
+        @if (Model.CanEdit)
+        {
+            <a class="btn btn-outline-primary btn-sm" asp-page="/Tasks/Edit" asp-route-id="@t.Id">Edit</a>
+        }
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-8">
+        <div class="card mb-3">
+            <div class="card-body">
+                @if (string.IsNullOrWhiteSpace(t.Description))
+                {
+                    <p class="text-muted fst-italic mb-0">No description.</p>
+                }
+                else
+                {
+                    <div class="description-box">@t.Description</div>
+                }
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Comments <span class="text-muted fw-normal">(@Model.Comments.Count)</span></div>
+            <div class="card-body">
+                @foreach (var c in Model.Comments)
+                {
+                    var isClaude = c.Author is null || c.Author.IsSystemAccount;
+                    <div class="border-bottom pb-2 mb-2">
+                        <div class="small">
+                            <span class="fw-semibold">@Ui.AuthorName(c.Author)</span>
+                            @if (isClaude)
+                            {
+                                <span class="badge badge-claude">Claude</span>
+                            }
+                            <span class="text-muted">· @Ui.When(c.CreatedAt)</span>
+                        </div>
+                        <div class="description-box">@c.Body</div>
+                    </div>
+                }
+                <form method="post" asp-page-handler="Comment" asp-route-id="@t.Id">
+                    <textarea class="form-control mb-2" name="CommentBody" rows="3" placeholder="Add a comment" required></textarea>
+                    <button class="btn btn-sm btn-primary" type="submit">Post comment</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between">
+                <span class="fw-semibold">Time logged</span>
+                <span class="text-muted">@TimeFormat.Minutes(Model.TotalMinutes) total</span>
+            </div>
+            <div class="card-body">
+                @if (Model.TimeEntries.Count > 0)
+                {
+                    <table class="table table-sm mb-3">
+                        <thead class="table-light"><tr><th>Date</th><th>Who</th><th>Duration</th><th>Note</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var e in Model.TimeEntries)
+                            {
+                                var canEditEntry = AccessPolicy.CanEditTimeEntry(Model.Actor, e, t);
+                                <tr>
+                                    <td>@Ui.Day(e.Date)</td>
+                                    <td>@e.User.DisplayName</td>
+                                    <td>@TimeFormat.Minutes(e.DurationMinutes)</td>
+                                    <td>@e.Note</td>
+                                    <td class="text-end text-nowrap">
+                                        @if (canEditEntry)
+                                        {
+                                            <a class="btn btn-link btn-sm py-0" asp-page="/Time/Edit" asp-route-id="@e.Id">Edit</a>
+                                            <form method="post" asp-page-handler="DeleteTime" asp-route-id="@t.Id" asp-route-entryId="@e.Id" class="d-inline" data-confirm="Delete this time entry?">
+                                                <button class="btn btn-link btn-sm py-0 text-danger" type="submit">Delete</button>
+                                            </form>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                @if (Model.CanLogTime)
+                {
+                    <form method="post" asp-page-handler="Time" asp-route-id="@t.Id" class="row g-2 align-items-end">
+                        <div class="col-sm-3">
+                            <label class="form-label small mb-0">Date</label>
+                            <input type="date" class="form-control form-control-sm" name="Time.Date" value="@today.ToString("yyyy-MM-dd")" required />
+                        </div>
+                        <div class="col-sm-2">
+                            <label class="form-label small mb-0">Minutes</label>
+                            <input type="number" class="form-control form-control-sm" name="Time.DurationMinutes" value="60" min="1" max="1440" required />
+                        </div>
+                        @if (Model.CanLogForOthers)
+                        {
+                            <div class="col-sm-3">
+                                <label class="form-label small mb-0">For</label>
+                                <select class="form-select form-select-sm" name="Time.UserId">
+                                    <option value="">Me</option>
+                                    @foreach (var u in Model.TimeUsers)
+                                    {
+                                        <option value="@u.Id">@u.DisplayName</option>
+                                    }
+                                </select>
+                            </div>
+                        }
+                        <div class="col-sm">
+                            <label class="form-label small mb-0">Note</label>
+                            <input class="form-control form-control-sm" name="Time.Note" maxlength="1000" placeholder="optional" />
+                        </div>
+                        <div class="col-auto">
+                            <button class="btn btn-sm btn-outline-primary" type="submit">Log time</button>
+                        </div>
+                    </form>
+                }
+                else
+                {
+                    <p class="text-muted small mb-0">You can log time on tasks assigned to you.</p>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Details</div>
+            <div class="card-body small">
+                <dl class="row mb-0">
+                    <dt class="col-5">Project</dt>
+                    <dd class="col-7">
+                        @if (t.Project is not null)
+                        {
+                            <a asp-page="/Projects/Details" asp-route-id="@t.ProjectId">@t.Project.Name</a>
+                            @if (t.Project.DepartmentId != t.DepartmentId)
+                            {
+                                <div class="text-muted">Owned by @t.Project.Department.Name; this task is @t.Department.Name's part of it.</div>
+                            }
+                        }
+                        else
+                        {
+                            <span class="text-muted">Standalone</span>
+                        }
+                    </dd>
+                    <dt class="col-5">Department</dt><dd class="col-7">@t.Department.Name</dd>
+                    <dt class="col-5">Assignee</dt><dd class="col-7">@(t.Assignee?.DisplayName ?? "Unassigned")</dd>
+                    <dt class="col-5">Due</dt><dd class="col-7 @(overdue ? "text-danger fw-semibold" : "")">@Ui.Day(t.DueDate)</dd>
+                    <dt class="col-5">Created by</dt><dd class="col-7">@Ui.AuthorName(t.CreatedBy) <span class="text-muted">@Ui.When(t.CreatedAt)</span></dd>
+                    <dt class="col-5">Updated</dt><dd class="col-7">@Ui.When(t.UpdatedAt)</dd>
+                    <dt class="col-5">First responded</dt><dd class="col-7">@Ui.When(t.FirstRespondedAt)</dd>
+                    <dt class="col-5">Completed</dt><dd class="col-7">@Ui.When(t.CompletedAt)</dd>
+                    @if (t.RecurringTaskDefinition is not null)
+                    {
+                        <dt class="col-5">Recurring</dt>
+                        <dd class="col-7"><a asp-page="/Recurring/Details" asp-route-id="@t.RecurringTaskDefinitionId">@t.RecurringTaskDefinition.Title</a></dd>
+                    }
+                    <dt class="col-5">Id</dt><dd class="col-7 text-muted key-box">@t.Id</dd>
+                </dl>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">History</div>
+            <div class="card-body py-2">
+                <ul class="list-unstyled activity-feed mb-0 small">
+                    @if (Model.Activity.Count == 0)
+                    {
+                        <li class="text-muted fst-italic">No history.</li>
+                    }
+                    @foreach (var a in Model.Activity)
+                    {
+                        <li>
+                            <span class="fw-semibold">@a.ActorName</span>
+                            @if (a.ActorType == ActorType.Api) { <span class="badge badge-claude">Claude</span> }
+                            @Ui.ActionLabel(a.Action) <span class="text-muted">· @Ui.When(a.Timestamp)</span>
+                            @if (a.Details is { Length: > 2 })
+                            {
+                                <div class="text-muted key-box" style="font-size:.75rem">@Ui.Truncate(a.Details, 180)</div>
+                            }
+                        </li>
+                    }
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,83 @@
+@page
+@model Orbit.Pages.Sprints.IndexModel
+@{
+    ViewData["Title"] = "Sprints";
+    var canManage = AccessPolicy.CanManageSprints(Model.Actor);
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+    <div>
+        <h1 class="h3 mb-0">Sprints</h1>
+        <div class="text-muted small">Company-wide planning windows. Only one sprint is active at a time.</div>
+    </div>
+    @if (canManage)
+    {
+        <a class="btn btn-primary btn-sm" asp-page="/Sprints/Create">New sprint</a>
+    }
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        @if (Model.Sprints.Count == 0)
+        {
+            <p class="text-muted fst-italic p-3 mb-0">No sprints yet.@(canManage ? " Create one to start planning." : "")</p>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr><th>Sprint</th><th>Status</th><th>Dates</th><th>Tasks (open/total)</th><th>Departments</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var s in Model.Sprints)
+                        {
+                            var pct = s.TotalTasks == 0 ? 0 : (int)Math.Round(s.DoneTasks * 100.0 / s.TotalTasks);
+                            <tr>
+                                <td>
+                                    <a asp-page="/Sprints/Details" asp-route-id="@s.Sprint.Id" class="fw-semibold text-decoration-none">@s.Sprint.Name</a>
+                                    @if (!string.IsNullOrWhiteSpace(s.Sprint.Goal))
+                                    {
+                                        <div class="small text-muted">@Ui.Truncate(s.Sprint.Goal, 100)</div>
+                                    }
+                                </td>
+                                <td><span class="badge @Ui.SprintStatusBadge(s.Sprint.Status)">@s.Sprint.Status</span></td>
+                                <td class="text-nowrap">@Ui.Day(s.Sprint.StartDate) - @Ui.Day(s.Sprint.EndDate)</td>
+                                <td>
+                                    @s.OpenTasks / @s.TotalTasks
+                                    <div class="progress mt-1" style="max-width:8rem"><div class="progress-bar bg-success" role="progressbar" style="width:@pct%"></div></div>
+                                </td>
+                                <td>
+                                    @foreach (var d in s.ByDepartment)
+                                    {
+                                        <span class="badge text-bg-light border">@d.Name @d.Count</span>
+                                    }
+                                </td>
+                                <td class="text-end text-nowrap">
+                                    @if (s.Sprint.Status == SprintStatus.Active)
+                                    {
+                                        <a class="btn btn-sm btn-outline-primary" asp-page="/Sprints/Board" asp-route-id="@s.Sprint.Id">Board</a>
+                                    }
+                                    @if (canManage && s.Sprint.Status == SprintStatus.Planned)
+                                    {
+                                        <form method="post" asp-page-handler="Start" asp-route-id="@s.Sprint.Id" class="d-inline"
+                                              data-confirm="Start this sprint? If another sprint is active it will be completed and its open tasks rolled forward into this one.">
+                                            <button class="btn btn-sm btn-success" type="submit">Start</button>
+                                        </form>
+                                    }
+                                    @if (canManage && s.Sprint.Status == SprintStatus.Active)
+                                    {
+                                        <form method="post" asp-page-handler="Complete" asp-route-id="@s.Sprint.Id" class="d-inline"
+                                              data-confirm="Complete this sprint? Open tasks will return to the backlog.">
+                                            <button class="btn btn-sm btn-outline-dark" type="submit">Complete</button>
+                                        </form>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>

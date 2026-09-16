@@ -1,0 +1,19 @@
+@page
+@model Orbit.Pages.Projects.CreateModel
+@{
+    ViewData["Title"] = "New project";
+    ViewData["Form"] = Model.Form;
+}
+
+<h1 class="h3 mb-3">New project</h1>
+<div class="card">
+    <div class="card-body">
+        <form method="post">
+            <partial name="_ProjectFormFields" model="Model.Lookups" view-data="ViewData" />
+            <div class="mt-4 d-flex gap-2">
+                <button type="submit" class="btn btn-primary">Create project</button>
+                <a class="btn btn-outline-secondary" asp-page="/Projects/Index">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>

@@ -1,0 +1,59 @@
+@page
+@model Orbit.Pages.Admin.ApiKeys.IndexModel
+@{
+    ViewData["Title"] = "API keys";
+    var mcpUrl = $"{Request.Scheme}://{Request.Host}/mcp";
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+    <div>
+        <h1 class="h3 mb-0">API keys</h1>
+        <div class="text-muted small">Keys authenticate Claude (and other automations) against the MCP server. Each key acts with the role and department it was issued with.</div>
+    </div>
+    <a class="btn btn-primary btn-sm" asp-page="/Admin/ApiKeys/Create">New API key</a>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body small">
+        <div><span class="fw-semibold">MCP endpoint:</span> <code>@mcpUrl</code> (Streamable HTTP)</div>
+        <div><span class="fw-semibold">Authentication:</span> <code>Authorization: Bearer &lt;key&gt;</code></div>
+        <div class="text-muted mt-1">In a Claude Project connector, use the endpoint above and supply the key as a bearer token.</div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        @if (Model.Keys.Count == 0)
+        {
+            <p class="text-muted fst-italic p-3 mb-0">No API keys yet.</p>
+        }
+        else
+        {
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light"><tr><th>Name</th><th>Key</th><th>Role</th><th>Department</th><th>Created</th><th>Last used</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var k in Model.Keys)
+                    {
+                        <tr class="@(k.IsRevoked ? "text-muted" : "")">
+                            <td class="fw-semibold">@k.Name</td>
+                            <td><code>@k.Prefix...</code></td>
+                            <td><span class="badge @Ui.RoleBadge(k.Role)">@k.Role.Label()</span></td>
+                            <td>@(k.Department?.Name ?? "(all)")</td>
+                            <td>@Ui.When(k.CreatedAt)</td>
+                            <td>@Ui.When(k.LastUsedAt)</td>
+                            <td>@if (k.IsRevoked) { <span class="badge text-bg-secondary">Revoked @Ui.Day(DateOnly.FromDateTime(k.RevokedAt!.Value))</span> } else { <span class="badge text-bg-success">Active</span> }</td>
+                            <td class="text-end">
+                                @if (!k.IsRevoked)
+                                {
+                                    <form method="post" asp-page-handler="Revoke" asp-route-id="@k.Id" data-confirm="Revoke this key? Any integration using it will stop working immediately.">
+                                        <button class="btn btn-sm btn-outline-danger" type="submit">Revoke</button>
+                                    </form>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>

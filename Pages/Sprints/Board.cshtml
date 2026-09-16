@@ -1,0 +1,90 @@
+@page "{id:guid}"
+@model Orbit.Pages.Sprints.BoardModel
+@{
+    var s = Model.Board.Sprint;
+    ViewData["Title"] = $"{s.Name} board";
+    var returnUrl = Request.Path.ToString();
+    var today = DateOnly.FromDateTime(DateTime.UtcNow);
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Sprints/Index">Sprints</a></li>
+        <li class="breadcrumb-item"><a asp-page="/Sprints/Details" asp-route-id="@s.Id">@s.Name</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Board</li>
+    </ol>
+</nav>
+
+<div class="d-flex flex-wrap justify-content-between align-items-end mb-3 gap-2">
+    <div>
+        <h1 class="h3 mb-0">@s.Name <span class="badge @Ui.SprintStatusBadge(s.Status) fs-6 align-middle">@s.Status</span></h1>
+        <div class="text-muted small">@Ui.Day(s.StartDate) to @Ui.Day(s.EndDate)@(string.IsNullOrWhiteSpace(s.Goal) ? "" : $" · {s.Goal}")</div>
+    </div>
+    <a class="btn btn-outline-secondary btn-sm" asp-page="/Sprints/Details" asp-route-id="@s.Id">List view</a>
+</div>
+
+@if (s.Status != SprintStatus.Active)
+{
+    <div class="alert alert-secondary py-2">This sprint is not active; the board is read-only context.</div>
+}
+
+<div class="kanban">
+    @foreach (var col in Model.Board.Columns)
+    {
+        <div class="kanban-column">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="fw-semibold">@col.Title</span>
+                <span class="badge text-bg-secondary">@col.Tasks.Count</span>
+            </div>
+            @foreach (var t in col.Tasks)
+            {
+                var canView = AccessPolicy.CanViewTask(Model.Actor, t);
+                var statuses = Ui.AllowedStatuses(Model.Actor, t);
+                var overdue = t.IsOverdue(today);
+                <div class="kanban-card">
+                    <div class="mb-1">
+                        @if (canView)
+                        {
+                            <a asp-page="/Tasks/Details" asp-route-id="@t.Id" class="fw-semibold text-decoration-none @(overdue ? "task-title-overdue" : "")">@t.Title</a>
+                        }
+                        else
+                        {
+                            <span class="fw-semibold">@t.Title</span>
+                        }
+                    </div>
+                    <div class="tags d-flex flex-wrap gap-1 mb-1">
+                        <span class="badge text-bg-light border">@t.Department.Name</span>
+                        @if (t.Project is not null)
+                        {
+                            <span class="badge text-bg-light border">@t.Project.Name</span>
+                        }
+                        <span class="badge @Ui.PriorityBadge(t.Priority)">@t.Priority</span>
+                        @if (t.Status == TaskItemStatus.Cancelled)
+                        {
+                            <span class="badge text-bg-dark">Cancelled</span>
+                        }
+                        @if (t.Source == TaskSource.Api)
+                        {
+                            <span class="badge badge-claude">Claude</span>
+                        }
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center small text-muted">
+                        <span>@(t.Assignee?.DisplayName ?? "Unassigned")</span>
+                        <span class="@(overdue ? "text-danger fw-semibold" : "")">@Ui.Day(t.DueDate)</span>
+                    </div>
+                    @if (canView && statuses.Count > 1)
+                    {
+                        <form method="post" asp-page="/Tasks/Status" asp-route-id="@t.Id" asp-route-returnUrl="@returnUrl" class="mt-2">
+                            <select name="status" class="form-select form-select-sm js-autosubmit" aria-label="Move to">
+                                @foreach (var st in statuses)
+                                {
+                                    <option value="@st" selected="@(st == t.Status)">@st.Label()</option>
+                                }
+                            </select>
+                        </form>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>

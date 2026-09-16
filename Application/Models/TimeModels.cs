@@ -1,0 +1,31 @@
+using Orbit.Data.Entities;
+
+namespace Orbit.Application.Models;
+
+public sealed class TimeEntryInput
+{
+    public Guid TaskId { get; set; }
+    /// <summary>Defaults to the caller. Admins may log on behalf of others.</summary>
+    public Guid? UserId { get; set; }
+    public DateOnly Date { get; set; }
+    public int DurationMinutes { get; set; }
+    public string? Note { get; set; }
+}
+
+public sealed record MyTimeSummary(IReadOnlyList<TimeEntry> Entries, int TotalMinutes, DateOnly From, DateOnly To)
+{
+    public IReadOnlyList<(DateOnly Date, int Minutes)> ByDay =>
+        Entries.GroupBy(e => e.Date).OrderByDescending(g => g.Key)
+            .Select(g => (g.Key, g.Sum(e => e.DurationMinutes))).ToList();
+}
+
+public static class TimeFormat
+{
+    public static string Minutes(int minutes)
+    {
+        if (minutes <= 0) return "0m";
+        var h = minutes / 60;
+        var m = minutes % 60;
+        return h == 0 ? $"{m}m" : m == 0 ? $"{h}h" : $"{h}h {m}m";
+    }
+}

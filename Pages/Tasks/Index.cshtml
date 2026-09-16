@@ -1,0 +1,96 @@
+@page
+@model Orbit.Pages.Tasks.IndexModel
+@{
+    ViewData["Title"] = "Tasks";
+    var f = Model.Filter;
+    var statusItems = Ui.EnumItems<TaskItemStatus>(f.Status, "All", s => s.Label());
+    var priorityItems = Ui.EnumItems<TaskPriority>(f.Priority, "All");
+    var sourceItems = Ui.EnumItems<TaskSource>(f.Source, "All", Ui.SourceLabel);
+    var rows = new TaskRowsVm { Tasks = Model.Result.Items, Actor = Model.Actor, ReturnUrl = Request.Path + Request.QueryString, ShowDepartment = Model.Actor.IsSystemAdmin, ShowSprint = true, EmptyMessage = "No tasks match these filters." };
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+    <h1 class="h3 mb-0">Tasks <span class="text-muted fs-6">@Model.Result.TotalCount</span></h1>
+    <a class="btn btn-primary btn-sm" asp-page="/Tasks/Create">New task</a>
+</div>
+
+<form method="get" class="card mb-3">
+    <div class="card-body py-2">
+        <div class="row g-2 align-items-end">
+            <div class="col-sm-6 col-lg-3">
+                <label class="form-label small mb-0">Search</label>
+                <input class="form-control form-control-sm" name="Search" value="@f.Search" placeholder="title or description" />
+            </div>
+            @if (Model.Actor.IsSystemAdmin)
+            {
+                <div class="col-sm-6 col-lg-2">
+                    <label class="form-label small mb-0">Department</label>
+                    <select class="form-select form-select-sm" name="DepartmentId">
+                        <option value="">All</option>
+                        @foreach (var i in Model.DepartmentItems) { <option value="@i.Value" selected="@i.Selected">@i.Text</option> }
+                    </select>
+                </div>
+            }
+            <div class="col-sm-6 col-lg-2">
+                <label class="form-label small mb-0">Project</label>
+                <select class="form-select form-select-sm" name="ProjectId">
+                    <option value="">All</option>
+                    @foreach (var i in Model.ProjectItems) { <option value="@i.Value" selected="@i.Selected">@i.Text</option> }
+                </select>
+            </div>
+            <div class="col-sm-6 col-lg-2">
+                <label class="form-label small mb-0">Status</label>
+                <select class="form-select form-select-sm" name="Status" asp-items="statusItems"></select>
+            </div>
+            <div class="col-sm-6 col-lg-2">
+                <label class="form-label small mb-0">Assignee</label>
+                <select class="form-select form-select-sm" name="AssigneeId">
+                    <option value="">All</option>
+                    @foreach (var i in Model.AssigneeItems) { <option value="@i.Value" selected="@i.Selected">@i.Text</option> }
+                </select>
+            </div>
+            <div class="col-sm-6 col-lg-1">
+                <label class="form-label small mb-0">Priority</label>
+                <select class="form-select form-select-sm" name="Priority" asp-items="priorityItems"></select>
+            </div>
+            <div class="col-sm-6 col-lg-2">
+                <label class="form-label small mb-0">Source</label>
+                <select class="form-select form-select-sm" name="Source" asp-items="sourceItems"></select>
+            </div>
+            <div class="col-sm-6 col-lg-2">
+                <label class="form-label small mb-0">Due after</label>
+                <input type="date" class="form-control form-control-sm" name="DueAfter" value="@(f.DueAfter?.ToString("yyyy-MM-dd"))" />
+            </div>
+            <div class="col-sm-6 col-lg-2">
+                <label class="form-label small mb-0">Due before</label>
+                <input type="date" class="form-control form-control-sm" name="DueBefore" value="@(f.DueBefore?.ToString("yyyy-MM-dd"))" />
+            </div>
+            <div class="col-sm-6 col-lg-2">
+                <div class="form-check mt-3">
+                    <input class="form-check-input" type="checkbox" name="OpenOnly" value="true" id="openOnly" checked="@f.OpenOnly" />
+                    <label class="form-check-label small" for="openOnly">Open only</label>
+                </div>
+            </div>
+            <div class="col-auto">
+                <button class="btn btn-sm btn-outline-primary" type="submit">Filter</button>
+                <a class="btn btn-sm btn-link" asp-page="/Tasks/Index">Reset</a>
+            </div>
+        </div>
+    </div>
+</form>
+
+<div class="card">
+    <div class="card-body p-0 p-sm-2">
+        <partial name="_TaskRows" model="rows" />
+    </div>
+    @if (Model.Result.TotalPages > 1)
+    {
+        <div class="card-footer d-flex justify-content-between align-items-center small">
+            <span>Page @Model.Result.Page of @Model.Result.TotalPages</span>
+            <div>
+                @if (Model.Result.HasPrevious) { <a class="btn btn-sm btn-outline-secondary" href="@Model.PageUrl(Model.Result.Page - 1)">Previous</a> }
+                @if (Model.Result.HasNext) { <a class="btn btn-sm btn-outline-secondary" href="@Model.PageUrl(Model.Result.Page + 1)">Next</a> }
+            </div>
+        </div>
+    }
+</div>

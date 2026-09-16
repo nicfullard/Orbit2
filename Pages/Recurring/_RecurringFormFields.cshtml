@@ -1,0 +1,81 @@
+@using Orbit.Pages.Recurring
+@using Orbit.Pages.Tasks
+@model TaskFormLookups
+@{
+    var form = ViewData["Form"] as RecurringForm ?? new RecurringForm();
+    var priorityItems = Ui.EnumItems<TaskPriority>(form.Priority);
+}
+
+<div asp-validation-summary="ModelOnly" class="text-danger mb-2"></div>
+
+<div class="mb-3">
+    <label class="form-label" for="Form_Title">Title</label>
+    <input class="form-control" id="Form_Title" name="Form.Title" value="@form.Title" maxlength="300" required />
+</div>
+<div class="mb-3">
+    <label class="form-label" for="Form_Description">Description</label>
+    <textarea class="form-control" id="Form_Description" name="Form.Description" rows="3">@form.Description</textarea>
+</div>
+<div class="row g-3">
+    <div class="col-md-6">
+        <label class="form-label" for="Form_ProjectId">Project</label>
+        <select class="form-select js-project-select" id="Form_ProjectId" name="Form.ProjectId" data-department-target="#Form_DepartmentId">
+            @foreach (var o in Model.Projects)
+            {
+                <option value="@o.Value" data-department="@o.DepartmentId" selected="@o.Selected">@o.Text</option>
+            }
+        </select>
+    </div>
+    @if (Model.Actor.IsSystemAdmin)
+    {
+        <div class="col-md-6">
+            <label class="form-label" for="Form_DepartmentId">Department</label>
+            <select class="form-select js-department-select" id="Form_DepartmentId" name="Form.DepartmentId" asp-items="Model.Departments" data-assignee-target="#Form_AssigneeId"></select>
+            <div class="form-text">Default: the project's department, or your own when there is no project. Generated tasks belong to this department.</div>
+        </div>
+    }
+    else
+    {
+        <input type="hidden" name="Form.DepartmentId" value="@form.DepartmentId" />
+    }
+</div>
+<div class="row g-3 mt-0">
+    <div class="col-md-4">
+        <label class="form-label" for="Form_Priority">Priority</label>
+        <select class="form-select" id="Form_Priority" name="Form.Priority" asp-items="priorityItems"></select>
+    </div>
+    <div class="col-md-4">
+        <label class="form-label" for="Form_AssigneeId">Assignee</label>
+        <select class="form-select" id="Form_AssigneeId" name="Form.AssigneeId">
+            @foreach (var o in Model.Assignees)
+            {
+                <option value="@o.Value" data-department="@o.DepartmentId" selected="@o.Selected">@o.Text</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-4">
+        <label class="form-label" for="Form_LeadTimeDays">Lead time (days)</label>
+        <input type="number" class="form-control" id="Form_LeadTimeDays" name="Form.LeadTimeDays" value="@form.LeadTimeDays" min="0" max="365" required />
+        <div class="form-text">How many days before the due date the task is created.</div>
+    </div>
+</div>
+<div class="row g-3 mt-0">
+    <div class="col-md-8">
+        <label class="form-label" for="Form_RecurrenceRule">Recurrence rule <span class="text-muted">(iCal RRULE)</span></label>
+        <input class="form-control key-box" id="Form_RecurrenceRule" name="Form.RecurrenceRule" value="@form.RecurrenceRule" maxlength="500" required />
+        <div class="form-text">
+            Examples:
+            <code>FREQ=DAILY</code> every day ·
+            <code>FREQ=WEEKLY;BYDAY=MO</code> every Monday ·
+            <code>FREQ=WEEKLY;INTERVAL=2;BYDAY=FR</code> every other Friday ·
+            <code>FREQ=MONTHLY;BYMONTHDAY=1</code> 1st of the month ·
+            <code>FREQ=MONTHLY;BYDAY=-1FR</code> last Friday of the month ·
+            <code>FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=31</code> every 31 March
+        </div>
+    </div>
+    <div class="col-md-4">
+        <label class="form-label" for="Form_StartDate">Series start date</label>
+        <input type="date" class="form-control" id="Form_StartDate" name="Form.StartDate" value="@form.StartDate.ToString("yyyy-MM-dd")" required />
+        <div class="form-text">Occurrences are computed from this date.</div>
+    </div>
+</div>

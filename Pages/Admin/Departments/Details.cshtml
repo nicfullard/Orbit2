@@ -1,0 +1,96 @@
+@page "{id:guid}"
+@model Orbit.Pages.Admin.Departments.DetailsModel
+@{
+    var d = Model.Detail.Department;
+    ViewData["Title"] = d.Name;
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Admin/Departments/Index">Departments</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@d.Name</li>
+    </ol>
+</nav>
+
+<div class="d-flex flex-wrap justify-content-between align-items-start mb-3 gap-2">
+    <div>
+        <h1 class="h3 mb-1">@d.Name @if (d.IsArchived) { <span class="badge text-bg-secondary fs-6 align-middle">Archived</span> }</h1>
+        @if (!string.IsNullOrWhiteSpace(d.Description))
+        {
+            <div class="text-muted">@d.Description</div>
+        }
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary btn-sm" asp-page="/Tasks/Index" asp-route-DepartmentId="@d.Id" asp-route-OpenOnly="true">Open tasks</a>
+        <a class="btn btn-outline-secondary btn-sm" asp-page="/Projects/Index" asp-route-DepartmentId="@d.Id">Projects</a>
+        <a class="btn btn-outline-primary btn-sm" asp-page="/Admin/Departments/Edit" asp-route-id="@d.Id">Edit</a>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-4"><div class="stat-tile"><div class="stat-value">@Model.Detail.Users.Count(u => u.IsActive)</div><div class="stat-label">Active users</div></div></div>
+    <div class="col-4"><div class="stat-tile"><div class="stat-value">@Model.Detail.Projects.Count(p => p.Project.Status == ProjectStatus.Active)</div><div class="stat-label">Active projects</div></div></div>
+    <div class="col-4"><div class="stat-tile"><div class="stat-value">@Model.Detail.OpenTaskCount</div><div class="stat-label">Open tasks (of @Model.Detail.TotalTaskCount)</div></div></div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="fw-semibold">Users</span>
+                <a class="small" asp-page="/Admin/Users/Create">Create user</a>
+            </div>
+            <div class="card-body p-0">
+                @if (Model.Detail.Users.Count == 0)
+                {
+                    <p class="text-muted fst-italic p-3 mb-0">No users in this department.</p>
+                }
+                else
+                {
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light"><tr><th>Name</th><th>Role</th><th>Status</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var u in Model.Detail.Users)
+                            {
+                                <tr class="@(u.IsActive ? "" : "text-muted")">
+                                    <td>@u.DisplayName <div class="small text-muted">@u.Email</div></td>
+                                    <td><span class="badge @Ui.RoleBadge(u.Role)">@u.Role.Label()</span></td>
+                                    <td>@(u.IsActive ? "Active" : "Deactivated")</td>
+                                    <td class="text-end"><a asp-page="/Admin/Users/Edit" asp-route-id="@u.Id" class="small">Manage</a></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header fw-semibold">Projects</div>
+            <div class="card-body p-0">
+                @if (Model.Detail.Projects.Count == 0)
+                {
+                    <p class="text-muted fst-italic p-3 mb-0">No projects in this department.</p>
+                }
+                else
+                {
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light"><tr><th>Project</th><th>Status</th><th>Owner</th><th>Open / total</th></tr></thead>
+                        <tbody>
+                            @foreach (var p in Model.Detail.Projects)
+                            {
+                                <tr>
+                                    <td><a asp-page="/Projects/Details" asp-route-id="@p.Project.Id" class="text-decoration-none">@p.Project.Name</a></td>
+                                    <td><span class="badge @Ui.ProjectStatusBadge(p.Project.Status)">@p.Project.Status.Label()</span></td>
+                                    <td>@p.Project.Owner.DisplayName</td>
+                                    <td>@p.OpenTasks / @p.TotalTasks</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,13 @@
+@page
+@model Orbit.Areas.Identity.Pages.Account.RegisterModel
+@{
+    ViewData["Title"] = "Registration disabled";
+}
+
+<div class="card mx-auto mt-4" style="max-width:32rem">
+    <div class="card-body">
+        <h1 class="h4">Self-registration is disabled</h1>
+        <p class="text-muted">Orbit accounts are created by a System Admin. Ask your administrator for an account; once you have one, sign in below.</p>
+        <a class="btn btn-primary" asp-area="Identity" asp-page="/Account/Login">Go to sign in</a>
+    </div>
+</div>

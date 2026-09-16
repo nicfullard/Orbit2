@@ -1,0 +1,23 @@
+@page
+@model Orbit.Pages.Reports.IndexModel
+@{
+    ViewData["Title"] = "Reports";
+}
+
+<h1 class="h3 mb-1">Reports</h1>
+<div class="text-muted small mb-3">Each report takes a date range and optional project / department filters, renders on screen and exports to PDF.</div>
+
+<div class="row g-3">
+    @foreach (var r in Model.Reports)
+    {
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h2 class="h5">@r.Title</h2>
+                    <p class="text-muted">@r.Description</p>
+                    <a class="btn btn-outline-primary btn-sm" asp-page="/Reports/View" asp-route-kind="@r.Kind" asp-route-from="@Model.DefaultFrom.ToString("yyyy-MM-dd")" asp-route-to="@Model.DefaultTo.ToString("yyyy-MM-dd")">Open (last 30 days)</a>
+                </div>
+            </div>
+        </div>
+    }
+</div>

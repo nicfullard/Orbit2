@@ -1,0 +1,104 @@
+@page "{id:guid}"
+@model Orbit.Pages.Admin.Users.EditModel
+@{
+    var u = Model.Account;
+    ViewData["Title"] = u.DisplayName;
+    var roleItems = Ui.EnumItems<OrbitRole>(Model.Form.Role, null, r => r.Label());
+    var isSelf = Model.Actor.UserId == u.Id;
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Admin/Users/Index">Users</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@u.DisplayName</li>
+    </ol>
+</nav>
+
+<div class="d-flex flex-wrap justify-content-between align-items-start mb-3 gap-2">
+    <div>
+        <h1 class="h3 mb-1">@u.DisplayName</h1>
+        <div class="text-muted">@u.Email · <span class="badge @Ui.RoleBadge(u.Role)">@u.Role.Label()</span>
+            @if (u.IsActive) { <span class="badge text-bg-success">Active</span> } else { <span class="badge text-bg-secondary">Deactivated</span> }
+        </div>
+    </div>
+    <div>
+        @if (u.IsActive && !isSelf)
+        {
+            <form method="post" asp-page-handler="Deactivate" asp-route-id="@u.Id" data-confirm="Deactivate this user? They will be signed out and unable to sign in. Their tasks, comments and history are kept.">
+                <button class="btn btn-outline-danger btn-sm" type="submit">Deactivate</button>
+            </form>
+        }
+        else if (!u.IsActive)
+        {
+            <form method="post" asp-page-handler="Reactivate" asp-route-id="@u.Id">
+                <button class="btn btn-outline-success btn-sm" type="submit">Reactivate</button>
+            </form>
+        }
+    </div>
+</div>
+
+@if (Model.ResetLink is not null)
+{
+    <div class="alert alert-info">
+        <div class="fw-semibold mb-1">One-time password reset link</div>
+        <div class="d-flex gap-2 align-items-start">
+            <textarea class="form-control key-box" id="resetLink" rows="2" readonly>@Model.ResetLink</textarea>
+            <button class="btn btn-outline-secondary btn-sm" type="button" data-copy-target="#resetLink">Copy</button>
+        </div>
+        <div class="small mt-1">Give this to the user. It is not shown again.</div>
+    </div>
+}
+
+<div class="row g-3">
+    <div class="col-lg-7">
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Profile, role and department</div>
+            <div class="card-body">
+                <form method="post" asp-route-id="@u.Id">
+                    <div asp-validation-summary="ModelOnly" class="text-danger mb-2"></div>
+                    <input type="hidden" name="Form.Email" value="@u.Email" />
+                    <div class="row g-3">
+                        <div class="col-md-12">
+                            <label class="form-label" for="Form_DisplayName">Display name</label>
+                            <input class="form-control" id="Form_DisplayName" name="Form.DisplayName" value="@Model.Form.DisplayName" maxlength="200" required />
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label" for="Form_Role">Role</label>
+                            <select class="form-select" id="Form_Role" name="Form.Role" asp-items="roleItems"></select>
+                        </div>
+                        <div class="col-md-7">
+                            <label class="form-label" for="Form_DepartmentId">Department</label>
+                            <select class="form-select" id="Form_DepartmentId" name="Form.DepartmentId" asp-items="Model.DepartmentItems"></select>
+                        </div>
+                    </div>
+                    <div class="mt-3 d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">Save</button>
+                        <a class="btn btn-outline-secondary" asp-page="/Admin/Users/Index">Back</a>
+                    </div>
+                    @if (isSelf)
+                    {
+                        <div class="form-text mt-2">This is your own account. At least one active System Admin must always remain.</div>
+                    }
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Password</div>
+            <div class="card-body">
+                <p class="small text-muted">Either generate a one-time reset link (Identity's standard reset flow) or set a temporary password to hand over directly.</p>
+                <form method="post" asp-page-handler="ResetLink" asp-route-id="@u.Id" class="mb-3">
+                    <button class="btn btn-outline-primary btn-sm" type="submit" @(u.IsActive ? "" : "disabled")>Generate reset link</button>
+                </form>
+                <form method="post" asp-page-handler="SetPassword" asp-route-id="@u.Id" class="d-flex gap-2 align-items-end">
+                    <div class="flex-grow-1">
+                        <label class="form-label small mb-0" for="TemporaryPassword">Temporary password</label>
+                        <input type="text" class="form-control form-control-sm" id="TemporaryPassword" name="TemporaryPassword" autocomplete="off" required />
+                    </div>
+                    <button class="btn btn-outline-secondary btn-sm" type="submit" @(u.IsActive ? "" : "disabled")>Set</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,93 @@
+@page "{id:guid}"
+@model Orbit.Pages.Recurring.DetailsModel
+@{
+    var d = Model.Definition;
+    ViewData["Title"] = d.Title;
+    var rows = new TaskRowsVm { Tasks = Model.Generated, Actor = Model.Actor, ReturnUrl = Request.Path.ToString(), ShowDepartment = false, ShowProject = false, ShowSprint = true, EmptyMessage = "No tasks generated yet." };
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Recurring/Index">Recurring tasks</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@d.Title</li>
+    </ol>
+</nav>
+
+<div class="d-flex flex-wrap justify-content-between align-items-start mb-3 gap-2">
+    <div>
+        <h1 class="h3 mb-1">@d.Title</h1>
+        <div class="d-flex flex-wrap gap-1 align-items-center">
+            @if (d.Active) { <span class="badge text-bg-success">Active</span> } else { <span class="badge text-bg-secondary">Paused</span> }
+            <span class="badge @Ui.PriorityBadge(d.Priority)">@d.Priority</span>
+            <span class="badge text-bg-light border">@d.Department.Name</span>
+            @if (d.Project is not null)
+            {
+                <a asp-page="/Projects/Details" asp-route-id="@d.ProjectId" class="badge text-bg-light border text-decoration-none">@d.Project.Name</a>
+            }
+        </div>
+    </div>
+    @if (Model.CanEdit)
+    {
+        <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-outline-primary btn-sm" asp-page="/Recurring/Edit" asp-route-id="@d.Id">Edit</a>
+            <form method="post" asp-page-handler="Toggle" asp-route-id="@d.Id" asp-route-active="@(!d.Active)">
+                <button class="btn btn-outline-secondary btn-sm" type="submit">@(d.Active ? "Pause" : "Resume")</button>
+            </form>
+            @if (d.Active && d.NextRunDate is not null)
+            {
+                <form method="post" asp-page-handler="Generate" asp-route-id="@d.Id" data-confirm="Create the next task instance now (ignoring lead time)?">
+                    <button class="btn btn-outline-success btn-sm" type="submit">Generate next now</button>
+                </form>
+            }
+        </div>
+    }
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-7">
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Definition</div>
+            <div class="card-body">
+                <dl class="row mb-0 small">
+                    <dt class="col-4">Rule</dt><dd class="col-8"><code>@d.RecurrenceRule</code></dd>
+                    <dt class="col-4">Series start</dt><dd class="col-8">@Ui.Day(d.StartDate)</dd>
+                    <dt class="col-4">Next due</dt><dd class="col-8">@Ui.Day(d.NextRunDate)</dd>
+                    <dt class="col-4">Lead time</dt><dd class="col-8">@d.LeadTimeDays day(s) before due (task created @(d.NextRunDate is DateOnly n ? Ui.Day(n.AddDays(-d.LeadTimeDays)) : "-"))</dd>
+                    <dt class="col-4">Assignee</dt><dd class="col-8">@(d.Assignee?.DisplayName ?? "Unassigned")</dd>
+                    <dt class="col-4">Created by</dt><dd class="col-8">@Ui.AuthorName(d.CreatedBy) <span class="text-muted">@Ui.When(d.CreatedAt)</span></dd>
+                    <dt class="col-4">Last generated</dt><dd class="col-8">@Ui.When(d.LastGeneratedAt)</dd>
+                </dl>
+                @if (!string.IsNullOrWhiteSpace(d.Description))
+                {
+                    <hr />
+                    <div class="description-box">@d.Description</div>
+                }
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Generated tasks</div>
+            <div class="card-body p-0 p-sm-2">
+                <partial name="_TaskRows" model="rows" />
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Upcoming occurrences</div>
+            <ul class="list-group list-group-flush">
+                @if (Model.Upcoming.Count == 0)
+                {
+                    <li class="list-group-item text-muted fst-italic">@(d.Active ? "No further occurrences." : "Paused - resume to see upcoming dates.")</li>
+                }
+                @foreach (var date in Model.Upcoming)
+                {
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>@date.ToString("dddd, d MMMM yyyy")</span>
+                        <span class="text-muted small">task on @Ui.Day(date.AddDays(-d.LeadTimeDays))</span>
+                    </li>
+                }
+            </ul>
+        </div>
+    </div>
+</div>

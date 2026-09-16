@@ -1,0 +1,26 @@
+@page "{id:guid}"
+@model Orbit.Pages.Projects.EditModel
+@{
+    ViewData["Title"] = "Edit project";
+    ViewData["Form"] = Model.Form;
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Projects/Index">Projects</a></li>
+        <li class="breadcrumb-item"><a asp-page="/Projects/Details" asp-route-id="@Model.Project.Id">@Model.Project.Name</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Edit</li>
+    </ol>
+</nav>
+<h1 class="h3 mb-3">Edit project</h1>
+<div class="card">
+    <div class="card-body">
+        <form method="post">
+            <partial name="_ProjectFormFields" model="Model.Lookups" view-data="ViewData" />
+            <div class="mt-4 d-flex gap-2">
+                <button type="submit" class="btn btn-primary">Save</button>
+                <a class="btn btn-outline-secondary" asp-page="/Projects/Details" asp-route-id="@Model.Project.Id">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>

@@ -1,0 +1,101 @@
+@using Orbit.Pages.Tasks
+@model TaskFormLookups
+@{
+    var isEdit = ViewData["IsEdit"] as bool? ?? false;
+    var existing = ViewData["ExistingTask"] as TaskItem;
+    var form = ViewData["Form"] as TaskForm ?? new TaskForm();
+}
+
+<div asp-validation-summary="ModelOnly" class="text-danger mb-2"></div>
+
+<div class="mb-3">
+    <label class="form-label" for="Form_Title">Title</label>
+    <input class="form-control" id="Form_Title" name="Form.Title" value="@form.Title" maxlength="300" required />
+    <span class="text-danger field-validation-valid" data-valmsg-for="Form.Title" data-valmsg-replace="true"></span>
+</div>
+
+<div class="mb-3">
+    <label class="form-label" for="Form_Description">Description <span class="text-muted">(markdown-friendly)</span></label>
+    <textarea class="form-control" id="Form_Description" name="Form.Description" rows="5">@form.Description</textarea>
+</div>
+
+<div class="row g-3">
+    <div class="col-md-6">
+        <label class="form-label" for="Form_ProjectId">Project</label>
+        <select class="form-select js-project-select" id="Form_ProjectId" name="Form.ProjectId" data-department-target="#Form_DepartmentId">
+            @foreach (var o in Model.Projects)
+            {
+                <option value="@o.Value" data-department="@o.DepartmentId" selected="@o.Selected">@o.Text</option>
+            }
+        </select>
+        @if (Model.Actor.IsSystemAdmin)
+        {
+            <div class="form-text">Choosing a project sets the department to the project's own; change it below to file the task for another department.</div>
+        }
+        else
+        {
+            <div class="form-text">A task on a project belongs to that project's department.</div>
+        }
+    </div>
+    @if (Model.Actor.IsSystemAdmin)
+    {
+        <div class="col-md-6">
+            <label class="form-label" for="Form_DepartmentId">Department</label>
+            <select class="form-select js-department-select" id="Form_DepartmentId" name="Form.DepartmentId" asp-items="Model.Departments" data-assignee-target="#Form_AssigneeId"></select>
+            <div class="form-text">
+                The department that owns and works this task. Default: the project's department, or your own for a standalone task.
+                A project can hold tasks for several departments; each department sees and works its own.
+            </div>
+        </div>
+    }
+    else
+    {
+        <input type="hidden" name="Form.DepartmentId" value="@form.DepartmentId" />
+    }
+</div>
+
+<div class="row g-3 mt-0">
+    <div class="col-md-4">
+        <label class="form-label" for="Form_Priority">Priority</label>
+        <select class="form-select" id="Form_Priority" name="Form.Priority" asp-items="Ui.EnumItems<TaskPriority>(form.Priority)"></select>
+    </div>
+    <div class="col-md-4">
+        <label class="form-label" for="Form_AssigneeId">Assignee</label>
+        <select class="form-select" id="Form_AssigneeId" name="Form.AssigneeId">
+            @foreach (var o in Model.Assignees)
+            {
+                <option value="@o.Value" data-department="@o.DepartmentId" selected="@o.Selected">@o.Text</option>
+            }
+        </select>
+        @if (Model.Actor.IsSystemAdmin)
+        {
+            <div class="form-text">Must belong to the task's department (System Admins can be assigned anywhere).</div>
+        }
+    </div>
+    <div class="col-md-4">
+        <label class="form-label" for="Form_DueDate">Due date</label>
+        <input type="date" class="form-control" id="Form_DueDate" name="Form.DueDate" value="@(form.DueDate?.ToString("yyyy-MM-dd"))" />
+    </div>
+</div>
+
+<div class="row g-3 mt-0">
+    @if (isEdit)
+    {
+        <div class="col-md-4">
+            <label class="form-label" for="Form_Status">Status</label>
+            <select class="form-select" id="Form_Status" name="Form.Status" asp-items="Model.StatusItems(existing, form.Status)"></select>
+            @if (existing is not null && !Model.Actor.IsAdminFor(existing.DepartmentId))
+            {
+                <div class="form-text">Only a Department Admin or System Admin can set Done or Cancelled.</div>
+            }
+        </div>
+    }
+    else
+    {
+        <input type="hidden" name="Form.Status" value="Todo" />
+    }
+    <div class="col-md-4">
+        <label class="form-label" for="Form_SprintId">Sprint</label>
+        <select class="form-select" id="Form_SprintId" name="Form.SprintId" asp-items="Model.Sprints"></select>
+    </div>
+</div>

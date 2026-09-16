@@ -1,0 +1,50 @@
+@page
+@model Orbit.Pages.Admin.Users.CreateModel
+@{
+    ViewData["Title"] = "Create user";
+    var roleItems = Ui.EnumItems<OrbitRole>(Model.Form.Role, null, r => r.Label());
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Admin/Users/Index">Users</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Create</li>
+    </ol>
+</nav>
+<h1 class="h3 mb-3">Create user</h1>
+
+<div class="card" style="max-width:48rem">
+    <div class="card-body">
+        <form method="post">
+            <div asp-validation-summary="ModelOnly" class="text-danger mb-2"></div>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label" for="Form_Email">Email (sign-in name)</label>
+                    <input type="email" class="form-control" id="Form_Email" name="Form.Email" value="@Model.Form.Email" required />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="Form_DisplayName">Display name</label>
+                    <input class="form-control" id="Form_DisplayName" name="Form.DisplayName" value="@Model.Form.DisplayName" maxlength="200" required />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="Form_Role">Role</label>
+                    <select class="form-select" id="Form_Role" name="Form.Role" asp-items="roleItems"></select>
+                </div>
+                <div class="col-md-8">
+                    <label class="form-label" for="Form_DepartmentId">Department</label>
+                    <select class="form-select" id="Form_DepartmentId" name="Form.DepartmentId" asp-items="Model.DepartmentItems"></select>
+                    <div class="form-text">Required for Members and Department Admins.</div>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="Form_Password">Temporary password</label>
+                    <input type="text" class="form-control" id="Form_Password" name="Form.Password" value="@Model.Form.Password" required autocomplete="off" />
+                    <div class="form-text">At least 8 characters with upper, lower case and a digit. The user changes it after signing in.</div>
+                </div>
+            </div>
+            <div class="mt-4 d-flex gap-2">
+                <button type="submit" class="btn btn-primary">Create user</button>
+                <a class="btn btn-outline-secondary" asp-page="/Admin/Users/Index">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>

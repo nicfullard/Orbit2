@@ -1,0 +1,48 @@
+@page "{id:guid}"
+@model Orbit.Pages.Admin.Departments.EditModel
+@{
+    var d = Model.Department;
+    ViewData["Title"] = $"Edit {d.Name}";
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Admin/Departments/Index">Departments</a></li>
+        <li class="breadcrumb-item"><a asp-page="/Admin/Departments/Details" asp-route-id="@d.Id">@d.Name</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Edit</li>
+    </ol>
+</nav>
+<h1 class="h3 mb-3">Edit department</h1>
+<div class="card" style="max-width:40rem">
+    <div class="card-body">
+        <form method="post" asp-route-id="@d.Id">
+            <div asp-validation-summary="ModelOnly" class="text-danger mb-2"></div>
+            <div class="mb-3">
+                <label class="form-label" for="Name">Name</label>
+                <input class="form-control" id="Name" name="Name" value="@Model.Name" maxlength="200" required />
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="Description">Description</label>
+                <textarea class="form-control" id="Description" name="Description" rows="3" maxlength="2000">@Model.Description</textarea>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">Save</button>
+                <a class="btn btn-outline-secondary" asp-page="/Admin/Departments/Details" asp-route-id="@d.Id">Cancel</a>
+            </div>
+        </form>
+        <hr />
+        @if (d.IsArchived)
+        {
+            <form method="post" asp-page-handler="Archive" asp-route-id="@d.Id" asp-route-archived="false">
+                <button class="btn btn-outline-success btn-sm" type="submit">Restore department</button>
+                <span class="small text-muted ms-2">Archived @Ui.When(d.ArchivedAt)</span>
+            </form>
+        }
+        else
+        {
+            <form method="post" asp-page-handler="Archive" asp-route-id="@d.Id" asp-route-archived="true" data-confirm="Archive this department? It stops being offered for new users, projects and tasks; nothing is deleted.">
+                <button class="btn btn-outline-danger btn-sm" type="submit">Archive department</button>
+            </form>
+        }
+    </div>
+</div>

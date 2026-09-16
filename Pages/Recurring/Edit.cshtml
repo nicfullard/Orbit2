@@ -1,0 +1,26 @@
+@page "{id:guid}"
+@model Orbit.Pages.Recurring.EditModel
+@{
+    ViewData["Title"] = "Edit recurring task";
+    ViewData["Form"] = Model.Form;
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Recurring/Index">Recurring tasks</a></li>
+        <li class="breadcrumb-item"><a asp-page="/Recurring/Details" asp-route-id="@Model.Definition.Id">@Model.Definition.Title</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Edit</li>
+    </ol>
+</nav>
+<h1 class="h3 mb-3">Edit recurring task</h1>
+<div class="card">
+    <div class="card-body">
+        <form method="post">
+            <partial name="_RecurringFormFields" model="Model.Lookups" view-data="ViewData" />
+            <div class="mt-4 d-flex gap-2">
+                <button type="submit" class="btn btn-primary">Save</button>
+                <a class="btn btn-outline-secondary" asp-page="/Recurring/Details" asp-route-id="@Model.Definition.Id">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>

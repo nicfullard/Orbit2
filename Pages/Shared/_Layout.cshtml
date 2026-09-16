@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - Orbit</title>
+    <script type="importmap"></script>
+    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/Orbit.styles.css" asp-append-version="true" />
+</head>
+<body>
+    @{
+        var signedIn = User.Identity?.IsAuthenticated == true;
+        var isSystemAdmin = User.IsInRole(Roles.SystemAdmin);
+    }
+    <header>
+        <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-3">
+            <div class="container-fluid px-3 px-lg-4">
+                <a class="navbar-brand fw-semibold" asp-area="" asp-page="/Index">Orbit</a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target=".navbar-collapse" aria-controls="navbarSupportedContent"
+                        aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="navbar-collapse collapse d-lg-inline-flex justify-content-between">
+                    <ul class="navbar-nav flex-grow-1">
+                        @if (signedIn)
+                        {
+                            <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Index">Dashboard</a></li>
+                            <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Tasks/My">My Tasks</a></li>
+                            <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Tasks/Index">Tasks</a></li>
+                            <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Projects/Index">Projects</a></li>
+                            <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Backlog/Index">Backlog</a></li>
+                            <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Sprints/Index">Sprints</a></li>
+                            <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Recurring/Index">Recurring</a></li>
+                            <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Time/My">My Time</a></li>
+                            @if (isSystemAdmin)
+                            {
+                                <li class="nav-item dropdown">
+                                    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Admin</a>
+                                    <ul class="dropdown-menu">
+                                        <li><a class="dropdown-item" asp-area="" asp-page="/Admin/Users/Index">Users</a></li>
+                                        <li><a class="dropdown-item" asp-area="" asp-page="/Admin/Departments/Index">Departments</a></li>
+                                        <li><a class="dropdown-item" asp-area="" asp-page="/Admin/ApiKeys/Index">API Keys</a></li>
+                                        <li><a class="dropdown-item" asp-area="" asp-page="/Admin/Activity/Index">Activity Log</a></li>
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li><a class="dropdown-item" asp-area="" asp-page="/Reports/Index">Reports</a></li>
+                                    </ul>
+                                </li>
+                            }
+                        }
+                    </ul>
+                    <partial name="_LoginPartial" />
+                </div>
+            </div>
+        </nav>
+    </header>
+    <div class="container-fluid px-3 px-lg-4">
+        <main role="main" class="pb-4">
+            @if (TempData["Success"] is string success)
+            {
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    @success
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            }
+            @if (TempData["Error"] is string error)
+            {
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    @error
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            }
+            @RenderBody()
+        </main>
+    </div>
+
+    <footer class="border-top footer text-muted">
+        <div class="container-fluid px-3 px-lg-4">
+            &copy; @DateTime.Now.Year - Orbit - <a asp-area="" asp-page="/Privacy">Privacy</a>
+        </div>
+    </footer>
+
+    <script src="~/lib/jquery/dist/jquery.min.js"></script>
+    <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="~/js/site.js" asp-append-version="true"></script>
+
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

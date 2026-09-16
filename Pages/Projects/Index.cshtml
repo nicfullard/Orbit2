@@ -1,0 +1,104 @@
+@page
+@model Orbit.Pages.Projects.IndexModel
+@{
+    ViewData["Title"] = "Projects";
+    var f = Model.Filter;
+    var statusItems = Ui.EnumItems<ProjectStatus>(f.Status, "All (not archived)", s => s.Label());
+    var actor = Model.Actor;
+    // Non-admins also see other departments' projects that have tasks for their department (§6.2.1), marked as shared.
+    var hasShared = !actor.IsSystemAdmin && Model.Projects.Any(p => p.Project.DepartmentId != actor.DepartmentId);
+    var showDepartment = actor.IsSystemAdmin || hasShared;
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+    <div>
+        <h1 class="h3 mb-0">Projects <span class="text-muted fs-6">@Model.Projects.Count</span></h1>
+        @if (hasShared)
+        {
+            <div class="text-muted small">Projects marked <span class="badge text-bg-info">Shared</span> are owned by another department but have tasks for yours.</div>
+        }
+    </div>
+    <a class="btn btn-primary btn-sm" asp-page="/Projects/Create">New project</a>
+</div>
+
+<form method="get" class="card mb-3">
+    <div class="card-body py-2">
+        <div class="row g-2 align-items-end">
+            <div class="col-sm-4 col-lg-3">
+                <label class="form-label small mb-0">Search</label>
+                <input class="form-control form-control-sm" name="Search" value="@f.Search" />
+            </div>
+            @if (actor.IsSystemAdmin)
+            {
+                <div class="col-sm-4 col-lg-2">
+                    <label class="form-label small mb-0">Department</label>
+                    <select class="form-select form-select-sm" name="DepartmentId">
+                        <option value="">All</option>
+                        @foreach (var i in Model.DepartmentItems) { <option value="@i.Value" selected="@i.Selected">@i.Text</option> }
+                    </select>
+                </div>
+            }
+            <div class="col-sm-4 col-lg-2">
+                <label class="form-label small mb-0">Status</label>
+                <select class="form-select form-select-sm" name="Status" asp-items="statusItems"></select>
+            </div>
+            <div class="col-auto">
+                <button class="btn btn-sm btn-outline-primary" type="submit">Filter</button>
+                <a class="btn btn-sm btn-link" asp-page="/Projects/Index">Reset</a>
+            </div>
+        </div>
+    </div>
+</form>
+
+<div class="card">
+    <div class="card-body p-0">
+        @if (Model.Projects.Count == 0)
+        {
+            <p class="text-muted fst-italic p-3 mb-0">No projects.</p>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Project</th>
+                            @if (showDepartment) { <th>Department</th> }
+                            <th>Status</th>
+                            <th>Owner</th>
+                            <th>Tasks (open/total)</th>
+                            <th style="min-width:10rem">Progress</th>
+                            <th>Target</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var p in Model.Projects)
+                        {
+                            var shared = !actor.IsSystemAdmin && p.Project.DepartmentId != actor.DepartmentId;
+                            <tr>
+                                <td><a asp-page="/Projects/Details" asp-route-id="@p.Project.Id" class="fw-semibold text-decoration-none">@p.Project.Name</a></td>
+                                @if (showDepartment)
+                                {
+                                    <td>
+                                        <span class="badge text-bg-light border">@p.Project.Department.Name</span>
+                                        @if (shared) { <span class="badge text-bg-info">Shared</span> }
+                                    </td>
+                                }
+                                <td><span class="badge @Ui.ProjectStatusBadge(p.Project.Status)">@p.Project.Status.Label()</span></td>
+                                <td>@p.Project.Owner.DisplayName</td>
+                                <td>@p.OpenTasks / @p.TotalTasks</td>
+                                <td>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <div class="progress flex-grow-1"><div class="progress-bar bg-success" role="progressbar" style="width:@p.PercentDone%"></div></div>
+                                        <span class="small text-muted text-nowrap">@p.DoneTasks/@p.TotalTasks</span>
+                                    </div>
+                                </td>
+                                <td>@Ui.Day(p.Project.TargetDate)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>

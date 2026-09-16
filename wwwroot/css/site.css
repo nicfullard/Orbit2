@@ -1,0 +1,116 @@
+html {
+  font-size: 14px;
+  position: relative;
+  min-height: 100%;
+}
+
+@media (min-width: 768px) {
+  html {
+    font-size: 15px;
+  }
+}
+
+body {
+  margin-bottom: 60px;
+  background: #f6f7f9;
+}
+
+.footer {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  white-space: nowrap;
+  line-height: 60px;
+}
+
+.badge-claude {
+  background: #6f42c1;
+  color: #fff;
+}
+
+.table-tasks td {
+  vertical-align: middle;
+}
+
+.table-tasks .status-select {
+  min-width: 8.5rem;
+}
+
+.task-title-overdue {
+  color: #b02a37;
+}
+
+.stat-tile {
+  border-radius: .5rem;
+  padding: 1rem 1.25rem;
+  background: #fff;
+  border: 1px solid #e3e6ea;
+}
+
+.stat-tile .stat-value {
+  font-size: 1.8rem;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.stat-tile .stat-label {
+  color: #6c757d;
+  font-size: .85rem;
+}
+
+.card {
+  border-color: #e3e6ea;
+}
+
+.kanban {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  gap: 1rem;
+  overflow-x: auto;
+}
+
+.kanban-column {
+  background: #eef0f3;
+  border-radius: .5rem;
+  padding: .75rem;
+  min-height: 12rem;
+}
+
+.kanban-card {
+  background: #fff;
+  border: 1px solid #e3e6ea;
+  border-radius: .4rem;
+  padding: .6rem .75rem;
+  margin-bottom: .6rem;
+}
+
+.kanban-card .tags .badge {
+  font-weight: 500;
+}
+
+.activity-feed li {
+  padding: .35rem 0;
+  border-bottom: 1px solid #eef0f3;
+}
+
+.activity-feed li:last-child {
+  border-bottom: 0;
+}
+
+.progress {
+  height: .6rem;
+}
+
+.description-box {
+  white-space: pre-wrap;
+}
+
+.form-inline-row .form-control,
+.form-inline-row .form-select {
+  max-width: 14rem;
+}
+
+.key-box {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  word-break: break-all;
+}

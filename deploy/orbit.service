@@ -1,0 +1,22 @@
+[Unit]
+Description=Orbit task and project tracker
+After=network.target postgresql.service
+
+[Service]
+Type=notify
+WorkingDirectory=/opt/orbit/app
+ExecStart=/usr/bin/dotnet /opt/orbit/app/Orbit.dll
+Restart=always
+RestartSec=5
+KillSignal=SIGINT
+SyslogIdentifier=orbit
+User=orbit
+Group=orbit
+
+# Secrets and environment-specific settings. root:root, chmod 600 (systemd reads it before dropping privileges).
+EnvironmentFile=/etc/orbit/orbit.env
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=DOTNET_PRINT_TELEMETRY_MESSAGE=false
+
+[Install]
+WantedBy=multi-user.target

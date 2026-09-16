@@ -1,0 +1,25 @@
+using System.Security.Cryptography;
+using System.Text;
+
+namespace Orbit.Application;
+
+public static class ApiKeyHasher
+{
+    public const string KeyPrefix = "orbit_";
+
+    /// <summary>Generates a new raw key. Only the hash is stored; the raw value is shown once.</summary>
+    public static string GenerateRawKey()
+    {
+        var bytes = RandomNumberGenerator.GetBytes(32);
+        return KeyPrefix + Base64UrlEncode(bytes);
+    }
+
+    public static string Hash(string rawKey)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawKey.Trim()));
+        return Convert.ToHexStringLower(bytes);
+    }
+
+    private static string Base64UrlEncode(byte[] bytes) =>
+        Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+}

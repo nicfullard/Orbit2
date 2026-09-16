@@ -1,0 +1,18 @@
+@page
+@model Orbit.Pages.Sprints.CreateModel
+@{
+    ViewData["Title"] = "New sprint";
+}
+
+<h1 class="h3 mb-3">New sprint</h1>
+<div class="card">
+    <div class="card-body">
+        <form method="post">
+            <partial name="_SprintFormFields" model="Model.Form" />
+            <div class="mt-4 d-flex gap-2">
+                <button type="submit" class="btn btn-primary">Create sprint</button>
+                <a class="btn btn-outline-secondary" asp-page="/Sprints/Index">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>

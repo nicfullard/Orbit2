@@ -1,0 +1,70 @@
+@page
+@model Orbit.Pages.Admin.ApiKeys.CreateModel
+@{
+    ViewData["Title"] = "New API key";
+    var roleItems = Ui.EnumItems<OrbitRole>(Model.Role, null, r => r.Label());
+    var mcpUrl = $"{Request.Scheme}://{Request.Host}/mcp";
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Admin/ApiKeys/Index">API keys</a></li>
+        <li class="breadcrumb-item active" aria-current="page">New</li>
+    </ol>
+</nav>
+
+@if (Model.Created is not null)
+{
+    <h1 class="h3 mb-3">API key created</h1>
+    <div class="alert alert-warning">
+        <div class="fw-semibold mb-2">Copy this key now. It is shown only once and cannot be recovered.</div>
+        <div class="d-flex gap-2 align-items-start">
+            <input class="form-control key-box" id="rawKey" value="@Model.Created.RawKey" readonly />
+            <button class="btn btn-outline-secondary" type="button" data-copy-target="#rawKey">Copy</button>
+        </div>
+    </div>
+    <div class="card" style="max-width:48rem">
+        <div class="card-body small">
+            <dl class="row mb-0">
+                <dt class="col-4">Name</dt><dd class="col-8">@Model.Created.Key.Name</dd>
+                <dt class="col-4">Role</dt><dd class="col-8">@Model.Created.Key.Role.Label()</dd>
+                <dt class="col-4">Department</dt><dd class="col-8">@(Model.Created.Key.Department?.Name ?? "(all departments)")</dd>
+                <dt class="col-4">MCP endpoint</dt><dd class="col-8"><code>@mcpUrl</code></dd>
+                <dt class="col-4">Header</dt><dd class="col-8"><code>Authorization: Bearer @Model.Created.RawKey</code></dd>
+            </dl>
+            <a class="btn btn-outline-secondary btn-sm mt-3" asp-page="/Admin/ApiKeys/Index">Done</a>
+        </div>
+    </div>
+}
+else
+{
+    <h1 class="h3 mb-3">New API key</h1>
+    <div class="card" style="max-width:40rem">
+        <div class="card-body">
+            <form method="post">
+                <div asp-validation-summary="ModelOnly" class="text-danger mb-2"></div>
+                <div class="mb-3">
+                    <label class="form-label" for="Name">Name</label>
+                    <input class="form-control" id="Name" name="Name" value="@Model.Name" maxlength="200" required />
+                    <div class="form-text">A label for the integration, e.g. "Claude Project - IT".</div>
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-5">
+                        <label class="form-label" for="Role">Role</label>
+                        <select class="form-select" id="Role" name="Role" asp-items="roleItems"></select>
+                    </div>
+                    <div class="col-md-7">
+                        <label class="form-label" for="DepartmentId">Department</label>
+                        <select class="form-select" id="DepartmentId" name="DepartmentId" asp-items="Model.DepartmentItems"></select>
+                        <div class="form-text">Required for Member and Department Admin keys; ignored for System Admin keys.</div>
+                    </div>
+                </div>
+                <p class="small text-muted mt-3 mb-0">The key is bound by exactly the same rules as a user of that role: a Member key can create and edit tasks in its department but cannot close them; a Department Admin key can close tasks in its department; a System Admin key can do anything anywhere.</p>
+                <div class="mt-4 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary">Create key</button>
+                    <a class="btn btn-outline-secondary" asp-page="/Admin/ApiKeys/Index">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+}

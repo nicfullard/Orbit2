@@ -1,0 +1,238 @@
+@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Dashboard";
+    var d = Model.Dashboard;
+    var actor = d.Actor;
+    var returnUrl = "/";
+    var sprintPct = d.SprintTotal == 0 ? 0 : (int)Math.Round(d.SprintDone * 100.0 / d.SprintTotal);
+    var openVm = new TaskRowsVm { Tasks = d.OpenTasks, Actor = actor, ReturnUrl = returnUrl, ShowDepartment = actor.IsSystemAdmin, EmptyMessage = "Nothing open. Nice.", Today = d.Today };
+    var myVm = new TaskRowsVm { Tasks = d.MyOpenTasks, Actor = actor, ReturnUrl = returnUrl, ShowDepartment = false, ShowAssignee = false, EmptyMessage = "No tasks assigned to you.", Today = d.Today };
+    var sprintVm = new TaskRowsVm { Tasks = d.SprintTasks, Actor = actor, ReturnUrl = returnUrl, ShowDepartment = actor.IsSystemAdmin, EmptyMessage = actor.IsMember ? "None of your tasks are in this sprint." : "No tasks in this sprint yet.", Today = d.Today };
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-end mb-3 gap-2">
+    <div>
+        <h1 class="h3 mb-0">Welcome, @actor.DisplayName</h1>
+        <div class="text-muted">
+            @actor.Role.Label()@(d.DepartmentName is not null ? $" · {d.DepartmentName}" : "") · @d.Today.ToString("dddd, d MMMM yyyy")
+        </div>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-primary btn-sm" asp-page="/Tasks/Create">New task</a>
+        <a class="btn btn-outline-secondary btn-sm" asp-page="/Tasks/My">My Tasks</a>
+        <a class="btn btn-outline-secondary btn-sm" asp-page="/Backlog/Index">Backlog</a>
+        <a class="btn btn-outline-secondary btn-sm" asp-page="/Projects/Index">All Projects</a>
+        @if (actor.IsSystemAdmin)
+        {
+            <a class="btn btn-outline-secondary btn-sm" asp-page="/Reports/Index">Reports</a>
+            <a class="btn btn-outline-secondary btn-sm" asp-page="/Admin/Departments/Index">Departments</a>
+        }
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-6 col-md-3">
+        <div class="stat-tile"><div class="stat-value">@d.TodoCount</div><div class="stat-label">To do</div></div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-tile"><div class="stat-value text-primary">@d.InProgressCount</div><div class="stat-label">In progress</div></div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-tile"><div class="stat-value text-danger">@d.BlockedCount</div><div class="stat-label">Blocked</div></div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-tile"><div class="stat-value @(d.OverdueCount > 0 ? "text-danger" : "")">@d.OverdueCount</div><div class="stat-label">Overdue</div></div>
+    </div>
+</div>
+
+@if (actor.IsSystemAdmin && d.ByDepartment.Count > 0)
+{
+    <div class="card mb-3">
+        <div class="card-header fw-semibold">By department</div>
+        <div class="card-body p-0">
+            <table class="table table-sm mb-0">
+                <thead class="table-light"><tr><th>Department</th><th class="text-end">Open tasks</th><th class="text-end">Active projects</th><th class="text-end">Users</th></tr></thead>
+                <tbody>
+                    @foreach (var row in d.ByDepartment)
+                    {
+                        <tr>
+                            <td><a asp-page="/Admin/Departments/Details" asp-route-id="@row.DepartmentId" class="text-decoration-none">@row.Name</a></td>
+                            <td class="text-end"><a asp-page="/Tasks/Index" asp-route-DepartmentId="@row.DepartmentId" asp-route-OpenOnly="true" class="text-decoration-none">@row.OpenTasks</a></td>
+                            <td class="text-end">@row.ActiveProjects</td>
+                            <td class="text-end">@row.Users</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+<div class="row g-3">
+    <div class="col-lg-8">
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="fw-semibold">@d.ScopeLabel</span>
+                <a class="small" asp-page="/Tasks/Index" asp-route-OpenOnly="true">All tasks</a>
+            </div>
+            <div class="card-body p-0 p-sm-2">
+                <partial name="_TaskRows" model="openVm" />
+            </div>
+        </div>
+
+        @if (!actor.IsMember)
+        {
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span class="fw-semibold">My open tasks</span>
+                    <a class="small" asp-page="/Tasks/My">My Tasks</a>
+                </div>
+                <div class="card-body p-0 p-sm-2">
+                    <partial name="_TaskRows" model="myVm" />
+                </div>
+            </div>
+        }
+
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="fw-semibold">Active sprint</span>
+                <a class="small" asp-page="/Sprints/Index">Sprints</a>
+            </div>
+            <div class="card-body">
+                @if (d.ActiveSprint is null)
+                {
+                    <p class="text-muted fst-italic mb-0">No sprint is active right now.</p>
+                }
+                else
+                {
+                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+                        <div>
+                            <a asp-page="/Sprints/Board" asp-route-id="@d.ActiveSprint.Id" class="h5 text-decoration-none">@d.ActiveSprint.Name</a>
+                            <div class="text-muted small">@Ui.Day(d.ActiveSprint.StartDate) to @Ui.Day(d.ActiveSprint.EndDate)</div>
+                            @if (!string.IsNullOrWhiteSpace(d.ActiveSprint.Goal))
+                            {
+                                <div class="mt-1">@d.ActiveSprint.Goal</div>
+                            }
+                        </div>
+                        <div class="text-end" style="min-width:10rem">
+                            <div class="small text-muted">@d.SprintDone / @d.SprintTotal done (@sprintPct%)</div>
+                            <div class="progress"><div class="progress-bar bg-success" role="progressbar" style="width:@sprintPct%"></div></div>
+                        </div>
+                    </div>
+                    @if (actor.IsSystemAdmin && d.SprintByDepartment.Count > 0)
+                    {
+                        <div class="d-flex flex-wrap gap-2 mb-2">
+                            @foreach (var row in d.SprintByDepartment)
+                            {
+                                <span class="badge text-bg-light border">@row.Department: @row.Done/@row.Total</span>
+                            }
+                        </div>
+                    }
+                    <partial name="_TaskRows" model="sprintVm" />
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Due soon</div>
+            <ul class="list-group list-group-flush">
+                @if (d.DueSoon.Count == 0)
+                {
+                    <li class="list-group-item text-muted fst-italic">Nothing due in the next 7 days.</li>
+                }
+                @foreach (var t in d.DueSoon)
+                {
+                    var overdue = t.IsOverdue(d.Today);
+                    <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
+                        <div class="text-truncate">
+                            <a asp-page="/Tasks/Details" asp-route-id="@t.Id" class="text-decoration-none @(overdue ? "task-title-overdue" : "")">@t.Title</a>
+                            @if (!actor.IsMember && t.Assignee is not null)
+                            {
+                                <div class="small text-muted">@t.Assignee.DisplayName</div>
+                            }
+                        </div>
+                        <span class="badge @(overdue ? "text-bg-danger" : "text-bg-light border") text-nowrap">@Ui.Day(t.DueDate)</span>
+                    </li>
+                }
+            </ul>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="fw-semibold">Projects at a glance</span>
+                <a class="small" asp-page="/Projects/Index">All</a>
+            </div>
+            <ul class="list-group list-group-flush">
+                @if (d.Projects.Count == 0)
+                {
+                    <li class="list-group-item text-muted fst-italic">No active projects@(actor.IsMember ? " with your tasks" : "").</li>
+                }
+                @foreach (var p in d.Projects)
+                {
+                    <li class="list-group-item">
+                        <div class="d-flex justify-content-between align-items-center gap-2">
+                            <a asp-page="/Projects/Details" asp-route-id="@p.Project.Id" class="text-decoration-none text-truncate">@p.Project.Name</a>
+                            <span class="small text-muted text-nowrap">@p.DoneTasks/@p.TotalTasks done</span>
+                        </div>
+                        @if (actor.IsSystemAdmin)
+                        {
+                            <div class="small text-muted">@p.Project.Department.Name</div>
+                        }
+                        <div class="progress mt-1"><div class="progress-bar bg-success" role="progressbar" style="width:@p.PercentDone%"></div></div>
+                    </li>
+                }
+            </ul>
+        </div>
+
+        @if (!actor.IsMember)
+        {
+            <div class="card mb-3">
+                <div class="card-header fw-semibold">Open tasks by assignee</div>
+                <ul class="list-group list-group-flush">
+                    @if (d.OpenByAssignee.Count == 0)
+                    {
+                        <li class="list-group-item text-muted fst-italic">No open tasks.</li>
+                    }
+                    @foreach (var row in d.OpenByAssignee)
+                    {
+                        <li class="list-group-item d-flex justify-content-between"><span>@row.Name</span><span class="badge text-bg-secondary">@row.Count</span></li>
+                    }
+                </ul>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span class="fw-semibold">Recent activity</span>
+                    @if (actor.IsSystemAdmin)
+                    {
+                        <a class="small" asp-page="/Admin/Activity/Index">All</a>
+                    }
+                </div>
+                <div class="card-body py-2">
+                    <ul class="list-unstyled activity-feed mb-0 small">
+                        @if (d.Activity.Count == 0)
+                        {
+                            <li class="text-muted fst-italic">Nothing yet.</li>
+                        }
+                        @foreach (var a in d.Activity)
+                        {
+                            <li>
+                                <span class="fw-semibold">@a.ActorName</span>
+                                @if (a.ActorType == ActorType.Api)
+                                {
+                                    <span class="badge badge-claude">Claude</span>
+                                }
+                                @Ui.ActionLabel(a.Action)
+                                <a asp-page="/Tasks/Details" asp-route-id="@a.EntityId" class="text-decoration-none">@Ui.Truncate(a.Summary, 60)</a>
+                                <span class="text-muted">· @Ui.Ago(a.Timestamp)</span>
+                            </li>
+                        }
+                    </ul>
+                </div>
+            </div>
+        }
+    </div>
+</div>

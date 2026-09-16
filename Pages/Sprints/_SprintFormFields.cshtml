@@ -1,0 +1,23 @@
+@using Orbit.Pages.Sprints
+@model SprintForm
+
+<div asp-validation-summary="ModelOnly" class="text-danger mb-2"></div>
+<div class="mb-3">
+    <label class="form-label" for="Form_Name">Name</label>
+    <input class="form-control" id="Form_Name" name="Form.Name" value="@Model.Name" maxlength="200" required placeholder="Sprint 14" />
+</div>
+<div class="mb-3">
+    <label class="form-label" for="Form_Goal">Goal <span class="text-muted">(optional)</span></label>
+    <textarea class="form-control" id="Form_Goal" name="Form.Goal" rows="3">@Model.Goal</textarea>
+</div>
+<div class="row g-3">
+    <div class="col-md-3">
+        <label class="form-label" for="Form_StartDate">Start date</label>
+        <input type="date" class="form-control" id="Form_StartDate" name="Form.StartDate" value="@Model.StartDate.ToString("yyyy-MM-dd")" required />
+    </div>
+    <div class="col-md-3">
+        <label class="form-label" for="Form_EndDate">End date</label>
+        <input type="date" class="form-control" id="Form_EndDate" name="Form.EndDate" value="@Model.EndDate.ToString("yyyy-MM-dd")" required />
+    </div>
+</div>
+<div class="form-text mt-2">Sprints are company-wide: they have no project or department, and pull tasks from any department during planning.</div>

@@ -1,0 +1,115 @@
+@page
+@model Orbit.Pages.Reports.ViewModel
+@{
+    ViewData["Title"] = Model.Definition.Title;
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Reports/Index">Reports</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@Model.Definition.Title</li>
+    </ol>
+</nav>
+
+<div class="d-flex flex-wrap justify-content-between align-items-start mb-3 gap-2">
+    <div>
+        <h1 class="h3 mb-1">@Model.Definition.Title</h1>
+        <div class="text-muted small">@Model.Definition.Description</div>
+    </div>
+    <a class="btn btn-outline-primary btn-sm" asp-page="/Reports/View" asp-page-handler="Pdf" asp-route-kind="@Model.Kind"
+       asp-route-from="@Model.From?.ToString("yyyy-MM-dd")" asp-route-to="@Model.To?.ToString("yyyy-MM-dd")"
+       asp-route-projectId="@Model.ProjectId" asp-route-departmentId="@Model.DepartmentId">Export PDF</a>
+</div>
+
+<form method="get" class="card mb-3">
+    <input type="hidden" name="kind" value="@Model.Kind" />
+    <div class="card-body py-2">
+        <div class="row g-2 align-items-end">
+            <div class="col-sm-6 col-lg-2">
+                <label class="form-label small mb-0">From</label>
+                <input type="date" class="form-control form-control-sm" name="from" value="@Model.From?.ToString("yyyy-MM-dd")" />
+            </div>
+            <div class="col-sm-6 col-lg-2">
+                <label class="form-label small mb-0">To</label>
+                <input type="date" class="form-control form-control-sm" name="to" value="@Model.To?.ToString("yyyy-MM-dd")" />
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <label class="form-label small mb-0">Department</label>
+                <select class="form-select form-select-sm" name="departmentId">
+                    <option value="">All</option>
+                    @foreach (var i in Model.DepartmentItems) { <option value="@i.Value" selected="@i.Selected">@i.Text</option> }
+                </select>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <label class="form-label small mb-0">Project</label>
+                <select class="form-select form-select-sm" name="projectId">
+                    <option value="">All</option>
+                    @foreach (var i in Model.ProjectItems) { <option value="@i.Value" selected="@i.Selected">@i.Text</option> }
+                </select>
+            </div>
+            <div class="col-auto">
+                <button class="btn btn-sm btn-outline-primary" type="submit">Run</button>
+            </div>
+        </div>
+    </div>
+</form>
+
+<div class="card">
+    <div class="card-header text-muted small">@Model.FilterSummary</div>
+    <div class="card-body p-0">
+        @if (Model.CountRows is not null)
+        {
+            @if (Model.CountRows.Count == 0)
+            {
+                <p class="text-muted fst-italic p-3 mb-0">No data for the selected filters.</p>
+            }
+            else
+            {
+                var max = Model.CountRows.Max(r => r.Count);
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light"><tr><th style="width:30%">Person</th><th style="width:10%" class="text-end">Count</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var r in Model.CountRows)
+                        {
+                            var pct = max == 0 ? 0 : (int)Math.Round(r.Count * 100.0 / max);
+                            <tr>
+                                <td>@r.Name</td>
+                                <td class="text-end fw-semibold">@r.Count</td>
+                                <td><div class="progress"><div class="progress-bar" role="progressbar" style="width:@pct%"></div></div></td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot><tr class="table-light"><th>Total</th><th class="text-end">@Model.CountRows.Sum(r => r.Count)</th><th></th></tr></tfoot>
+                </table>
+            }
+        }
+        else if (Model.MeanTime is not null)
+        {
+            var m = Model.MeanTime;
+            @if (m.OverallCount == 0)
+            {
+                <p class="text-muted fst-italic p-3 mb-0">No data for the selected filters.</p>
+            }
+            else
+            {
+                var max = m.Rows.Count == 0 ? 0 : m.Rows.Max(r => r.AverageHours);
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light"><tr><th style="width:30%">Assignee</th><th style="width:10%" class="text-end">Tasks</th><th style="width:15%" class="text-end">Average</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var r in m.Rows)
+                        {
+                            var pct = max == 0 ? 0 : (int)Math.Round(r.AverageHours * 100.0 / max);
+                            <tr>
+                                <td>@r.Name</td>
+                                <td class="text-end">@r.Count</td>
+                                <td class="text-end fw-semibold">@DurationFormat.Hours(r.AverageHours)</td>
+                                <td><div class="progress"><div class="progress-bar bg-info" role="progressbar" style="width:@pct%"></div></div></td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot><tr class="table-light"><th>Overall</th><th class="text-end">@m.OverallCount</th><th class="text-end">@DurationFormat.Hours(m.OverallAverageHours)</th><th></th></tr></tfoot>
+                </table>
+            }
+        }
+    </div>
+</div>

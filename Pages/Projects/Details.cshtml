@@ -1,0 +1,181 @@
+@page "{id:guid}"
+@model Orbit.Pages.Projects.DetailsModel
+@{
+    var p = Model.Project;
+    var s = Model.Summary;
+    ViewData["Title"] = p.Name;
+    var statusItems = Ui.EnumItems<TaskItemStatus>(Model.Status, "All", x => x.Label());
+    var rows = new TaskRowsVm { Tasks = Model.Tasks, Actor = Model.Actor, ReturnUrl = Request.Path + Request.QueryString, ShowProject = false, ShowDepartment = Model.IsCrossDepartment, ShowSprint = true, EmptyMessage = "No tasks match." };
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Projects/Index">Projects</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@p.Name</li>
+    </ol>
+</nav>
+
+<div class="d-flex flex-wrap justify-content-between align-items-start mb-3 gap-2">
+    <div>
+        <h1 class="h3 mb-1">@p.Name</h1>
+        <div class="d-flex flex-wrap gap-1 align-items-center">
+            <span class="badge @Ui.ProjectStatusBadge(p.Status)">@p.Status.Label()</span>
+            <span class="badge text-bg-light border">@p.Department.Name</span>
+            @if (Model.IsCrossDepartment)
+            {
+                <span class="badge text-bg-info" title="Tasks from more than one department are filed under this project">Cross-department</span>
+            }
+            <span class="text-muted small ms-1">Owner: @p.Owner.DisplayName</span>
+            @if (p.TargetDate is DateOnly target)
+            {
+                <span class="text-muted small ms-1">· Target: @Ui.Day(target)</span>
+            }
+        </div>
+    </div>
+    <div class="d-flex gap-2">
+        @if (Model.CanAddTasks)
+        {
+            <a class="btn btn-primary btn-sm" asp-page="/Tasks/Create" asp-route-projectId="@p.Id">New task</a>
+            <a class="btn btn-outline-secondary btn-sm" asp-page="/Recurring/Create" asp-route-projectId="@p.Id">New recurring task</a>
+        }
+        @if (Model.CanEdit)
+        {
+            <a class="btn btn-outline-primary btn-sm" asp-page="/Projects/Edit" asp-route-id="@p.Id">Edit</a>
+            @if (p.Status != ProjectStatus.Archived)
+            {
+                <form method="post" asp-page-handler="Archive" asp-route-id="@p.Id" data-confirm="Archive this project? Its tasks are kept.">
+                    <button class="btn btn-outline-danger btn-sm" type="submit">Archive</button>
+                </form>
+            }
+        }
+    </div>
+</div>
+
+@if (Model.IsSharedView)
+{
+    <div class="alert alert-info py-2">
+        This project is owned by <strong>@p.Department.Name</strong>. It is shown to you because it has tasks for your department:
+        you can open and work those, and see the rest of the project read-only.
+    </div>
+}
+
+<div class="row g-3 mb-3">
+    <div class="col-md-8">
+        <div class="card h-100">
+            <div class="card-body">
+                @if (string.IsNullOrWhiteSpace(p.Description))
+                {
+                    <p class="text-muted fst-italic mb-0">No description.</p>
+                }
+                else
+                {
+                    <div class="description-box">@p.Description</div>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between"><span class="fw-semibold">Progress</span><span>@s.Done / @s.Total tasks done</span></div>
+                <div class="progress my-2"><div class="progress-bar bg-success" role="progressbar" style="width:@s.PercentDone%"></div></div>
+                <div class="d-flex flex-wrap gap-1 small">
+                    <span class="badge text-bg-secondary">Todo @s.Todo</span>
+                    <span class="badge text-bg-primary">In progress @s.InProgress</span>
+                    <span class="badge text-bg-danger">Blocked @s.Blocked</span>
+                    <span class="badge text-bg-success">Done @s.Done</span>
+                    <span class="badge text-bg-dark">Cancelled @s.Cancelled</span>
+                    @if (s.Overdue > 0) { <span class="badge text-bg-warning">Overdue @s.Overdue</span> }
+                </div>
+                @if (s.ByDepartment.Count > 1)
+                {
+                    <div class="mt-2 small">
+                        <span class="text-muted">By department:</span>
+                        @foreach (var d in s.ByDepartment)
+                        {
+                            <a asp-page="/Projects/Details" asp-route-id="@p.Id" asp-route-DepartmentId="@d.DepartmentId"
+                               class="badge text-bg-light border text-decoration-none" title="Show only this department's tasks">@d.Name: @d.Open open / @d.Total</a>
+                        }
+                    </div>
+                }
+                <div class="mt-2 small text-muted">Time logged: <span class="fw-semibold text-body">@TimeFormat.Minutes(s.TotalMinutesLogged)</span></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <span class="fw-semibold">Tasks <span class="text-muted fw-normal">(@Model.Tasks.Count of @p.Tasks.Count)</span></span>
+        <form method="get" class="d-flex flex-wrap gap-2 align-items-center">
+            @if (Model.IsCrossDepartment)
+            {
+                <select class="form-select form-select-sm" name="DepartmentId">
+                    <option value="">All departments</option>
+                    @foreach (var d in Model.Departments)
+                    {
+                        <option value="@d.Id" selected="@(d.Id == Model.DepartmentId)">@d.Name</option>
+                    }
+                </select>
+            }
+            <select class="form-select form-select-sm" name="Status" asp-items="statusItems"></select>
+            <select class="form-select form-select-sm" name="AssigneeId">
+                <option value="">All assignees</option>
+                @foreach (var u in Model.Assignees)
+                {
+                    <option value="@u.Id" selected="@(u.Id == Model.AssigneeId)">@u.DisplayName</option>
+                }
+            </select>
+            <button class="btn btn-sm btn-outline-primary" type="submit">Filter</button>
+        </form>
+    </div>
+    <div class="card-body p-0 p-sm-2">
+        <partial name="_TaskRows" model="rows" />
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-header fw-semibold">Recurring tasks <span class="text-muted fw-normal">(@p.RecurringTaskDefinitions.Count)</span></div>
+    <div class="card-body p-0">
+        @if (p.RecurringTaskDefinitions.Count == 0)
+        {
+            <p class="text-muted fst-italic p-3 mb-0">No recurring task definitions on this project.</p>
+        }
+        else
+        {
+            <table class="table table-sm mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Title</th>
+                        @if (Model.IsCrossDepartment) { <th>Department</th> }
+                        <th>Rule</th><th>Next due</th><th>Lead</th><th>Assignee</th><th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in p.RecurringTaskDefinitions.OrderByDescending(x => x.Active).ThenBy(x => x.NextRunDate))
+                    {
+                        var canOpen = Model.Actor.CanAccessDepartment(r.DepartmentId);
+                        <tr>
+                            <td>
+                                @if (canOpen)
+                                {
+                                    <a asp-page="/Recurring/Details" asp-route-id="@r.Id" class="text-decoration-none">@r.Title</a>
+                                }
+                                else
+                                {
+                                    <span>@r.Title</span>
+                                }
+                            </td>
+                            @if (Model.IsCrossDepartment) { <td><span class="badge text-bg-light border">@r.Department.Name</span></td> }
+                            <td><code>@r.RecurrenceRule</code></td>
+                            <td>@Ui.Day(r.NextRunDate)</td>
+                            <td>@r.LeadTimeDays d</td>
+                            <td>@(r.Assignee?.DisplayName ?? "-")</td>
+                            <td>@if (r.Active) { <span class="badge text-bg-success">Active</span> } else { <span class="badge text-bg-secondary">Paused</span> }</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>

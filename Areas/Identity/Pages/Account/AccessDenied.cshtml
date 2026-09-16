@@ -1,0 +1,13 @@
+@page
+@model Orbit.Areas.Identity.Pages.Account.AccessDeniedModel
+@{
+    ViewData["Title"] = "Access denied";
+}
+
+<div class="card mx-auto mt-4" style="max-width:32rem">
+    <div class="card-body">
+        <h1 class="h4 text-danger">Access denied</h1>
+        <p class="text-muted">@(Model.Reason ?? "You do not have permission to view this page or perform this action.")</p>
+        <a class="btn btn-outline-primary" asp-area="" asp-page="/Index">Back to dashboard</a>
+    </div>
+</div>

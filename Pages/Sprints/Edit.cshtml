@@ -1,0 +1,25 @@
+@page "{id:guid}"
+@model Orbit.Pages.Sprints.EditModel
+@{
+    ViewData["Title"] = "Edit sprint";
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Sprints/Index">Sprints</a></li>
+        <li class="breadcrumb-item"><a asp-page="/Sprints/Details" asp-route-id="@Model.Sprint.Id">@Model.Sprint.Name</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Edit</li>
+    </ol>
+</nav>
+<h1 class="h3 mb-3">Edit sprint</h1>
+<div class="card">
+    <div class="card-body">
+        <form method="post">
+            <partial name="_SprintFormFields" model="Model.Form" />
+            <div class="mt-4 d-flex gap-2">
+                <button type="submit" class="btn btn-primary">Save</button>
+                <a class="btn btn-outline-secondary" asp-page="/Sprints/Details" asp-route-id="@Model.Sprint.Id">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>

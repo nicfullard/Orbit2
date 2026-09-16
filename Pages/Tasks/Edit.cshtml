@@ -1,0 +1,33 @@
+@page "{id:guid}"
+@model Orbit.Pages.Tasks.EditModel
+@{
+    ViewData["Title"] = "Edit task";
+    ViewData["IsEdit"] = true;
+    ViewData["Form"] = Model.Form;
+    ViewData["ExistingTask"] = Model.Task;
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Tasks/Index">Tasks</a></li>
+        <li class="breadcrumb-item"><a asp-page="/Tasks/Details" asp-route-id="@Model.Task.Id">@Ui.Truncate(Model.Task.Title, 50)</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Edit</li>
+    </ol>
+</nav>
+<h1 class="h3 mb-3">Edit task</h1>
+
+<div class="card">
+    <div class="card-body">
+        <form method="post">
+            <partial name="_TaskFormFields" model="Model.Lookups" view-data="ViewData" />
+            <div class="mt-4 d-flex gap-2">
+                <button type="submit" class="btn btn-primary">Save</button>
+                <a class="btn btn-outline-secondary" asp-page="/Tasks/Details" asp-route-id="@Model.Task.Id">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

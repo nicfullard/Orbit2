@@ -1,0 +1,72 @@
+@page
+@model Orbit.Pages.Time.MyModel
+@{
+    ViewData["Title"] = "My Time";
+    var s = Model.Summary;
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+    <div>
+        <h1 class="h3 mb-0">My Time</h1>
+        <div class="text-muted small">Time you logged between @Ui.Day(s.From) and @Ui.Day(s.To).</div>
+    </div>
+    <form method="get" class="d-flex align-items-end gap-2">
+        <div>
+            <label class="form-label small mb-0">From</label>
+            <input type="date" class="form-control form-control-sm" name="From" value="@Model.From?.ToString("yyyy-MM-dd")" />
+        </div>
+        <div>
+            <label class="form-label small mb-0">To</label>
+            <input type="date" class="form-control form-control-sm" name="To" value="@Model.To?.ToString("yyyy-MM-dd")" />
+        </div>
+        <button class="btn btn-sm btn-outline-primary" type="submit">Apply</button>
+    </form>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between"><span class="fw-semibold">Entries</span><span>Total: <strong>@TimeFormat.Minutes(s.TotalMinutes)</strong></span></div>
+            <div class="card-body p-0">
+                @if (s.Entries.Count == 0)
+                {
+                    <p class="text-muted fst-italic p-3 mb-0">No time logged in this range.</p>
+                }
+                else
+                {
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light"><tr><th>Date</th><th>Task</th><th>Project</th><th>Duration</th><th>Note</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var e in s.Entries)
+                            {
+                                <tr>
+                                    <td>@Ui.Day(e.Date)</td>
+                                    <td><a asp-page="/Tasks/Details" asp-route-id="@e.TaskId" class="text-decoration-none">@e.Task.Title</a></td>
+                                    <td>@(e.Task.Project?.Name ?? "-")</td>
+                                    <td>@TimeFormat.Minutes(e.DurationMinutes)</td>
+                                    <td>@e.Note</td>
+                                    <td class="text-end"><a class="btn btn-link btn-sm py-0" asp-page="/Time/Edit" asp-route-id="@e.Id">Edit</a></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header fw-semibold">By day</div>
+            <ul class="list-group list-group-flush">
+                @if (s.ByDay.Count == 0)
+                {
+                    <li class="list-group-item text-muted fst-italic">-</li>
+                }
+                @foreach (var (date, minutes) in s.ByDay)
+                {
+                    <li class="list-group-item d-flex justify-content-between"><span>@date.ToString("ddd, d MMM")</span><span>@TimeFormat.Minutes(minutes)</span></li>
+                }
+            </ul>
+        </div>
+    </div>
+</div>

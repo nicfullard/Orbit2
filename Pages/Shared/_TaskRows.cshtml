@@ -1,0 +1,116 @@
+@model TaskRowsVm
+
+@if (Model.Tasks.Count == 0)
+{
+    <p class="text-muted fst-italic mb-0 p-2">@(Model.EmptyMessage ?? "No tasks.")</p>
+}
+else
+{
+    var selectable = !string.IsNullOrEmpty(Model.SelectionFormId);
+    <div class="table-responsive">
+        <table class="table table-sm table-hover table-tasks align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    @if (selectable)
+                    {
+                        <th style="width:2rem"><input type="checkbox" class="form-check-input js-select-all" title="Select all" /></th>
+                    }
+                    <th>Task</th>
+                    @if (Model.ShowProject) { <th>Project</th> }
+                    @if (Model.ShowDepartment) { <th>Department</th> }
+                    <th>Priority</th>
+                    @if (Model.ShowAssignee) { <th>Assignee</th> }
+                    <th>Due</th>
+                    @if (Model.ShowSprint) { <th>Sprint</th> }
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var t in Model.Tasks)
+                {
+                    var canView = AccessPolicy.CanViewTask(Model.Actor, t);
+                    var overdue = t.IsOverdue(Model.Today);
+                    var statuses = Ui.AllowedStatuses(Model.Actor, t);
+                    <tr>
+                        @if (selectable)
+                        {
+                            <td>
+                                @if (AccessPolicy.CanPlanTask(Model.Actor, t))
+                                {
+                                    <input type="checkbox" class="form-check-input js-select-item" name="selected" value="@t.Id" form="@Model.SelectionFormId" />
+                                }
+                            </td>
+                        }
+                        <td>
+                            @if (canView)
+                            {
+                                <a asp-page="/Tasks/Details" asp-route-id="@t.Id" class="fw-semibold text-decoration-none @(overdue ? "task-title-overdue" : "")">@t.Title</a>
+                            }
+                            else
+                            {
+                                <span class="fw-semibold">@t.Title</span>
+                            }
+                            @if (t.Source != TaskSource.Manual)
+                            {
+                                <span class="badge @Ui.SourceBadge(t.Source) ms-1">@Ui.SourceLabel(t.Source)</span>
+                            }
+                        </td>
+                        @if (Model.ShowProject)
+                        {
+                            <td>
+                                @if (t.Project is not null)
+                                {
+                                    <a asp-page="/Projects/Details" asp-route-id="@t.ProjectId" class="text-decoration-none">@t.Project.Name</a>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">-</span>
+                                }
+                            </td>
+                        }
+                        @if (Model.ShowDepartment)
+                        {
+                            <td><span class="badge text-bg-light border">@t.Department?.Name</span></td>
+                        }
+                        <td><span class="badge @Ui.PriorityBadge(t.Priority)">@t.Priority</span></td>
+                        @if (Model.ShowAssignee)
+                        {
+                            <td>@(t.Assignee?.DisplayName ?? "-")</td>
+                        }
+                        <td class="@(overdue ? "text-danger fw-semibold" : "")">@Ui.Day(t.DueDate)@(overdue ? " (overdue)" : "")</td>
+                        @if (Model.ShowSprint)
+                        {
+                            <td>
+                                @if (t.Sprint is not null)
+                                {
+                                    <a asp-page="/Sprints/Details" asp-route-id="@t.SprintId" class="text-decoration-none">@t.Sprint.Name</a>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">Backlog</span>
+                                }
+                            </td>
+                        }
+                        <td>
+                            @if (canView && statuses.Count > 1)
+                            {
+                                <form method="post" asp-page="/Tasks/Status" asp-route-id="@t.Id" asp-route-returnUrl="@Model.ReturnUrl" class="d-inline">
+                                    <select name="status" class="form-select form-select-sm status-select js-autosubmit" aria-label="Status">
+                                        @foreach (var s in statuses)
+                                        {
+                                            <option value="@s" selected="@(s == t.Status)">@s.Label()</option>
+                                        }
+                                    </select>
+                                </form>
+                            }
+                            else
+                            {
+                                <span class="badge @Ui.StatusBadge(t.Status)">@t.Status.Label()</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}

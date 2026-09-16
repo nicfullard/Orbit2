@@ -1,0 +1,89 @@
+@page "{id:guid}"
+@model Orbit.Pages.Sprints.DetailsModel
+@{
+    var s = Model.Sprint;
+    ViewData["Title"] = s.Name;
+    var canManage = AccessPolicy.CanManageSprints(Model.Actor);
+    var rows = new TaskRowsVm { Tasks = Model.Tasks, Actor = Model.Actor, ReturnUrl = Request.Path.ToString(), ShowDepartment = true, ShowSprint = false, SelectionFormId = s.Status == SprintStatus.Completed ? null : "removeForm", EmptyMessage = "No tasks in this sprint. Plan some from the backlog." };
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Sprints/Index">Sprints</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@s.Name</li>
+    </ol>
+</nav>
+
+<div class="d-flex flex-wrap justify-content-between align-items-start mb-3 gap-2">
+    <div>
+        <h1 class="h3 mb-1">@s.Name <span class="badge @Ui.SprintStatusBadge(s.Status) fs-6 align-middle">@s.Status</span></h1>
+        <div class="text-muted">@Ui.Day(s.StartDate) to @Ui.Day(s.EndDate)</div>
+        @if (!string.IsNullOrWhiteSpace(s.Goal))
+        {
+            <div class="mt-1"><span class="fw-semibold">Goal:</span> @s.Goal</div>
+        }
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        @if (s.Status == SprintStatus.Active)
+        {
+            <a class="btn btn-outline-primary btn-sm" asp-page="/Sprints/Board" asp-route-id="@s.Id">Board</a>
+        }
+        @if (s.Status != SprintStatus.Completed)
+        {
+            <a class="btn btn-outline-secondary btn-sm" asp-page="/Backlog/Index">Plan from backlog</a>
+        }
+        @if (canManage)
+        {
+            <a class="btn btn-outline-secondary btn-sm" asp-page="/Sprints/Edit" asp-route-id="@s.Id">Edit</a>
+            @if (s.Status == SprintStatus.Planned)
+            {
+                <form method="post" asp-page-handler="Start" asp-route-id="@s.Id" data-confirm="Start this sprint? If another sprint is active it will be completed and its open tasks rolled forward into this one.">
+                    <button class="btn btn-success btn-sm" type="submit">Start sprint</button>
+                </form>
+            }
+            @if (s.Status == SprintStatus.Active)
+            {
+                <form method="post" asp-page-handler="Complete" asp-route-id="@s.Id" data-confirm="Complete this sprint? Open tasks will return to the backlog.">
+                    <button class="btn btn-outline-dark btn-sm" type="submit">Complete sprint</button>
+                </form>
+            }
+        }
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-md-4">
+        <div class="stat-tile">
+            <div class="d-flex justify-content-between"><span class="stat-label">Progress</span><span class="small">@Model.Done / @Model.Tasks.Count done</span></div>
+            <div class="progress mt-2"><div class="progress-bar bg-success" role="progressbar" style="width:@Model.Percent%"></div></div>
+        </div>
+    </div>
+    <div class="col-md-8">
+        <div class="stat-tile">
+            <div class="stat-label mb-1">By department</div>
+            @if (Model.ByDepartment.Count == 0)
+            {
+                <span class="text-muted small">-</span>
+            }
+            @foreach (var d in Model.ByDepartment)
+            {
+                <span class="badge text-bg-light border me-1">@d.Name: @d.Open open / @d.Total</span>
+            }
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <span class="fw-semibold">Tasks <span class="text-muted fw-normal">(@Model.Tasks.Count)</span></span>
+        @if (s.Status != SprintStatus.Completed)
+        {
+            <form method="post" asp-page-handler="Remove" asp-route-id="@s.Id" id="removeForm">
+                <button class="btn btn-sm btn-outline-secondary" type="submit">Move selected back to backlog</button>
+            </form>
+        }
+    </div>
+    <div class="card-body p-0 p-sm-2">
+        <partial name="_TaskRows" model="rows" />
+    </div>
+</div>

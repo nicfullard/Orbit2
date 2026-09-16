@@ -1,0 +1,19 @@
+@page
+@model Orbit.Pages.Recurring.CreateModel
+@{
+    ViewData["Title"] = "New recurring task";
+    ViewData["Form"] = Model.Form;
+}
+
+<h1 class="h3 mb-3">New recurring task</h1>
+<div class="card">
+    <div class="card-body">
+        <form method="post">
+            <partial name="_RecurringFormFields" model="Model.Lookups" view-data="ViewData" />
+            <div class="mt-4 d-flex gap-2">
+                <button type="submit" class="btn btn-primary">Create</button>
+                <a class="btn btn-outline-secondary" asp-page="/Recurring/Index">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
