@@ -49,8 +49,11 @@ Put nginx or Caddy in front for TLS and forward to `http://127.0.0.1:5000`.
 Set `App__BaseUrl` to the public HTTPS address so notification links are correct.
 
 Orbit honours `X-Forwarded-For` / `X-Forwarded-Proto` from a proxy on the same host (loopback only), so the request
-scheme and client addresses it records are the real ones. With nginx, send them - and allow WebSockets on the Orbit
-Agent hub, which holds a long-lived connection (section 7):
+scheme and client addresses it sees are the real ones. **`X-Forwarded-For` is a security setting, not a nicety:** the
+sign-in throttle (section 8) counts failed sign-ins per client address. Without the header every user looks like
+`127.0.0.1`; Orbit then switches the throttle off and logs a warning, rather than let twenty bad guesses from anyone
+lock the whole company out. With nginx, send both headers - and allow WebSockets on the Orbit Agent hub, which holds a
+long-lived connection (section 7):
 
 ```nginx
 location / {
@@ -172,6 +175,38 @@ to check - so revoke and re-register.
 
 The bind password is encrypted with the Data Protection key ring below. If the key ring is lost it can't be decrypted
 and must be re-entered under *Admin > Directory*; nothing else is affected.
+
+## 8. Sign-in hardening - set this against your AD policy
+
+Orbit is on the internet and, for directory users, is a door onto Active Directory. Three protections ship switched on;
+the first one needs you to look at your AD policy once.
+
+**Lockout (`Security__Lockout__*`, default 3 attempts / 30 minutes).** Every wrong password typed into Orbit for a
+directory user is a real failed bind in AD, and counts towards AD's *own* lockout. If Orbit tolerated as many
+attempts as AD does, anyone who knew a colleague's email could lock that person's **Windows account** from the
+internet, over and over. A locked Orbit account is refused without AD being contacted, so AD sees at most
+`MaxFailedAttempts` bad binds per `LockoutMinutes`. Look up *Account lockout threshold* and *Reset account lockout
+counter after* in your domain's password policy (`net accounts /domain`), then keep:
+
+- `MaxFailedAttempts` **below** the threshold, with room for the person's own mistakes elsewhere (threshold 5 -> 3);
+- `LockoutMinutes` **at least** the reset interval.
+
+The same lockout applies to local accounts. Because it is deliberately long, a System Admin can end one early:
+*Admin > Users* shows a **Locked out** badge and the user's page has an **Unlock** button. For a directory user that
+clears Orbit's lock only - if AD has locked the account as well, unlock it in AD.
+
+**Failed-sign-in throttle (`Security__LoginThrottle__*`, default 20 failures / 15 minutes per address).** Lockout is
+per account, so it never notices one common password being tried against many accounts. This counts failures by client
+address instead - failures only, so an office sharing one public address isn't penalised for signing in. Once over
+the limit that address gets "Too many failed sign-in attempts" (HTTP 429) and nothing is sent to AD. It is a speed
+bump, not a wall; it depends on `X-Forwarded-For` (section 4); IPv6 is counted per /64.
+
+**Secure cookies.** Outside development every cookie is marked `Secure`, whatever scheme Orbit believes the request
+had. Orbit must therefore be reached over HTTPS - which the Orbit Agent requires anyway.
+
+What is deliberately *not* enforced: a second factor. A directory sign-in is password-only - it does not pass through
+any MFA or conditional access you have on AD/Microsoft 365. Users can turn on Orbit's own authenticator-app 2FA under
+*Manage account*; making it mandatory is a possible follow-up (spec §13, item 29).
 
 ## Backups
 

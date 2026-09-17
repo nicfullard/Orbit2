@@ -38,6 +38,7 @@ public static class AuditAction
     public const string Reactivated = "Reactivated";
     public const string PasswordReset = "PasswordReset";
     public const string Revoked = "Revoked";
+    public const string Unlocked = "Unlocked";
     public const string Registered = "Registered";
     public const string Deleted = "Deleted";
 }

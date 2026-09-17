@@ -153,6 +153,27 @@ public sealed class UserAdminService(
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// Ends a wrong-password lockout early. Lockouts are long on purpose (they have to outlast Active Directory's own
+    /// counter, see <see cref="LockoutSettings"/>), so someone who simply forgot their password shouldn't have to wait one out.
+    /// For a directory user this clears Orbit's lock only; if AD has locked the account too, that is lifted in AD.
+    /// </summary>
+    public async Task<UserSummary> UnlockAsync(Guid id, CancellationToken ct = default)
+    {
+        var actor = await RequireAdminAsync(ct);
+        var user = await userManager.FindByIdAsync(id.ToString())
+            ?? throw new NotFoundException("User not found.");
+        if (user.IsSystemAccount || !user.IsActive) throw new ValidationException("Only an active user can be unlocked. Reactivate a deactivated user instead.");
+        if (user.LockoutEnd > DateTimeOffset.UtcNow)
+        {
+            Throw(await userManager.SetLockoutEndDateAsync(user, null));
+            Throw(await userManager.ResetAccessFailedCountAsync(user));
+            audit.Add(actor, AuditEntity.User, user.Id, AuditAction.Unlocked, user.DepartmentId, user.DisplayName);
+            await db.SaveChangesAsync(ct);
+        }
+        return await GetAsync(id, ct);
+    }
+
     /// <summary>Identity's standard reset token; the page turns it into a one-time link the admin hands to the user.</summary>
     public async Task<(ApplicationUser User, string Token)> GeneratePasswordResetTokenAsync(Guid id, CancellationToken ct = default)
     {

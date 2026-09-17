@@ -112,6 +112,7 @@ public static class Ui
         "Reactivated" => "reactivated",
         "PasswordReset" => "reset the password of",
         "Revoked" => "revoked",
+        "Unlocked" => "unlocked",
         "Registered" => "registered",
         "Deleted" => "deleted",
         _ => action.ToLowerInvariant()

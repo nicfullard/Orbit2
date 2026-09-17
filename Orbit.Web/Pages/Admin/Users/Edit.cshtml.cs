@@ -62,6 +62,19 @@ public class EditModel(UserAdminService users, DepartmentService departments, IA
         return RedirectToPage(new { id });
     }
 
+    public async Task<IActionResult> OnPostUnlockAsync(Guid id, CancellationToken ct)
+    {
+        try
+        {
+            var user = await users.UnlockAsync(id, ct);
+            Success(user.AuthSource == AuthSource.Ldap
+                ? "User unlocked in Orbit. If the directory has locked the account as well, it has to be unlocked there too."
+                : "User unlocked. They can sign in again now.");
+        }
+        catch (ValidationException ex) { Error(ex.Message); }
+        return RedirectToPage(new { id });
+    }
+
     public async Task<IActionResult> OnPostReactivateAsync(Guid id, CancellationToken ct)
     {
         try

@@ -30,10 +30,12 @@ builder.Services.Configure<JobOptions>(config.GetSection(JobOptions.Section));
 builder.Services.Configure<SeedOptions>(config.GetSection(SeedOptions.Section));
 builder.Services.Configure<DatabaseOptions>(config.GetSection(DatabaseOptions.Section));
 builder.Services.Configure<AgentOptions>(config.GetSection(AgentOptions.Section));
+builder.Services.Configure<SecurityOptions>(config.GetSection(SecurityOptions.Section));
+var security = config.GetSection(SecurityOptions.Section).Get<SecurityOptions>() ?? new SecurityOptions();
 
 // Behind nginx/Caddy on the same host (deploy/README.md) the app only ever sees 127.0.0.1 over plain http.
-// Honour X-Forwarded-For/Proto - from loopback proxies only, the default - so an agent's source address and
-// the request scheme are the real ones.
+// Honour X-Forwarded-For/Proto - from loopback proxies only, the default - so the request scheme and the client
+// address are the real ones. The address matters twice: it is shown for each agent, and the sign-in throttle counts by it.
 builder.Services.Configure<ForwardedHeadersOptions>(o =>
     o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto);
 
@@ -54,6 +56,10 @@ builder.Services.AddDefaultIdentity<ApplicationUser>(options =>
         options.Password.RequiredLength = 8;
         options.Password.RequireNonAlphanumeric = false;
         options.Lockout.AllowedForNewUsers = true;
+        // Stricter than Identity's 5 attempts / 5 minutes, and deliberately stricter than Active Directory's own policy:
+        // for a directory user each wrong guess here is a failed bind there, so Orbit has to lock first (see LockoutSettings).
+        options.Lockout.MaxFailedAccessAttempts = Math.Max(1, security.Lockout.MaxFailedAttempts);
+        options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(Math.Max(1, security.Lockout.LockoutMinutes));
     })
     .AddRoles<IdentityRole<Guid>>()
     .AddEntityFrameworkStores<ApplicationDbContext>()
@@ -101,6 +107,7 @@ builder.Services.AddRazorPages(options =>
 // --- Application services -----------------------------------------------------------------
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IActorProvider, HttpActorProvider>();
+builder.Services.AddSingleton<LoginThrottle>();
 builder.Services.AddScoped<AuditService>();
 builder.Services.AddScoped<NotificationService>();
 builder.Services.AddScoped<TaskService>();
@@ -166,6 +173,11 @@ else
 }
 
 app.UseHttpsRedirection();
+// Every cookie - session, two-factor, antiforgery, TempData (which carries one-time password-reset links) - is marked
+// Secure outside development, whatever scheme the app thinks the request had. Relying on the reverse proxy to forward
+// the scheme correctly is one misconfiguration away from session cookies travelling over plain http.
+if (!app.Environment.IsDevelopment())
+    app.UseCookiePolicy(new CookiePolicyOptions { Secure = CookieSecurePolicy.Always });
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();

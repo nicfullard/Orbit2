@@ -66,6 +66,38 @@ public sealed class AgentOptions
     public int RegistrationTokenLifetimeMinutes { get; set; } = 60;
 }
 
+/// <summary>Sign-in hardening (spec §8.3). Orbit is on the internet and, for directory users, is a door onto Active Directory.</summary>
+public sealed class SecurityOptions
+{
+    public const string Section = "Security";
+    public LockoutSettings Lockout { get; set; } = new();
+    public LoginThrottleSettings LoginThrottle { get; set; } = new();
+}
+
+/// <summary>
+/// Per-account lockout, for local and directory users alike. For a directory user every wrong guess at Orbit is a real
+/// failed bind in Active Directory and counts towards AD's own lockout - so Orbit must lock FIRST, or anyone who knows
+/// a colleague's email could lock their Windows account from the internet. A locked Orbit account is refused without
+/// the directory being contacted, so AD sees at most <see cref="MaxFailedAttempts"/> bad binds per <see cref="LockoutMinutes"/>.
+/// Keep MaxFailedAttempts below AD's lockout threshold and LockoutMinutes at least AD's "reset lockout counter after".
+/// </summary>
+public sealed class LockoutSettings
+{
+    public int MaxFailedAttempts { get; set; } = 3;
+    public int LockoutMinutes { get; set; } = 30;
+}
+
+/// <summary>
+/// Per-address limit on FAILED sign-ins. Per-account lockout can't see one password being tried across many accounts;
+/// this can. Successful sign-ins cost nothing, so an office sharing one address isn't penalised for signing in.
+/// </summary>
+public sealed class LoginThrottleSettings
+{
+    public bool Enabled { get; set; } = true;
+    public int MaxFailures { get; set; } = 20;
+    public int WindowMinutes { get; set; } = 15;
+}
+
 public sealed class DataProtectionOptions
 {
     public const string Section = "DataProtection";

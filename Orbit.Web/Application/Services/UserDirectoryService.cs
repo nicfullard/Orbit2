@@ -78,5 +78,5 @@ public sealed class UserDirectoryService(ApplicationDbContext db, IActorProvider
     public static UserSummary ToSummary(ApplicationUser u, IReadOnlyDictionary<Guid, OrbitRole> roles) =>
         new(u.Id, u.DisplayName, u.Email ?? string.Empty,
             roles.TryGetValue(u.Id, out var role) ? role : OrbitRole.Member,
-            u.DepartmentId, u.Department?.Name, u.IsActive, u.IsSystemAccount, u.CreatedAt, u.AuthSource);
+            u.DepartmentId, u.Department?.Name, u.IsActive, u.IsSystemAccount, u.CreatedAt, u.AuthSource, u.LockoutEnd);
 }

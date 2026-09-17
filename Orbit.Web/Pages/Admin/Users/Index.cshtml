@@ -25,7 +25,8 @@
                             <td>@u.Email @if (u.AuthSource == AuthSource.Ldap) { <span class="badge text-bg-info" title="Signs in with the company directory">LDAP</span> }</td>
                             <td><span class="badge @Ui.RoleBadge(u.Role)">@u.Role.Label()</span></td>
                             <td>@(u.DepartmentName ?? "-")</td>
-                            <td>@if (u.IsActive) { <span class="badge text-bg-success">Active</span> } else { <span class="badge text-bg-secondary">Deactivated</span> }</td>
+                            <td>@if (u.IsActive) { <span class="badge text-bg-success">Active</span> } else { <span class="badge text-bg-secondary">Deactivated</span> }
+                                @if (u.IsLockedOut) { <span class="badge text-bg-warning" title="Too many wrong passwords. Unlock from the user's page.">Locked out</span> }</td>
                             <td>@Ui.Day(DateOnly.FromDateTime(u.CreatedAt))</td>
                             <td class="text-end"><a class="btn btn-sm btn-outline-primary" asp-page="/Admin/Users/Edit" asp-route-id="@u.Id">Manage</a></td>
                         </tr>

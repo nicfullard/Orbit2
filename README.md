@@ -87,9 +87,17 @@ inbound firewall ports. The agent has practically no settings; you register it l
 4. Set users' **Sign-in method** to *Directory (LDAP)*.
 
 Directory settings live in Orbit (the bind password encrypted) and are sent with each request, so nothing is ever
-configured on the agent. Wrong passwords count towards lockout; a directory or agent outage shows "temporarily
-unavailable" and never locks anyone out. At least one System Admin must keep a local password - enforced - so Orbit
-stays administrable when the directory is down. Publishing and installing the agent: `deploy/README.md` section 7.
+configured on the agent. A directory or agent outage shows "temporarily unavailable" and never locks anyone out. At
+least one System Admin must keep a local password - enforced - so Orbit stays administrable when the directory is
+down. Publishing and installing the agent: `deploy/README.md` section 7.
+
+**Set the lockout against your AD policy before going live.** Each wrong password typed into Orbit is a real failed
+bind in AD and counts towards AD's own lockout, so Orbit locks first: 3 attempts / 30 minutes by default
+(`Security:Lockout:*`), which must stay *below* AD's threshold or Orbit becomes a way to lock people's Windows accounts
+from the internet. Failed sign-ins are also limited per client address (`Security:LoginThrottle:*`), which needs your
+reverse proxy to send `X-Forwarded-For`. A System Admin can **Unlock** a user from their page. Directory sign-in is
+password-only - it bypasses any MFA on AD - and Orbit's own 2FA is opt-in. Details: `deploy/README.md` section 8,
+spec §8.3.
 
 ```
 dotnet run --project Orbit.Agent -- help
@@ -110,6 +118,6 @@ Every API write is stamped `Source = Api`, attributed to the `Claude` user and w
 ## Configuration
 
 See `Orbit.Web/appsettings.json` for defaults and `deploy/orbit.env.example` for the production environment
-variables (`Database:ApplyMigrations`, `DataProtection:KeyRingPath`, `Jobs:*`, `Agents:*`, `Seed:Admin:*`, `App:BaseUrl`).
+variables (`Database:ApplyMigrations`, `DataProtection:KeyRingPath`, `Jobs:*`, `Security:*`, `Agents:*`, `Seed:Admin:*`, `App:BaseUrl`).
 `App:BaseUrl` is also the address put into an agent's `configure` command, so it must be the public `https` URL.
 Notification emails go through Identity's `IEmailSender`; the shipped implementation only logs them.

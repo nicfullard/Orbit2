@@ -23,7 +23,12 @@ public sealed record UserSummary(
     bool IsActive,
     bool IsSystemAccount,
     DateTime CreatedAt,
-    AuthSource AuthSource = AuthSource.Local);
+    AuthSource AuthSource = AuthSource.Local,
+    DateTimeOffset? LockoutEnd = null)
+{
+    /// <summary>Locked by too many wrong passwords. (A deactivated user is also "locked", forever - that isn't this.)</summary>
+    public bool IsLockedOut => IsActive && LockoutEnd > DateTimeOffset.UtcNow;
+}
 
 public sealed record CreatedApiKey(ApiKey Key, string RawKey);
 
