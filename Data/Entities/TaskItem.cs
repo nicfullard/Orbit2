@@ -18,6 +18,11 @@ public class TaskItem
     public ApplicationUser? CreatedBy { get; set; }
     public TaskSource Source { get; set; } = TaskSource.Manual;
     public DateOnly? DueDate { get; set; }
+    /// <summary>
+    /// The day this task is on the team's day plan (spec §6.12). Set when someone ticks "Today"; being a date it
+    /// simply stops being today rather than needing a reset. Kept on completion so "done today" stays visible.
+    /// </summary>
+    public DateOnly? PlannedFor { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? CompletedAt { get; set; }

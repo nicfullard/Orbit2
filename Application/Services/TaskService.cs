@@ -40,6 +40,8 @@ public sealed class TaskService(
         if (f.RecurringTaskDefinitionId is Guid defId) q = q.Where(t => t.RecurringTaskDefinitionId == defId);
         if (f.BacklogOnly) q = q.Where(t => t.SprintId == null);
         if (f.OpenOnly) q = q.Where(t => t.Status != TaskItemStatus.Done && t.Status != TaskItemStatus.Cancelled);
+        var plannedFor = f.PlannedFor ?? (f.PlannedToday ? DateOnly.FromDateTime(DateTime.UtcNow) : null);
+        if (plannedFor is DateOnly planned) q = q.Where(t => t.PlannedFor == planned);
         if (!string.IsNullOrWhiteSpace(f.Search))
         {
             var pattern = $"%{f.Search.Trim()}%";
@@ -278,6 +280,72 @@ public sealed class TaskService(
         audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.Updated, task.DepartmentId, task.Title, changes.Changes);
         await db.SaveChangesAsync(ct);
         return task;
+    }
+
+    // --- Day plan (§6.12) ---------------------------------------------------------------------------
+
+    /// <summary>Put a task on (or take it off) a day's plan. Anyone who may plan the task; closed tasks can't be planned.</summary>
+    public async Task<TaskItem> SetPlannedForAsync(Guid id, DateOnly? date, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        var task = await db.Tasks.Include(t => t.Assignee).FirstOrDefaultAsync(t => t.Id == id, ct)
+            ?? throw new NotFoundException("Task not found.");
+        AccessPolicy.Require(AccessPolicy.CanViewTask(actor, task), "This task belongs to another department.");
+        AccessPolicy.Require(AccessPolicy.CanPlanTask(actor, task), "You can't plan tasks from another department.");
+        if (date is not null && !task.IsOpen) throw new ValidationException("Closed tasks can't be put on a day plan.");
+        if (task.PlannedFor == date) return task;
+
+        var changes = new ChangeSet().Track("plannedFor", task.PlannedFor, date);
+        task.PlannedFor = date;
+        task.UpdatedAt = DateTime.UtcNow;
+        audit.Add(actor, AuditEntity.Task, task.Id, date is null ? AuditAction.Unplanned : AuditAction.Planned,
+            task.DepartmentId, task.Title, changes.Changes);
+        await db.SaveChangesAsync(ct);
+        return task;
+    }
+
+    /// <summary>Carry tasks over to another day's plan. Closed tasks and ones already on that day are skipped. Returns the number moved.</summary>
+    public async Task<int> CarryOverAsync(IReadOnlyCollection<Guid> taskIds, DateOnly to, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        var tasks = await db.Tasks.Where(t => taskIds.Contains(t.Id)).ToListAsync(ct);
+        var moved = 0;
+        var now = DateTime.UtcNow;
+        foreach (var task in tasks)
+        {
+            AccessPolicy.Require(AccessPolicy.CanPlanTask(actor, task), $"You can't plan \"{task.Title}\" - it belongs to another department.");
+            if (!task.IsOpen || task.PlannedFor == to) continue;
+            var previous = task.PlannedFor;
+            task.PlannedFor = to;
+            task.UpdatedAt = now;
+            audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.Planned, task.DepartmentId, task.Title,
+                new { plannedFor = new { from = previous, to }, carriedOver = true });
+            moved++;
+        }
+        if (moved > 0) await db.SaveChangesAsync(ct);
+        return moved;
+    }
+
+    /// <summary>The day plan for one date, department-scoped like <see cref="ListAsync"/> (a System Admin may narrow to one department).</summary>
+    public async Task<DayPlan> GetDayPlanAsync(DateOnly date, Guid? departmentId = null, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        var scoped = Scope(WithIncludes(db.Tasks.AsNoTracking()), actor, new TaskFilter { DepartmentId = departmentId });
+
+        var planned = await scoped.Where(t => t.PlannedFor == date)
+            .OrderBy(t => t.Status == TaskItemStatus.Done || t.Status == TaskItemStatus.Cancelled)
+            .ThenBy(t => t.Assignee == null).ThenBy(t => t.Assignee!.DisplayName)
+            .ThenByDescending(t => t.Priority).ThenBy(t => t.DueDate == null).ThenBy(t => t.DueDate)
+            .ToListAsync(ct);
+
+        // Whatever is still open on the most recent earlier plan - "what didn't get finished last time".
+        var leftOver = scoped.Where(t => t.PlannedFor != null && t.PlannedFor < date
+            && t.Status != TaskItemStatus.Done && t.Status != TaskItemStatus.Cancelled);
+        var previous = await leftOver.MaxAsync(t => t.PlannedFor, ct);
+        List<TaskItem> unfinished = previous is null ? [] : await leftOver.Where(t => t.PlannedFor == previous)
+            .OrderBy(t => t.Assignee == null).ThenBy(t => t.Assignee!.DisplayName).ThenByDescending(t => t.Priority)
+            .ToListAsync(ct);
+        return new DayPlan { Date = date, Planned = planned, PreviousDate = previous, Unfinished = unfinished };
     }
 
     /// <summary>Plan tasks into a sprint (or back to the backlog with a null sprint). Returns the number moved.</summary>

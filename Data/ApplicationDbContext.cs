@@ -72,6 +72,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             b.HasIndex(t => t.DepartmentId);
             b.HasIndex(t => t.SprintId);
             b.HasIndex(t => t.DueDate);
+            b.HasIndex(t => t.PlannedFor);
             b.HasIndex(t => t.IdempotencyKey).IsUnique().HasFilter("\"IdempotencyKey\" IS NOT NULL");
             b.HasIndex(t => new { t.RecurringTaskDefinitionId, t.DueDate });
             b.Ignore(t => t.IsOpen);

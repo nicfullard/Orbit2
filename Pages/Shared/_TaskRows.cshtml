@@ -15,6 +15,10 @@ else
                     {
                         <th style="width:2rem"><input type="checkbox" class="form-check-input js-select-all" title="Select all" /></th>
                     }
+                    @if (Model.ShowPlanToday)
+                    {
+                        <th class="text-center" style="width:3.5rem" title="On today's day plan">Today</th>
+                    }
                     <th>Task</th>
                     @if (Model.ShowProject) { <th>Project</th> }
                     @if (Model.ShowDepartment) { <th>Department</th> }
@@ -39,6 +43,23 @@ else
                                 @if (AccessPolicy.CanPlanTask(Model.Actor, t))
                                 {
                                     <input type="checkbox" class="form-check-input js-select-item" name="selected" value="@t.Id" form="@Model.SelectionFormId" />
+                                }
+                            </td>
+                        }
+                        @if (Model.ShowPlanToday)
+                        {
+                            var plannedToday = t.PlannedFor == Model.Today;
+                            <td class="text-center">
+                                @if (t.IsOpen && AccessPolicy.CanPlanTask(Model.Actor, t))
+                                {
+                                    <form method="post" asp-page="/Tasks/Quick" asp-page-handler="PlanToday" asp-route-id="@t.Id" asp-route-returnUrl="@Model.ReturnUrl" class="d-inline">
+                                        <input type="checkbox" name="planned" value="true" class="form-check-input js-autosubmit" checked="@plannedToday" aria-label="Planned for today"
+                                               title="@(plannedToday ? "On today's plan - untick to remove" : t.PlannedFor is DateOnly other ? $"Planned for {Ui.Day(other)} - tick to move to today" : "Tick to plan for today")" />
+                                    </form>
+                                }
+                                else if (plannedToday)
+                                {
+                                    <span class="badge text-bg-light border" title="Was on today's plan">Today</span>
                                 }
                             </td>
                         }

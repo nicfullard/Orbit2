@@ -18,6 +18,10 @@ public sealed class TaskFilter
     public bool BacklogOnly { get; set; }
     /// <summary>Exclude Done/Cancelled.</summary>
     public bool OpenOnly { get; set; }
+    /// <summary>Only tasks on the day plan for this date (§6.12).</summary>
+    public DateOnly? PlannedFor { get; set; }
+    /// <summary>Only tasks on today's day plan (UTC date). Ignored when <see cref="PlannedFor"/> is set.</summary>
+    public bool PlannedToday { get; set; }
     public string? Search { get; set; }
     /// <summary>
     /// Widen a backlog or sprint view to every department. Only honoured for those company-wide
@@ -49,4 +53,19 @@ public sealed class TaskInput
     public Guid? SprintId { get; set; }
     /// <summary>Optional client-supplied key so retried API creates don't duplicate.</summary>
     public string? IdempotencyKey { get; set; }
+}
+
+/// <summary>One day's plan (spec §6.12): what the team picked to work on that day, and what was left over from last time.</summary>
+public sealed class DayPlan
+{
+    public required DateOnly Date { get; init; }
+    /// <summary>Every task with PlannedFor == Date, any status, so "done today" stays visible.</summary>
+    public IReadOnlyList<TaskItem> Planned { get; init; } = [];
+    /// <summary>The most recent day before Date that still has open planned tasks in scope; null when there are none.</summary>
+    public DateOnly? PreviousDate { get; init; }
+    /// <summary>Open tasks still sitting on PreviousDate's plan - candidates to carry over.</summary>
+    public IReadOnlyList<TaskItem> Unfinished { get; init; } = [];
+    public int DoneCount => Planned.Count(t => t.Status == TaskItemStatus.Done);
+    public int OpenCount => Planned.Count(t => t.IsOpen);
+    public int OverdueCount => Planned.Count(t => t.IsOverdue(Date));
 }

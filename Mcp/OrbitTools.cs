@@ -77,7 +77,8 @@ public sealed class OrbitTools(
 
     [McpServerTool(Name = "list_tasks"), Description(
         "List tasks with optional filters. Paginated. A Member/DepartmentAdmin key only ever sees its own " +
-        "department; a SystemAdmin key can filter by departmentId or omit it for all departments.")]
+        "department; a SystemAdmin key can filter by departmentId or omit it for all departments. " +
+        "Pass plannedFor = \"today\" to see the team's day plan - the tasks picked in the morning scrum to work on today.")]
     public Task<string> ListTasks(
         [Description("Filter by project id (GUID).")] string? projectId = null,
         [Description("Filter by department id (GUID). SystemAdmin keys only.")] string? departmentId = null,
@@ -91,6 +92,7 @@ public sealed class OrbitTools(
         [Description("true = only backlog tasks (no sprint).")] bool? backlogOnly = null,
         [Description("true = exclude Done and Cancelled tasks.")] bool? openOnly = null,
         [Description("Free-text search over title and description.")] string? search = null,
+        [Description("Only tasks on the day plan for this date (yyyy-MM-dd), or the literal \"today\".")] string? plannedFor = null,
         [Description("Page number, starting at 1.")] int page = 1,
         [Description("Page size (1-200). Default 50.")] int pageSize = 50,
         CancellationToken ct = default) => Run(async () =>
@@ -108,6 +110,7 @@ public sealed class OrbitTools(
             SprintId = ParseGuid(sprintId, "sprintId"),
             BacklogOnly = backlogOnly ?? false,
             OpenOnly = openOnly ?? false,
+            PlannedFor = ParsePlanDate(plannedFor, "plannedFor"),
             Search = search,
             Page = page,
             PageSize = Math.Clamp(pageSize, 1, 200)
@@ -118,7 +121,8 @@ public sealed class OrbitTools(
 
     [McpServerTool(Name = "update_task"), Description(
         "Update any field of a task. Only the arguments you pass change; omit an argument to leave it as is. " +
-        "Pass the literal string \"none\" to clear assigneeId, dueDate, projectId or sprintId (sprintId \"none\" moves the task to the backlog). " +
+        "Pass the literal string \"none\" to clear assigneeId, dueDate, projectId, sprintId or plannedFor (sprintId \"none\" moves the task to the backlog; " +
+        "plannedFor \"none\" takes it off the day plan, plannedFor \"today\" puts it on today's plan - closed tasks can't be planned). " +
         "Setting status to Done or Cancelled requires a DepartmentAdmin or SystemAdmin key; a Member key is rejected. " +
         "Member keys can only edit tasks they created or that are assigned to them. " +
         "departmentId moves the task to another department (SystemAdmin keys only); if that differs from the project's department the task " +
@@ -134,6 +138,7 @@ public sealed class OrbitTools(
         [Description("Project id (GUID), or \"none\" to make the task standalone.")] string? projectId = null,
         [Description("Sprint id (GUID) to plan the task into, or \"none\" for the backlog.")] string? sprintId = null,
         [Description("Department id (GUID) to move the task to. SystemAdmin keys only. Omit to keep the task's department (it only follows the project when projectId changes).")] string? departmentId = null,
+        [Description("Day-plan date yyyy-MM-dd, \"today\" to put the task on today's plan, or \"none\" to take it off. Anyone in the task's department may plan it; closed tasks can't be planned.")] string? plannedFor = null,
         CancellationToken ct = default) => Run(async () =>
     {
         var id = RequireGuid(taskId, "taskId");
@@ -151,6 +156,12 @@ public sealed class OrbitTools(
             SprintId = IsClear(sprintId) ? null : ParseGuid(sprintId, "sprintId") ?? current.SprintId
         };
         var task = await tasks.UpdateAsync(id, input, ct);
+        // The day plan (§6.12) is deliberately not part of TaskInput, so it can't be wiped by a full-state edit.
+        if (!string.IsNullOrWhiteSpace(plannedFor))
+        {
+            await tasks.SetPlannedForAsync(id, IsClear(plannedFor) ? null : ParsePlanDate(plannedFor, "plannedFor"), ct);
+            task = await tasks.GetAsync(id, ct);
+        }
         return TaskDto(task);
     });
 
@@ -396,6 +407,7 @@ public sealed class OrbitTools(
         createdById = t.CreatedById,
         createdBy = t.CreatedBy is null ? null : t.CreatedBy.IsSystemAccount ? "Claude" : t.CreatedBy.DisplayName,
         dueDate = t.DueDate,
+        plannedFor = t.PlannedFor,
         sprintId = t.SprintId,
         sprint = t.Sprint?.Name,
         inBacklog = t.SprintId is null,
@@ -477,6 +489,12 @@ public sealed class OrbitTools(
             return DateOnly.FromDateTime(dt);
         throw new McpException($"{name} must be a date like 2026-09-30; got \"{value}\".");
     }
+
+    /// <summary>A day-plan date: the literal "today" (UTC date, like every other date in Orbit) or yyyy-MM-dd.</summary>
+    private static DateOnly? ParsePlanDate(string? value, string name) =>
+        string.Equals(value?.Trim(), "today", StringComparison.OrdinalIgnoreCase)
+            ? DateOnly.FromDateTime(DateTime.UtcNow)
+            : ParseDate(value, name);
 
     private static DateTime? ParseDateTime(string? value, string name)
     {

@@ -1,0 +1,88 @@
+@page
+@model Orbit.Pages.Today.IndexModel
+@{
+    ViewData["Title"] = "Today";
+    var plan = Model.Plan;
+    var returnUrl = Request.Path + Request.QueryString;
+    TaskRowsVm Rows(IReadOnlyList<TaskItem> list, string? selectionFormId = null) => new()
+    {
+        Tasks = list, Actor = Model.Actor, ReturnUrl = returnUrl, Today = Model.Today,
+        ShowDepartment = Model.Actor.IsSystemAdmin, ShowSprint = true, ShowPlanToday = true,
+        QuickEditAssignees = Model.QuickEditAssignees, SelectionFormId = selectionFormId
+    };
+    var unfinishedRows = Rows(plan.Unfinished, "carryForm");
+    var leftOverWhen = plan.PreviousDate == Model.Today.AddDays(-1) ? "yesterday" : $"on {Ui.Day(plan.PreviousDate)}";
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-end mb-3 gap-2">
+    <div>
+        <h1 class="h3 mb-0">Today <span class="text-muted fs-6">@Model.Today.ToString("dddd, d MMMM yyyy")</span></h1>
+        <div class="text-muted small">What the team picked to work on today. Tick "Today" on any task list to add to the plan.</div>
+    </div>
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+        @if (Model.Actor.IsSystemAdmin)
+        {
+            <form method="get" class="d-flex align-items-center gap-1">
+                <label class="small text-muted" for="deptFilter">Department</label>
+                <select id="deptFilter" name="DepartmentId" class="form-select form-select-sm js-autosubmit">
+                    <option value="">All</option>
+                    @foreach (var i in Model.DepartmentItems) { <option value="@i.Value" selected="@i.Selected">@i.Text</option> }
+                </select>
+            </form>
+        }
+        <a class="btn btn-primary btn-sm" asp-page="/Tasks/Create">New task</a>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-6 col-md-3"><div class="stat-tile"><div class="stat-value">@plan.Planned.Count</div><div class="stat-label">Planned today</div></div></div>
+    <div class="col-6 col-md-3"><div class="stat-tile"><div class="stat-value">@plan.DoneCount</div><div class="stat-label">Done</div></div></div>
+    <div class="col-6 col-md-3"><div class="stat-tile"><div class="stat-value">@plan.OpenCount</div><div class="stat-label">Still open</div></div></div>
+    <div class="col-6 col-md-3"><div class="stat-tile"><div class="stat-value @(plan.OverdueCount > 0 ? "text-danger" : "")">@plan.OverdueCount</div><div class="stat-label">Overdue</div></div></div>
+</div>
+
+@if (plan.Unfinished.Count > 0)
+{
+    <div class="card mb-3 border-warning">
+        <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <span class="fw-semibold">Not finished @leftOverWhen <span class="text-muted fw-normal">(@plan.Unfinished.Count)</span></span>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <form method="post" asp-page-handler="CarryOver" id="carryForm" asp-route-DepartmentId="@Model.DepartmentId">
+                    <button class="btn btn-sm btn-outline-primary" type="submit">Carry selected over to today</button>
+                </form>
+                <form method="post" asp-page-handler="CarryOverAll" asp-route-DepartmentId="@Model.DepartmentId">
+                    <button class="btn btn-sm btn-primary" type="submit">Carry all over</button>
+                </form>
+            </div>
+        </div>
+        <div class="card-body p-0 p-sm-2">
+            <partial name="_TaskRows" model="unfinishedRows" />
+        </div>
+        <div class="card-footer small text-muted">Ticking "Today" on a row carries that one task over. Tasks drop off this list once they are closed or planned again.</div>
+    </div>
+}
+
+@if (plan.Planned.Count == 0)
+{
+    <div class="card">
+        <div class="card-body text-muted">
+            Nothing planned for today yet. Tick "Today" on tasks in <a asp-page="/Tasks/My">My Tasks</a> or the <a asp-page="/Tasks/Index">Tasks</a> list.
+        </div>
+    </div>
+}
+else
+{
+    foreach (var g in Model.Groups)
+    {
+        var groupRows = Rows(g.Tasks);
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="fw-semibold">@g.Name</span>
+                <span class="text-muted small">@g.Done / @g.Tasks.Count done</span>
+            </div>
+            <div class="card-body p-0 p-sm-2">
+                <partial name="_TaskRows" model="groupRows" />
+            </div>
+        </div>
+    }
+}

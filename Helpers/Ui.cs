@@ -103,6 +103,8 @@ public static class Ui
         "TimeDeleted" => "deleted a time entry on",
         "ClockStarted" => "started the clock on",
         "ClockStopped" => "stopped the clock on",
+        "Planned" => "planned for the day",
+        "Unplanned" => "took off the day plan",
         "Paused" => "paused",
         "Resumed" => "resumed",
         "Generated" => "generated",

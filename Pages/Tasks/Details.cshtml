@@ -39,9 +39,29 @@
             {
                 <span class="badge text-bg-danger">Overdue</span>
             }
+            @if (t.PlannedFor == today)
+            {
+                <span class="badge text-bg-primary" title="On today's day plan">Today</span>
+            }
+            else if (t.PlannedFor is DateOnly plannedFor)
+            {
+                <span class="badge text-bg-light border" title="On the day plan for @Ui.Day(plannedFor)">Planned @Ui.Day(plannedFor)</span>
+            }
         </div>
     </div>
     <div class="d-flex gap-2 align-items-center">
+        @if (t.IsOpen && AccessPolicy.CanPlanTask(Model.Actor, t))
+        {
+            var onTodaysPlan = t.PlannedFor == today;
+            <form method="post" asp-page="/Tasks/Quick" asp-page-handler="PlanToday" asp-route-id="@t.Id" asp-route-returnUrl="@returnUrl">
+                @if (!onTodaysPlan)
+                {
+                    <input type="hidden" name="planned" value="true" />
+                }
+                <button class="btn btn-sm @(onTodaysPlan ? "btn-outline-secondary" : "btn-outline-primary")" type="submit"
+                        title="@(onTodaysPlan ? "Take this task off today's day plan" : "Put this task on today's day plan")">@(onTodaysPlan ? "Remove from today" : "Plan for today")</button>
+            </form>
+        }
         @if (Model.Clock is not null)
         {
             var startedAt = DateTime.SpecifyKind(Model.Clock.StartedAt, DateTimeKind.Utc);
@@ -215,6 +235,7 @@
                     <dt class="col-5">Department</dt><dd class="col-7">@t.Department.Name</dd>
                     <dt class="col-5">Assignee</dt><dd class="col-7">@(t.Assignee?.DisplayName ?? "Unassigned")</dd>
                     <dt class="col-5">Due</dt><dd class="col-7 @(overdue ? "text-danger fw-semibold" : "")">@Ui.Day(t.DueDate)</dd>
+                    <dt class="col-5">Planned for</dt><dd class="col-7">@Ui.Day(t.PlannedFor)@(t.PlannedFor == today ? " (today)" : "")</dd>
                     <dt class="col-5">Created by</dt><dd class="col-7">@Ui.AuthorName(t.CreatedBy) <span class="text-muted">@Ui.When(t.CreatedAt)</span></dd>
                     <dt class="col-5">Updated</dt><dd class="col-7">@Ui.When(t.UpdatedAt)</dd>
                     <dt class="col-5">First responded</dt><dd class="col-7">@Ui.When(t.FirstRespondedAt)</dd>

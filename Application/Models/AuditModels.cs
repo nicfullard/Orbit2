@@ -27,6 +27,8 @@ public static class AuditAction
     public const string TimeDeleted = "TimeDeleted";
     public const string ClockStarted = "ClockStarted";
     public const string ClockStopped = "ClockStopped";
+    public const string Planned = "Planned";
+    public const string Unplanned = "Unplanned";
     public const string Paused = "Paused";
     public const string Resumed = "Resumed";
     public const string Generated = "Generated";

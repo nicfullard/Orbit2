@@ -31,6 +31,16 @@ public sealed class DashboardService(ApplicationDbContext db, IActorProvider act
             _ => "My open tasks"
         };
 
+        // Today's day plan (§6.12): same role scope, but over all tasks rather than open ones so "done today" counts.
+        var allInScope = actor.Role switch
+        {
+            OrbitRole.SystemAdmin => db.Tasks.AsNoTracking(),
+            OrbitRole.DepartmentAdmin => db.Tasks.AsNoTracking().Where(t => t.DepartmentId == actor.DepartmentId),
+            _ => db.Tasks.AsNoTracking().Where(t => t.AssigneeId == actor.UserId)
+        };
+        var plannedToday = await allInScope.CountAsync(t => t.PlannedFor == today, ct);
+        var plannedTodayDone = await allInScope.CountAsync(t => t.PlannedFor == today && t.Status == TaskItemStatus.Done, ct);
+
         var statusCounts = await scope.GroupBy(t => t.Status)
             .Select(g => new { g.Key, Count = g.Count() }).ToListAsync(ct);
         int Count(TaskItemStatus s) => statusCounts.FirstOrDefault(c => c.Key == s)?.Count ?? 0;
@@ -134,6 +144,8 @@ public sealed class DashboardService(ApplicationDbContext db, IActorProvider act
             InProgressCount = Count(TaskItemStatus.InProgress),
             BlockedCount = Count(TaskItemStatus.Blocked),
             OverdueCount = overdue,
+            PlannedTodayCount = plannedToday,
+            PlannedTodayDone = plannedTodayDone,
             OpenTasks = openTasks,
             MyOpenTasks = myOpen,
             ActiveSprint = sprint,
