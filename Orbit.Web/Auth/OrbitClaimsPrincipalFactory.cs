@@ -18,6 +18,7 @@ public sealed class OrbitClaimsPrincipalFactory(
         var identity = await base.GenerateClaimsAsync(user);
         identity.AddClaim(new Claim(OrbitClaims.DisplayName, user.DisplayName));
         identity.AddClaim(new Claim(OrbitClaims.ActorType, nameof(ActorType.User)));
+        identity.AddClaim(new Claim(OrbitClaims.AuthSource, user.AuthSource.ToString()));
         if (user.DepartmentId is Guid dept)
             identity.AddClaim(new Claim(OrbitClaims.DepartmentId, dept.ToString()));
         return identity;

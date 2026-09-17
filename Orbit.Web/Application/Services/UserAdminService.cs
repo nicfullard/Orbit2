@@ -11,7 +11,8 @@ public sealed class UserAdminService(
     ApplicationDbContext db,
     UserManager<ApplicationUser> userManager,
     IActorProvider actors,
-    AuditService audit)
+    AuditService audit,
+    LdapSettingsService ldapSettings)
 {
     public async Task<IReadOnlyList<UserSummary>> ListAsync(CancellationToken ct = default)
     {
@@ -38,7 +39,10 @@ public sealed class UserAdminService(
         var email = RequireEmail(input.Email);
         var displayName = RequireDisplayName(input.DisplayName);
         var departmentId = await ValidateDepartmentForRoleAsync(input.Role, input.DepartmentId, ct);
-        if (string.IsNullOrWhiteSpace(input.Password))
+        var isDirectoryUser = input.AuthSource == AuthSource.Ldap;
+        if (isDirectoryUser)
+            await RequireDirectorySignInEnabledAsync(ct);
+        else if (string.IsNullOrWhiteSpace(input.Password))
             throw new ValidationException("A temporary password is required; the user changes it after first sign-in.");
         if (await userManager.FindByEmailAsync(email) is not null)
             throw new ValidationException($"A user with the email {email} already exists.");
@@ -50,15 +54,17 @@ public sealed class UserAdminService(
             EmailConfirmed = true,
             DisplayName = displayName,
             DepartmentId = departmentId,
+            AuthSource = input.AuthSource,
             IsActive = true,
             LockoutEnabled = true,
             CreatedAt = DateTime.UtcNow
         };
-        Throw(await userManager.CreateAsync(user, input.Password));
+        // A directory user gets no password hash at all: the directory is the only thing that can vouch for them.
+        Throw(isDirectoryUser ? await userManager.CreateAsync(user) : await userManager.CreateAsync(user, input.Password!));
         Throw(await userManager.AddToRoleAsync(user, input.Role.ToString()));
 
         audit.Add(actor, AuditEntity.User, user.Id, AuditAction.Created, departmentId, displayName,
-            new { email, role = input.Role, departmentId });
+            new { email, role = input.Role, departmentId, authSource = input.AuthSource });
         await db.SaveChangesAsync(ct);
         return await GetAsync(user.Id, ct);
     }
@@ -76,17 +82,29 @@ public sealed class UserAdminService(
         var currentRole = currentRoles.Select(r => Enum.TryParse<OrbitRole>(r, out var x) ? x : OrbitRole.Member)
             .DefaultIfEmpty(OrbitRole.Member).Max();
 
-        if (currentRole == OrbitRole.SystemAdmin && input.Role != OrbitRole.SystemAdmin && user.IsActive)
-            await RequireAnotherSystemAdminAsync(user.Id, ct);
+        var isLocalSystemAdmin = currentRole == OrbitRole.SystemAdmin && user.AuthSource == AuthSource.Local && user.IsActive;
+        var staysLocalSystemAdmin = input.Role == OrbitRole.SystemAdmin && input.AuthSource == AuthSource.Local;
+        if (isLocalSystemAdmin && !staysLocalSystemAdmin)
+            await RequireAnotherLocalSystemAdminAsync(user.Id, ct);
+        if (input.AuthSource == AuthSource.Ldap && user.AuthSource != AuthSource.Ldap)
+            await RequireDirectorySignInEnabledAsync(ct);
 
         var changes = new ChangeSet()
             .TrackText("displayName", user.DisplayName, displayName)
             .Track("departmentId", user.DepartmentId, departmentId)
-            .Track("role", currentRole, input.Role);
+            .Track("role", currentRole, input.Role)
+            .Track("authSource", user.AuthSource, input.AuthSource);
         if (!changes.HasChanges) return await GetAsync(id, ct);
 
         user.DisplayName = displayName;
         user.DepartmentId = departmentId;
+        if (user.AuthSource != input.AuthSource)
+        {
+            user.AuthSource = input.AuthSource;
+            // Whichever way the switch goes, any stored hash goes with it: a directory user must not keep a usable
+            // local password, and a user coming back to Local must not inherit one set while they were a directory user.
+            user.PasswordHash = null;
+        }
         Throw(await userManager.UpdateAsync(user));
         if (currentRole != input.Role)
         {
@@ -110,8 +128,8 @@ public sealed class UserAdminService(
             ?? throw new NotFoundException("User not found.");
         if (user.IsSystemAccount) throw new ValidationException("The system account can't be deactivated.");
         if (!user.IsActive) return;
-        if (await userManager.IsInRoleAsync(user, Roles.SystemAdmin))
-            await RequireAnotherSystemAdminAsync(user.Id, ct);
+        if (user.AuthSource == AuthSource.Local && await userManager.IsInRoleAsync(user, Roles.SystemAdmin))
+            await RequireAnotherLocalSystemAdminAsync(user.Id, ct);
 
         user.IsActive = false;
         user.LockoutEnabled = true;
@@ -142,6 +160,7 @@ public sealed class UserAdminService(
         var user = await userManager.FindByIdAsync(id.ToString())
             ?? throw new NotFoundException("User not found.");
         if (user.IsSystemAccount || !user.IsActive) throw new ValidationException("Passwords can only be reset for active users.");
+        RequireLocalPassword(user);
         var token = await userManager.GeneratePasswordResetTokenAsync(user);
         audit.Add(actor, AuditEntity.User, user.Id, AuditAction.PasswordReset, user.DepartmentId, user.DisplayName, new { method = "link" });
         await db.SaveChangesAsync(ct);
@@ -154,6 +173,7 @@ public sealed class UserAdminService(
         var user = await userManager.FindByIdAsync(id.ToString())
             ?? throw new NotFoundException("User not found.");
         if (user.IsSystemAccount || !user.IsActive) throw new ValidationException("Passwords can only be reset for active users.");
+        RequireLocalPassword(user);
         if (string.IsNullOrWhiteSpace(password)) throw new ValidationException("A password is required.");
         var token = await userManager.GeneratePasswordResetTokenAsync(user);
         Throw(await userManager.ResetPasswordAsync(user, token, password));
@@ -169,14 +189,31 @@ public sealed class UserAdminService(
         return actor;
     }
 
-    private async Task RequireAnotherSystemAdminAsync(Guid excludingUserId, CancellationToken ct)
+    /// <summary>
+    /// The break-glass rule: someone must always be able to administer Orbit without the directory. If every System
+    /// Admin signed in through LDAP, an agent or directory outage would lock out the only people able to fix it.
+    /// </summary>
+    private async Task RequireAnotherLocalSystemAdminAsync(Guid excludingUserId, CancellationToken ct)
     {
         var others = await db.UserRoles
             .Join(db.Roles, ur => ur.RoleId, r => r.Id, (ur, r) => new { ur.UserId, r.Name })
             .Where(x => x.Name == Roles.SystemAdmin && x.UserId != excludingUserId)
             .Join(db.Users, x => x.UserId, u => u.Id, (x, u) => u)
-            .CountAsync(u => u.IsActive, ct);
-        if (others == 0) throw new ValidationException("At least one active System Admin must remain.");
+            .CountAsync(u => u.IsActive && u.AuthSource == AuthSource.Local, ct);
+        if (others == 0)
+            throw new ValidationException("At least one active System Admin with a local password must remain, so Orbit can still be administered if the directory or its agent is unavailable.");
+    }
+
+    private async Task RequireDirectorySignInEnabledAsync(CancellationToken ct)
+    {
+        if (!await ldapSettings.IsEnabledAsync(ct))
+            throw new ValidationException("Directory (LDAP) sign-in isn't enabled yet. Set it up under Admin > Directory first.");
+    }
+
+    private static void RequireLocalPassword(ApplicationUser user)
+    {
+        if (user.AuthSource == AuthSource.Ldap)
+            throw new ValidationException("This user signs in with the company directory; their password is managed there, not in Orbit.");
     }
 
     private async Task<Guid?> ValidateDepartmentForRoleAsync(OrbitRole role, Guid? departmentId, CancellationToken ct)

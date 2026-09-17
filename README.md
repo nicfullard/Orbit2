@@ -5,24 +5,45 @@ sprints, recurring tasks, time tracking, reports, and an MCP server so Claude ca
 Built on ASP.NET Core Razor Pages (.NET 10), EF Core + PostgreSQL, ASP.NET Core Identity, the
 `ModelContextProtocol` .NET SDK, Quartz.NET, Ical.Net and QuestPDF. The full specification is in `orbit-spec.md`.
 
-## Project layout
+## Solution layout
+
+`Orbit.slnx` holds three projects, side by side at the root:
+
+| Project | What it is |
+|---|---|
+| `Orbit.Web/` | The web app: Razor Pages UI, MCP server, background jobs, and the server side of the Orbit Agent. Builds `Orbit.Web.dll`. |
+| `Orbit.Agent/` | The **Orbit Agent** - a separate Worker Service that runs inside the corporate network. Published on its own; not part of the web app's output. |
+| `Orbit.Agents.Contracts/` | Messages and method names shared by the web app and the agent, so the two can't drift. No dependencies. |
+
+Plus `deploy/` (systemd units for Orbit and the agent, env file template, least-privilege DB role script,
+deployment notes), `orbit-spec.md` and `dotnet-tools.json` (pins `dotnet-ef`).
+
+Inside `Orbit.Web/`, folders stand in for the layers of spec §11, and namespaces follow them (`Orbit.Data`,
+`Orbit.Application`, ... - not `Orbit.Web.*`):
 
 | Folder | Contents |
 |---|---|
 | `Data/` | `ApplicationDbContext`, entities, `DbInitializer` (migrations + seed) |
 | `Application/` | Services (`TaskService`, `ProjectService`, `SprintService`, ...), `Actor` + `AccessPolicy` (the §6.5 rules), models |
-| `Auth/` | API-key authentication scheme, claims factory, actor resolution, page exception filter |
+| `Auth/` | API-key and Orbit Agent authentication schemes, `OrbitSignInManager` (directory sign-in), claims factory, actor resolution, page filters |
+| `Agents/` | Server side of the Orbit Agent: the SignalR hub agents connect to, the registry of connected agents, the register/de-register endpoints |
 | `Mcp/` | `OrbitTools` - the 14 MCP tools, mapped onto the same services the UI uses |
 | `Jobs/` | Quartz.NET jobs: recurring-task generation and due-date notifications, cron-scheduled from `Jobs:*` |
 | `Reporting/` | QuestPDF report rendering |
 | `Pages/` | Razor Pages UI (dashboard, tasks, projects, backlog, sprints, recurring, time, admin, reports) |
-| `Areas/Identity/` | Overrides of the default Identity UI (self-registration disabled, no self-delete) |
-| `deploy/` | systemd unit, env file template, least-privilege DB role script, deployment notes |
+| `Areas/Identity/` | Overrides of the default Identity UI (login, self-registration disabled, no self-delete) |
+| `Migrations/` | EF Core migrations |
+
+```
+dotnet build Orbit.slnx                              # all three projects
+dotnet run --project Orbit.Web                       # the web app
+dotnet ef migrations add <Name> --project Orbit.Web  # from the solution root (dotnet tool restore first)
+```
 
 ## First run (development)
 
-1. `appsettings.Development.json` points at the local Postgres `orbit` database and seeds a first
-   System Admin (`admin@orbit.local`). Change the seed values if you like.
+1. `Orbit.Web/appsettings.Development.json` (gitignored) points at the local Postgres `orbit` database and seeds a
+   first System Admin (`admin@orbit.local`). Change the seed values if you like.
 2. Scaffold the initial migration in the Package Manager Console:
    `Add-Migration InitialCreate`
 3. Run the app. On startup it applies pending migrations, seeds the three roles and the synthetic
@@ -41,12 +62,38 @@ Self-registration is disabled: accounts are created under **Admin > Users**.
 | File a task under another department's project (spec §6.2.1) | no | no | yes |
 | Sprints (create/start/complete) | no | no | yes |
 | Users, departments, API keys, reports | no | no | yes |
+| Directory (LDAP) settings, Orbit Agents, users' sign-in method | no | no | yes |
 
 The same rules are enforced in `AccessPolicy` for signed-in users and for API keys.
 
 A project is owned by one department, but a System Admin can file tasks under it for other departments
 (unassigned, or assigned to someone in that department). Each such task belongs to its own department, which
 sees and works it as usual; a department with tasks on another department's project sees that project read-only.
+
+## Directory sign-in (LDAP / Active Directory)
+
+Each user signs in with either a **local password** or their **company directory password** - a per-user setting under
+**Admin > Users** (spec §6.13). Accounts are still created in Orbit first; a directory account alone grants nothing.
+
+The directory sits behind the corporate firewall, so Orbit never talks to it. Instead an **Orbit Agent** - a small
+service you run inside your network - connects *out* to Orbit over HTTPS and checks passwords on Orbit's behalf. No
+inbound firewall ports. The agent has practically no settings; you register it like a GitHub Actions runner:
+
+1. **Admin > Agents > New agent** gives you a one-time command:
+   `Orbit.Agent configure --url https://<orbit> --token orbitreg_...`
+2. Run it on the agent's machine, then `Orbit.Agent run` (or install it as a service). It shows as **Online**.
+3. **Admin > Directory**: server, service account, search base, filter. **Test connection** runs through the agent
+   against whatever is in the form, before you save or enable anything.
+4. Set users' **Sign-in method** to *Directory (LDAP)*.
+
+Directory settings live in Orbit (the bind password encrypted) and are sent with each request, so nothing is ever
+configured on the agent. Wrong passwords count towards lockout; a directory or agent outage shows "temporarily
+unavailable" and never locks anyone out. At least one System Admin must keep a local password - enforced - so Orbit
+stays administrable when the directory is down. Publishing and installing the agent: `deploy/README.md` section 7.
+
+```
+dotnet run --project Orbit.Agent -- help
+```
 
 ## Claude / MCP
 
@@ -62,6 +109,7 @@ Every API write is stamped `Source = Api`, attributed to the `Claude` user and w
 
 ## Configuration
 
-See `appsettings.json` for defaults and `deploy/orbit.env.example` for the production environment
-variables (`Database:ApplyMigrations`, `DataProtection:KeyRingPath`, `Jobs:*`, `Seed:Admin:*`, `App:BaseUrl`).
+See `Orbit.Web/appsettings.json` for defaults and `deploy/orbit.env.example` for the production environment
+variables (`Database:ApplyMigrations`, `DataProtection:KeyRingPath`, `Jobs:*`, `Agents:*`, `Seed:Admin:*`, `App:BaseUrl`).
+`App:BaseUrl` is also the address put into an agent's `configure` command, so it must be the public `https` URL.
 Notification emails go through Identity's `IEmailSender`; the shipped implementation only logs them.

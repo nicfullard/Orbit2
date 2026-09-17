@@ -9,11 +9,20 @@ sudo -u postgres psql -f create-db-role.sql     # edit the password first
 ## 2. Application files
 
 ```bash
-dotnet publish -c Release -o /opt/orbit/app
+dotnet publish Orbit.Web -c Release -o /opt/orbit/app      # from the solution root; the web app is the Orbit.Web project
 sudo useradd --system --no-create-home --shell /usr/sbin/nologin orbit
 sudo chown -R orbit:orbit /opt/orbit
 sudo mkdir -p /var/lib/orbit/keys && sudo chown orbit:orbit /var/lib/orbit/keys && sudo chmod 700 /var/lib/orbit/keys
 ```
+
+> **Upgrading a server installed before the project was renamed `Orbit` -> `Orbit.Web`:** the entry point is now
+> `Orbit.Web.dll`, not `Orbit.dll`. Do both of these, or the service will quietly keep running the **old** build:
+> 1. Empty `/opt/orbit/app` before copying the new publish output in. Publishing over the top leaves the old
+>    `Orbit.dll` sitting there, and the old unit file would go on starting it.
+> 2. Change `ExecStart` in `/etc/systemd/system/orbit.service` to `/opt/orbit/app/Orbit.Web.dll` (as in the
+>    `orbit.service` here), then `sudo systemctl daemon-reload && sudo systemctl restart orbit`.
+>
+> Nothing else moves: the database, the env file and the Data Protection key ring are untouched, so nobody is signed out.
 
 ## 3. Configuration
 
@@ -39,6 +48,33 @@ journalctl -u orbit -f
 Put nginx or Caddy in front for TLS and forward to `http://127.0.0.1:5000`.
 Set `App__BaseUrl` to the public HTTPS address so notification links are correct.
 
+Orbit honours `X-Forwarded-For` / `X-Forwarded-Proto` from a proxy on the same host (loopback only), so the request
+scheme and client addresses it records are the real ones. With nginx, send them - and allow WebSockets on the Orbit
+Agent hub, which holds a long-lived connection (section 7):
+
+```nginx
+location / {
+    proxy_pass         http://127.0.0.1:5000;
+    proxy_set_header   Host $host;
+    proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header   X-Forwarded-Proto $scheme;
+}
+location /agent/hub {
+    proxy_pass         http://127.0.0.1:5000;
+    proxy_http_version 1.1;
+    proxy_set_header   Upgrade $http_upgrade;
+    proxy_set_header   Connection "upgrade";
+    proxy_set_header   Host $host;
+    proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header   X-Forwarded-Proto $scheme;
+    proxy_read_timeout 1h;      # the agent's connection is idle between sign-ins; keep-alives flow every 15s
+    proxy_buffering    off;
+}
+```
+
+Caddy needs nothing extra. If WebSockets are blocked somewhere along the way the agent still works: SignalR falls
+back to Server-Sent Events or long polling by itself.
+
 ## 5. First run
 
 Migrations are applied at startup (`Database__ApplyMigrations=true`). The `Seed__Admin__*` values are
@@ -53,6 +89,89 @@ Create an API key under *Admin > API Keys* and configure the connector with:
 - Header: `Authorization: Bearer <key>`
 
 The key acts with the role and department it was issued with - the same rules as a human user of that role.
+
+## 7. Directory sign-in (LDAP / Active Directory) and the Orbit Agent
+
+Orbit is on the internet; the directory is behind the corporate firewall. Rather than open a port to it, a small
+**Orbit Agent** runs inside the network and connects *out* to Orbit over HTTPS. Orbit sends sign-in checks down that
+connection. The firewall needs no inbound rule; the agent's machine needs outbound HTTPS to Orbit and LDAP(S) to the
+directory server.
+
+The agent has **no settings of its own** apart from where Orbit is and the credential Orbit issued it. Directory
+servers, the service account, search base and filter are all set in Orbit under *Admin > Directory* and travel with
+each request - change them in Orbit and the next sign-in uses them.
+
+### Publish the agent
+
+It is a separate project (`Orbit.Agent`) and is *not* part of the web app's publish output. Self-contained, so
+the target machine needs no .NET installed. From the solution root:
+
+```bash
+# Windows (typical next to a domain controller)
+dotnet publish Orbit.Agent -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o publish/agent-win
+# Linux
+dotnet publish Orbit.Agent -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true -o publish/agent-linux
+```
+
+Copy the output folder to the machine, e.g. `C:\OrbitAgent` or `/opt/orbit-agent`.
+
+### Register it (GitHub-runner style)
+
+1. In Orbit: *Admin > Agents > New agent*, give it a name. Orbit shows a one-time command.
+2. On the agent machine, in the agent's folder, run it:
+
+   ```
+   Orbit.Agent configure --url https://orbit.example.com --token orbitreg_...
+   ```
+
+   The token works once and expires after an hour (*New token* on the Agents page issues another). `configure` swaps
+   it for the agent's own credential and writes `agent.json` beside the executable - encrypted with DPAPI (machine
+   scope) on Windows, mode `600` on Linux. Orbit stores only a hash of that credential.
+3. Start it with `Orbit.Agent run`, or as a service so it survives reboots:
+
+   ```powershell
+   # Windows (elevated). Run the service as an account that can read C:\OrbitAgent.
+   sc.exe create OrbitAgent binPath= "C:\OrbitAgent\Orbit.Agent.exe run" start= auto DisplayName= "Orbit Agent"
+   sc.exe failure OrbitAgent reset= 86400 actions= restart/10000
+   sc.exe start OrbitAgent
+   ```
+
+   ```bash
+   # Linux
+   sudo useradd --system --no-create-home --shell /usr/sbin/nologin orbit-agent
+   sudo chown -R orbit-agent:orbit-agent /opt/orbit-agent
+   sudo -u orbit-agent /opt/orbit-agent/Orbit.Agent configure --url https://orbit.example.com --token orbitreg_...
+   sudo cp orbit-agent.service /etc/systemd/system/ && sudo systemctl daemon-reload
+   sudo systemctl enable --now orbit-agent && journalctl -u orbit-agent -f
+   ```
+
+   On Windows, run `configure` *before* creating the service (or as any administrator): the machine-scope encryption
+   lets the service account read what another account wrote. On Linux run it **as the service user**, as above, since
+   only the file's owner can read it.
+4. The agent shows as **Online** under *Admin > Agents* within a few seconds. Logs go to the console, or as a service
+   to the Windows Event Log (Application log, source *Orbit.Agent*, warnings and errors) or the systemd journal.
+
+Behind a corporate proxy the agent uses the machine's proxy settings (`HTTPS_PROXY`, or the Windows system proxy)
+automatically. Run a second agent on another machine for redundancy: Orbit tries each connected agent in turn.
+
+To retire an agent: `Orbit.Agent remove` on its machine (de-registers and deletes `agent.json`), or *Revoke* it in
+Orbit, which disconnects it immediately and invalidates its credential. A lost or copied `agent.json` should be
+treated like a leaked password - whoever holds it can pose as the agent and would be sent users' directory passwords
+to check - so revoke and re-register.
+
+### Turn directory sign-in on
+
+1. *Admin > Directory*: server (the name on its certificate, as reachable **from the agent**), port `636` with SSL, a
+   **read-only, least-privilege** service account, search base and user filter. Use *Test connection* - it runs
+   through the agent against the values in the form, saved or not - then tick *Enable* and save.
+2. *Admin > Users*: set **Sign-in method** to *Directory (LDAP)* per user. Accounts are still created in Orbit first;
+   a directory account alone grants nothing. The user's Orbit email must match exactly one directory entry through
+   the filter (default `(mail={0})`).
+3. Keep at least one System Admin on a **local password**. Orbit enforces this: it is the way in when the directory
+   or the agent is down.
+
+The bind password is encrypted with the Data Protection key ring below. If the key ring is lost it can't be decrypted
+and must be re-entered under *Admin > Directory*; nothing else is affected.
 
 ## Backups
 

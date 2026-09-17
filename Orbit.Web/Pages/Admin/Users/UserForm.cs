@@ -12,11 +12,12 @@ public sealed class UserForm
     [Required, StringLength(200)] public string DisplayName { get; set; } = string.Empty;
     public OrbitRole Role { get; set; } = OrbitRole.Member;
     public Guid? DepartmentId { get; set; }
+    public AuthSource AuthSource { get; set; } = AuthSource.Local;
     [DataType(DataType.Password)] public string? Password { get; set; }
 
-    public UserInput ToInput() => new() { Email = Email, DisplayName = DisplayName, Role = Role, DepartmentId = DepartmentId, Password = Password };
+    public UserInput ToInput() => new() { Email = Email, DisplayName = DisplayName, Role = Role, DepartmentId = DepartmentId, AuthSource = AuthSource, Password = Password };
 
-    public static UserForm From(UserSummary u) => new() { Email = u.Email, DisplayName = u.DisplayName, Role = u.Role, DepartmentId = u.DepartmentId };
+    public static UserForm From(UserSummary u) => new() { Email = u.Email, DisplayName = u.DisplayName, Role = u.Role, DepartmentId = u.DepartmentId, AuthSource = u.AuthSource };
 
     public static async Task<IReadOnlyList<SelectListItem>> DepartmentItemsAsync(DepartmentService departments, Guid? selected, CancellationToken ct)
     {

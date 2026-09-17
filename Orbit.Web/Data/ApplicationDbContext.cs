@@ -18,6 +18,8 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<RunningClock> RunningClocks => Set<RunningClock>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
+    public DbSet<Agent> Agents => Set<Agent>();
+    public DbSet<LdapSettings> LdapSettings => Set<LdapSettings>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -154,6 +156,28 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
                 .HasForeignKey(k => k.DepartmentId).OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(k => k.HashedKey).IsUnique();
             b.Ignore(k => k.IsRevoked);
+        });
+
+        builder.Entity<Agent>(b =>
+        {
+            b.Property(a => a.Name).HasMaxLength(200).IsRequired();
+            b.Property(a => a.RegistrationTokenHash).HasMaxLength(128);
+            b.Property(a => a.HashedSecret).HasMaxLength(128);
+            b.Property(a => a.SecretPrefix).HasMaxLength(24);
+            b.Property(a => a.MachineName).HasMaxLength(200);
+            b.Property(a => a.OsDescription).HasMaxLength(200);
+            b.Property(a => a.Version).HasMaxLength(50);
+            b.Property(a => a.LastIpAddress).HasMaxLength(64);
+            b.HasIndex(a => a.HashedSecret).IsUnique().HasFilter("\"HashedSecret\" IS NOT NULL");
+            b.HasIndex(a => a.RegistrationTokenHash).IsUnique().HasFilter("\"RegistrationTokenHash\" IS NOT NULL");
+        });
+
+        builder.Entity<LdapSettings>(b =>
+        {
+            b.Property(s => s.Server).HasMaxLength(255);
+            b.Property(s => s.BindDn).HasMaxLength(500);
+            b.Property(s => s.SearchBase).HasMaxLength(500);
+            b.Property(s => s.UserFilter).HasMaxLength(500);
         });
 
         // Store every enum as its name so the database is readable and filterable in SQL.

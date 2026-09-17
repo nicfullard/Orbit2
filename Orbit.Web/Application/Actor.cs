@@ -9,6 +9,9 @@ public static class OrbitClaims
     public const string DisplayName = "orbit:display_name";
     public const string ApiKeyId = "orbit:api_key_id";
     public const string ActorType = "orbit:actor_type";
+    public const string AuthSource = "orbit:auth_source";
+    /// <summary>Set only by the Orbit Agent scheme. An agent principal carries no role or department.</summary>
+    public const string AgentId = "orbit:agent_id";
 }
 
 /// <summary>

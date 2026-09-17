@@ -3,6 +3,7 @@
 @{
     ViewData["Title"] = "Create user";
     var roleItems = Ui.EnumItems<OrbitRole>(Model.Form.Role, null, r => r.Label());
+    var authItems = Ui.EnumItems<AuthSource>(Model.Form.AuthSource, null, a => a.Label());
 }
 
 <nav aria-label="breadcrumb">
@@ -36,6 +37,20 @@
                     <div class="form-text">Required for Members and Department Admins.</div>
                 </div>
                 <div class="col-md-6">
+                    <label class="form-label" for="Form_AuthSource">Sign-in method</label>
+                    <select class="form-select js-auth-source" id="Form_AuthSource" name="Form.AuthSource" asp-items="authItems"></select>
+                    <div class="form-text">
+                        @if (Model.DirectoryEnabled)
+                        {
+                            <text>Directory users sign in with their company (Active Directory) password. The email above must match their directory account.</text>
+                        }
+                        else
+                        {
+                            <text>Directory sign-in isn't enabled yet. Set it up under <a asp-page="/Admin/Directory/Index">Admin &gt; Directory</a> to use it.</text>
+                        }
+                    </div>
+                </div>
+                <div class="col-md-6 js-local-password">
                     <label class="form-label" for="Form_Password">Temporary password</label>
                     <input type="text" class="form-control" id="Form_Password" name="Form.Password" value="@Model.Form.Password" required autocomplete="off" />
                     <div class="form-text">At least 8 characters with upper, lower case and a digit. The user changes it after signing in.</div>

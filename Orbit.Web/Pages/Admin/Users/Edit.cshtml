@@ -4,7 +4,9 @@
     var u = Model.Account;
     ViewData["Title"] = u.DisplayName;
     var roleItems = Ui.EnumItems<OrbitRole>(Model.Form.Role, null, r => r.Label());
+    var authItems = Ui.EnumItems<AuthSource>(Model.Form.AuthSource, null, a => a.Label());
     var isSelf = Model.Actor.UserId == u.Id;
+    var isDirectoryUser = u.AuthSource == AuthSource.Ldap;
 }
 
 <nav aria-label="breadcrumb">
@@ -19,6 +21,7 @@
         <h1 class="h3 mb-1">@u.DisplayName</h1>
         <div class="text-muted">@u.Email · <span class="badge @Ui.RoleBadge(u.Role)">@u.Role.Label()</span>
             @if (u.IsActive) { <span class="badge text-bg-success">Active</span> } else { <span class="badge text-bg-secondary">Deactivated</span> }
+            @if (isDirectoryUser) { <span class="badge text-bg-info">LDAP</span> }
         </div>
     </div>
     <div>
@@ -70,6 +73,18 @@
                             <label class="form-label" for="Form_DepartmentId">Department</label>
                             <select class="form-select" id="Form_DepartmentId" name="Form.DepartmentId" asp-items="Model.DepartmentItems"></select>
                         </div>
+                        <div class="col-md-12">
+                            <label class="form-label" for="Form_AuthSource">Sign-in method</label>
+                            <select class="form-select" id="Form_AuthSource" name="Form.AuthSource" asp-items="authItems"></select>
+                            <div class="form-text">
+                                Directory users sign in with their company (Active Directory) password; the email above must match their directory account.
+                                Switching method removes any password Orbit holds for the user and signs them out.
+                                @if (!Model.DirectoryEnabled)
+                                {
+                                    <text>Directory sign-in isn't enabled yet - set it up under <a asp-page="/Admin/Directory/Index">Admin &gt; Directory</a>.</text>
+                                }
+                            </div>
+                        </div>
                     </div>
                     <div class="mt-3 d-flex gap-2">
                         <button type="submit" class="btn btn-primary">Save</button>
@@ -86,6 +101,14 @@
     <div class="col-lg-5">
         <div class="card mb-3">
             <div class="card-header fw-semibold">Password</div>
+            @if (isDirectoryUser)
+            {
+                <div class="card-body">
+                    <p class="small text-muted mb-0">This user signs in with the company directory. Orbit holds no password for them: it is changed and reset in the directory, and disabling the directory account stops new sign-ins. Deactivate the user here as well to end a session that is already open.</p>
+                </div>
+            }
+            else
+            {
             <div class="card-body">
                 <p class="small text-muted">Either generate a one-time reset link (Identity's standard reset flow) or set a temporary password to hand over directly.</p>
                 <form method="post" asp-page-handler="ResetLink" asp-route-id="@u.Id" class="mb-3">
@@ -99,6 +122,7 @@
                     <button class="btn btn-outline-secondary btn-sm" type="submit" @(u.IsActive ? "" : "disabled")>Set</button>
                 </form>
             </div>
+            }
         </div>
     </div>
 </div>

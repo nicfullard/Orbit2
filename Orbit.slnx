@@ -1,3 +1,19 @@
 <Solution>
-  <Project Path="Orbit.csproj" />
+  <Folder Name="/Solution Items/">
+    <File Path=".gitignore" />
+    <File Path="dotnet-tools.json" />
+    <File Path="orbit-spec.md" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/Solution Items/deploy/">
+    <File Path="deploy/create-db-role.sql" />
+    <File Path="deploy/orbit-agent.service" />
+    <File Path="deploy/orbit.env.example" />
+    <File Path="deploy/orbit.service" />
+    <File Path="deploy/README.md" />
+  </Folder>
+  <!-- Orbit.Web first: with no saved preference, Visual Studio starts the first project listed. -->
+  <Project Path="Orbit.Web/Orbit.Web.csproj" />
+  <Project Path="Orbit.Agent/Orbit.Agent.csproj" />
+  <Project Path="Orbit.Agents.Contracts/Orbit.Agents.Contracts.csproj" />
 </Solution>

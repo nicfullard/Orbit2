@@ -1,0 +1,28 @@
+@model Orbit.Pages.Admin.Agents.AgentSetupModel
+@{
+    var configure = $"Orbit.Agent configure --url {Model.BaseUrl} --token {Model.Created.RawRegistrationToken}";
+}
+
+<div class="alert alert-warning">
+    <div class="fw-semibold mb-2">Copy this command now. The token is shown only once, works once, and expires @Ui.When(Model.Created.Agent.RegistrationExpiresAt).</div>
+    <div class="d-flex gap-2 align-items-start">
+        <textarea class="form-control key-box" id="configureCommand" rows="2" readonly>@configure</textarea>
+        <button class="btn btn-outline-secondary" type="button" data-copy-target="#configureCommand">Copy</button>
+    </div>
+</div>
+
+<div class="card mb-3" style="max-width:60rem">
+    <div class="card-header fw-semibold">Set up "@Model.Created.Agent.Name"</div>
+    <div class="card-body small">
+        <ol class="mb-0 ps-3">
+            <li class="mb-2">Put the Orbit Agent on a machine <strong>inside your network</strong> that can reach the directory server. It needs outbound HTTPS to <code>@Model.BaseUrl</code> and nothing inbound - no firewall ports to open. (Publishing the agent is covered in <code>deploy/README.md</code>.)</li>
+            <li class="mb-2">Run the <strong>configure</strong> command above in the agent's folder. It swaps the token for the agent's own credential and saves it next to the executable. That is the only setting the agent has: directory servers and everything else are managed here in Orbit.</li>
+            <li class="mb-2">
+                Start it: <code>Orbit.Agent run</code> - or install it as a service so it survives reboots:
+                <div class="mt-1">Windows: <code>sc.exe create OrbitAgent binPath= "C:\OrbitAgent\Orbit.Agent.exe run" start= auto</code> then <code>sc.exe start OrbitAgent</code></div>
+                <div>Linux: copy <code>deploy/orbit-agent.service</code> to <code>/etc/systemd/system/</code>, then <code>systemctl enable --now orbit-agent</code></div>
+            </li>
+            <li>It shows as <span class="badge text-bg-success">Online</span> under <a asp-page="/Admin/Agents/Index">Agents</a> within a few seconds. Then set up the directory under <a asp-page="/Admin/Directory/Index">Admin &gt; Directory</a>.</li>
+        </ol>
+    </div>
+</div>

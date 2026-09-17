@@ -5,6 +5,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>aspnet-Orbit-9e13359f-aa2c-4e57-8a02-f367ab138b89</UserSecretsId>
+    <!-- The project is Orbit.Web, but its folders stand in for the layers of spec §11 (Orbit.Data, Orbit.Application, ...),
+         so namespaces stay Orbit.* rather than becoming Orbit.Web.Data etc. It also keeps the EF migrations' namespace stable. -->
     <RootNamespace>Orbit</RootNamespace>
   </PropertyGroup>
 
@@ -22,8 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Remove="deploy\**" />
-    <None Include="deploy\**" />
+    <ProjectReference Include="..\Orbit.Agents.Contracts\Orbit.Agents.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

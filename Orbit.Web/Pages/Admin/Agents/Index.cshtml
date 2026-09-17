@@ -1,0 +1,78 @@
+@page
+@model Orbit.Pages.Admin.Agents.IndexModel
+@{
+    ViewData["Title"] = "Agents";
+    var now = DateTime.UtcNow;
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+    <div>
+        <h1 class="h3 mb-0">Agents</h1>
+        <div class="text-muted small">An Orbit Agent runs inside your network and connects out to Orbit, so Orbit can check sign-ins against your directory (Active Directory / LDAP) without any inbound firewall ports. Agents hold no settings of their own - those live under <a asp-page="/Admin/Directory/Index">Directory</a>.</div>
+    </div>
+    <a class="btn btn-primary btn-sm" asp-page="/Admin/Agents/Create">New agent</a>
+</div>
+
+@if (Model.Setup is not null)
+{
+    <partial name="_AgentSetup" model="Model.Setup" />
+}
+
+<div class="card">
+    <div class="card-body p-0">
+        @if (Model.Agents.Count == 0)
+        {
+            <p class="text-muted fst-italic p-3 mb-0">No agents yet.</p>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light"><tr><th>Name</th><th>Status</th><th>Machine</th><th>Version</th><th>Last seen</th><th>Address</th><th>Created</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var item in Model.Agents)
+                        {
+                            var a = item.Agent;
+                            var tokenExpired = a.Status == AgentStatus.Pending && a.RegistrationExpiresAt <= now;
+                            <tr class="@(a.Status == AgentStatus.Revoked ? "text-muted" : "")">
+                                <td class="fw-semibold">@a.Name</td>
+                                <td>
+                                    @if (item.IsOnline) { <span class="badge text-bg-success">Online</span> }
+                                    else if (a.Status == AgentStatus.Active) { <span class="badge text-bg-danger">Offline</span> }
+                                    else if (a.Status == AgentStatus.Revoked) { <span class="badge text-bg-secondary">Revoked @Ui.Day(DateOnly.FromDateTime(a.RevokedAt ?? now))</span> }
+                                    else if (tokenExpired) { <span class="badge text-bg-secondary">Token expired</span> }
+                                    else { <span class="badge text-bg-warning" title="Waiting for 'Orbit.Agent configure'. Token expires @Ui.When(a.RegistrationExpiresAt)">Waiting for configure</span> }
+                                </td>
+                                <td>@(a.MachineName ?? "-")<div class="small text-muted">@a.OsDescription</div></td>
+                                <td>@(a.Version ?? "-")</td>
+                                <td>@(item.IsOnline ? "now" : Ui.When(a.LastSeenAt))</td>
+                                <td>@(a.LastIpAddress ?? "-")</td>
+                                <td>@Ui.Day(DateOnly.FromDateTime(a.CreatedAt))</td>
+                                <td class="text-end text-nowrap">
+                                    @if (a.Status == AgentStatus.Pending)
+                                    {
+                                        <form method="post" asp-page-handler="Regenerate" asp-route-id="@a.Id" class="d-inline">
+                                            <button class="btn btn-sm btn-outline-primary" type="submit">New token</button>
+                                        </form>
+                                    }
+                                    @if (a.Status == AgentStatus.Active)
+                                    {
+                                        <form method="post" asp-page-handler="Revoke" asp-route-id="@a.Id" class="d-inline" data-confirm="Revoke this agent? It is disconnected immediately and its credential stops working. If it is your only agent, directory users won't be able to sign in.">
+                                            <button class="btn btn-sm btn-outline-danger" type="submit">Revoke</button>
+                                        </form>
+                                    }
+                                    else
+                                    {
+                                        <form method="post" asp-page-handler="Delete" asp-route-id="@a.Id" class="d-inline" data-confirm="Delete this agent from the list?">
+                                            <button class="btn btn-sm btn-outline-secondary" type="submit">Delete</button>
+                                        </form>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>

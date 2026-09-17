@@ -20,6 +20,12 @@ public class ApplicationUser : IdentityUser<Guid>
     /// <summary>True for synthetic accounts such as the "Claude" agent that API keys act as.</summary>
     public bool IsSystemAccount { get; set; }
 
+    /// <summary>
+    /// Local password, or the company directory via an Orbit Agent. A directory user has no PasswordHash,
+    /// and sign-in never consults one for them, so a stale local password can't bypass the directory.
+    /// </summary>
+    public AuthSource AuthSource { get; set; } = AuthSource.Local;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public ICollection<TaskItem> AssignedTasks { get; set; } = new List<TaskItem>();

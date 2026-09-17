@@ -56,6 +56,16 @@ public sealed class DatabaseOptions
     public bool ApplyMigrations { get; set; } = true;
 }
 
+/// <summary>On-premises Orbit Agents (spec §8.2).</summary>
+public sealed class AgentOptions
+{
+    public const string Section = "Agents";
+    /// <summary>How long Orbit waits for an agent to answer a command (e.g. a directory sign-in) before trying the next agent.</summary>
+    public int CommandTimeoutSeconds { get; set; } = 15;
+    /// <summary>How long a registration token stays redeemable after it is shown to the admin.</summary>
+    public int RegistrationTokenLifetimeMinutes { get; set; } = 60;
+}
+
 public sealed class DataProtectionOptions
 {
     public const string Section = "DataProtection";

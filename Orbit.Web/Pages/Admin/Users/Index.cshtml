@@ -22,7 +22,7 @@
                     {
                         <tr class="@(u.IsActive ? "" : "text-muted")">
                             <td class="fw-semibold">@u.DisplayName</td>
-                            <td>@u.Email</td>
+                            <td>@u.Email @if (u.AuthSource == AuthSource.Ldap) { <span class="badge text-bg-info" title="Signs in with the company directory">LDAP</span> }</td>
                             <td><span class="badge @Ui.RoleBadge(u.Role)">@u.Role.Label()</span></td>
                             <td>@(u.DepartmentName ?? "-")</td>
                             <td>@if (u.IsActive) { <span class="badge text-bg-success">Active</span> } else { <span class="badge text-bg-secondary">Deactivated</span> }</td>

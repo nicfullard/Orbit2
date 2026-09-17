@@ -13,7 +13,8 @@ A task/project tracker for the whole business — organized into departments, ea
 - Support a lightweight agile workflow: a **backlog** of unplanned tasks, organized into **Sprints** during planning — sprints are shared company-wide, cutting across departments (§6.3).
 - Provide a Razor Pages web UI for every department's team to view, create, and update tasks/projects, landing on a dashboard summarizing their work after sign-in.
 - Provide a documented API that an external AI agent (Claude) can call to create tasks and query status.
-- Authenticate human users via ASP.NET Core Identity ("Individual Accounts" — local username/password accounts stored in the app's own Postgres database, no external identity provider).
+- Authenticate human users via ASP.NET Core Identity ("Individual Accounts" — accounts stored in the app's own Postgres database). Each user proves their identity in one of two ways, chosen per user: a **local password** held by Orbit, or their **company directory (LDAP / Active Directory) password** (§6.13).
+- Reach a directory that sits behind the corporate firewall **without opening any inbound firewall port**: a small on-premises **Orbit Agent** connects *out* to Orbit and performs the directory check on Orbit's behalf (§6.14, §8.2). The agent carries practically no configuration of its own — it is registered with a one-time command, GitHub-runner style, and everything else is managed in Orbit. The agent is a general connector: checking directory passwords is its first capability, not its last.
 - Authenticate API/machine callers (Claude) separately from interactive users.
 
 ## 3. Non-Goals (v1)
@@ -21,6 +22,7 @@ A task/project tracker for the whole business — organized into departments, ea
 - No Gantt charts or billing.
 - No mobile app — web only, responsive is a nice-to-have not a requirement.
 - No multi-tenant support — this is a single organization's internal tool.
+- No single sign-on (Kerberos/SAML/OIDC), no automatic account provisioning from the directory, and no directory sync. Directory sign-in (§6.13) checks a password and nothing more: accounts, roles and departments are still managed in Orbit.
 
 ## 4. Tech Stack
 
@@ -29,8 +31,11 @@ A task/project tracker for the whole business — organized into departments, ea
 | Backend/UI | ASP.NET Core Razor Pages (.NET 8 LTS recommended) |
 | Database | PostgreSQL |
 | ORM | Entity Framework Core (Npgsql provider) |
-| Auth (human users) | ASP.NET Core Identity — Individual Accounts (local accounts, `IdentityDbContext` in Postgres) |
+| Auth (human users) | ASP.NET Core Identity — Individual Accounts (`IdentityDbContext` in Postgres). Per user: a local password, or the company directory (§6.13) via a custom `SignInManager` |
+| Directory sign-in | LDAP / Active Directory, reached through the on-premises **Orbit Agent** (§8.2). LDAP client: `Novell.Directory.Ldap.NETStandard` (cross-platform, managed), in the agent only — Orbit itself never speaks LDAP |
+| Orbit Agent | .NET Worker Service (the `Orbit.Agent` project), runs as a Windows service or systemd unit. Transport: ASP.NET Core **SignalR** over an outbound HTTPS/WebSocket connection, using SignalR *client results* for request/response |
 | Auth (MCP/Claude) | API key, mapped to a `Role` claim (see §8) |
+| Auth (Orbit Agent) | Agent secret (bearer), its own authentication scheme, no role or department (see §8.2) |
 | Claude integration | MCP server via the `ModelContextProtocol` .NET SDK, Streamable HTTP transport, hosted in `Orbit.Web` (see §7) |
 | Notifications | ASP.NET Core Identity's built-in `IEmailSender` interface |
 | Background jobs | Quartz.NET (`Quartz.Extensions.Hosting`), cron-scheduled jobs resolved from DI (see §6.4, §6.7) |
@@ -100,6 +105,7 @@ A Sprint has no `ProjectId` **and no `DepartmentId`** — it's a company-wide pl
 - `DisplayName`, `Email`
 - `DepartmentId` (FK → Department, nullable) — required for `Member` and `DepartmentAdmin`; nullable for `SystemAdmin`, who isn't scoped to one department. A `SystemAdmin` may still be given a home department (e.g. Bob in Project Management); it only serves as the default department for the tasks and projects they create and never limits what they can see or do
 - `Role` (`SystemAdmin`, `DepartmentAdmin`, `Member`) — managed via ASP.NET Core Identity's built-in roles (`AspNetRoles`/`AspNetUserRoles`). See §6.5 for what each role can do.
+- `AuthSource` (`Local`, `Ldap`) — how this user signs in (§6.13). Defaults to `Local`. An `Ldap` user has **no `PasswordHash`**: Orbit holds nothing that could authenticate them, so a stale local password can never stand in for the directory.
 
 **Comment**
 - `Id` (Guid)
@@ -141,6 +147,27 @@ A Sprint has no `ProjectId` **and no `DepartmentId`** — it's a company-wide pl
 - `DepartmentId` (FK → Department, nullable) — required when `Role = DepartmentAdmin` or `Member` (scopes the key to that department, same as a human user); nullable when `Role = SystemAdmin`
 - `CreatedAt`
 - `RevokedAt` (nullable)
+
+**Agent** *(an on-premises Orbit Agent — see §6.14, §8.2. Not to be confused with the synthetic "Claude Agent" user of §8.)*
+- `Id` (Guid)
+- `Name` (label chosen by the admin, e.g. "Head office - DC01")
+- `Status` (`Pending` — created, waiting for `configure`; `Active`; `Revoked`)
+- `RegistrationTokenHash`, `RegistrationExpiresAt` (nullable) — the one-time token, hashed; cleared the moment it is redeemed
+- `HashedSecret` (nullable), `SecretPrefix` — the agent's long-lived credential, hashed exactly like an `ApiKey`; the raw value exists only on the agent's machine
+- `MachineName`, `OsDescription`, `Version` — reported by the agent, shown to the admin, never used to authorise anything
+- `LastConnectedAt`, `LastSeenAt`, `LastIpAddress`
+- `CreatedAt`, `CreatedById`, `RegisteredAt`, `RevokedAt`
+
+Whether an agent is *online* is not stored: it is whether Orbit currently holds a live connection from it.
+
+**LdapSettings** *(a single row — the directory sign-in settings, edited under Admin > Directory, §6.13)*
+- `Enabled`
+- `Server`, `Port` (default 636), `UseSsl` (default true), `ValidateCertificate` (default true)
+- `BindDn`, `BindPasswordProtected` — the service account used to look users up; the password is **encrypted at rest** with ASP.NET Core Data Protection (the key ring of §10.2) and is write-only in the UI
+- `SearchBase`, `UserFilter` (default `(mail={0})`, where `{0}` is the user's Orbit email)
+- `UpdatedAt`, `UpdatedById`
+
+These live in Orbit, not on the agent, so that the agent has nothing to configure.
 
 ### 5.2 Relationships
 
@@ -234,21 +261,24 @@ Three roles, enforced via ASP.NET Core Identity's role-based authorization (`[Au
 | **Create/start/complete a sprint** | ❌ | ❌ | ✅ |
 | Manage users (create, promote/demote, deactivate, reset password) | ❌ | ❌ | ✅ |
 | Manage departments (create/edit departments, assign a user's department) | ❌ | ❌ | ✅ |
+| Set a user's sign-in method; manage directory (LDAP) settings and Orbit Agents (§6.13, §6.14) | ❌ | ❌ | ✅ |
 | View Reports (§12) | ❌ | ❌ | ✅ |
 
 > **Assumption flagged:** I've kept user management and Reports as `SystemAdmin`-only, matching what you asked for `DepartmentAdmin` ("manage tasks and projects for their own departments" — nothing about users or reports). If you actually want `DepartmentAdmin` to manage users within their own department (create members, reset their passwords) or see department-scoped reports, that's a straightforward extension of this table, just say which.
 
 The `Done`/`Cancelled` status options are hidden or disabled in the UI for Members, and the same rule is enforced server-side in `TaskService` (not just hidden client-side) so a direct request can't bypass it. Department scoping is enforced the same way — every task/project query and write is filtered by the caller's `DepartmentId` server-side, not just hidden in the UI. This same rule applies to the Claude API: each API key carries a `Role` and, where relevant, a `DepartmentId` (§5.1, §8), and is bound by exactly the same rules as a human user of that role.
 
-- Sign in via ASP.NET Core Identity's standard Individual Accounts flow (register/login/manage account pages, scaffolded from the default Identity UI or customized as Razor Pages).
-- New accounts default to `Member`, assigned to a department at creation time; a `SystemAdmin` promotes/demotes a user's role and can change their department via a simple admin page.
+- Sign in via ASP.NET Core Identity's standard Individual Accounts flow (register/login/manage account pages, scaffolded from the default Identity UI or customized as Razor Pages). The one login form serves every user; whether the password typed is checked against Orbit's own hash or against the company directory depends on that user's **sign-in method** (§6.13).
+- **Repeated wrong passwords lock the account** (Identity's standard lockout: 5 failures, 5 minutes), for both sign-in methods. For directory users this is what stops Orbit — which is on the internet — from being used to guess Active Directory passwords.
+- New accounts default to `Member`, assigned to a department at creation time; a `SystemAdmin` promotes/demotes a user's role and can change their department and sign-in method via a simple admin page.
+- **Break-glass rule:** at least one active `SystemAdmin` must always have a **local** password. If every System Admin signed in through the directory, an outage of the directory or its agent would lock out the only people able to fix it. Orbit refuses any change (switching sign-in method, demoting, deactivating) that would leave none. This supersedes the earlier, weaker rule that merely one active `SystemAdmin` must remain.
 - **Delete a user account:** `SystemAdmin`-only. Implemented as a soft delete/deactivation (`IsActive = false` or Identity's `LockoutEnd` set far in the future) rather than a hard row delete — a hard delete would orphan the user's `AssigneeId`/`CreatedById`/`AuthorId`/`ActorId` references on existing tasks, comments, and audit log entries. A deactivated user can't sign in, disappears from the assignee picker for new tasks, but their historical task/comment/audit attribution stays intact.
 
   > **Assumption flagged:** "delete" is implemented as deactivation for the reasons above, not a literal row removal. Flag if you actually want a hard delete (which would mean deciding what happens to that user's existing tasks/comments — reassign, orphan, or block the delete until reassigned).
-- **Reset a user's password:** `SystemAdmin`-only. Triggers ASP.NET Core Identity's standard password-reset flow (generates a reset token, either emailed via `IEmailSender` per §6.7 or surfaced as a one-time link/temporary password the admin hands to the user directly) — same mechanism as the existing "Create User" first-login flow below, reused here.
+- **Reset a user's password:** `SystemAdmin`-only, **local users only**. Triggers ASP.NET Core Identity's standard password-reset flow (generates a reset token, either emailed via `IEmailSender` per §6.7 or surfaced as a one-time link/temporary password the admin hands to the user directly) — same mechanism as the existing "Create User" first-login flow below, reused here. A directory user's password is changed and reset in the directory; Orbit rejects the attempt and the user's page says so instead of offering the controls.
 - **Self-registration is disabled.** The scaffolded Identity `Register` page/endpoint is removed (or locked behind `[Authorize(Roles = "SystemAdmin")]`) so the public can't create their own accounts. Instead:
-  - `SystemAdmin` has a "Create User" page that creates the `AspNetUsers` row directly — setting `DepartmentId` and `Role`, and setting a temporary password or triggering Identity's password-reset/email-confirmation flow so the new user sets their own password on first login.
-  - Login page remains open; only account creation is gated.
+  - `SystemAdmin` has a "Create User" page that creates the `AspNetUsers` row directly — setting `DepartmentId`, `Role` and the **sign-in method**. For a local user it also sets a temporary password (or triggers Identity's password-reset/email-confirmation flow) so the new user sets their own password on first login; for a directory user there is no password to set.
+  - Login page remains open; only account creation is gated. This holds for directory users too: having an account in the directory does **not** create or grant an Orbit account (§6.13).
 
 ### 6.6 Departments
 - **Manage departments:** `SystemAdmin`-only — create, rename/edit, and (soft-)archive a department. Archiving a department doesn't cascade-delete its projects/tasks/users; it just stops it from being offered as a choice for new projects/tasks/users going forward.
@@ -324,6 +354,46 @@ The `Done`/`Cancelled` status options are hidden or disabled in the UI for Membe
 
 > **Assumptions flagged:** "today" is the UTC date, the same convention as due dates and everything else in Orbit — fine for a morning scrum in any timezone, but a plan made close to midnight UTC lands on the next day. v1 plans today only; the service already accepts any date, so "plan for tomorrow" is a small follow-up if wanted. Nothing clears a plan automatically: a task planned but never touched simply shows up under "Not finished" next time.
 
+### 6.13 Directory sign-in (LDAP / Active Directory)
+
+- **Purpose:** let people sign in to Orbit with the password they already have in the company directory, as an alternative to a local Orbit password. It is **optional** and **per user** — both methods coexist indefinitely.
+- **Sign-in method is a property of the user** (`AuthSource`, §5.1), set by a `SystemAdmin` on the Create/Edit user page: *Local password* or *Directory (LDAP)*. It is not a fallback chain: a local user's password never goes near the directory, and a directory user has no local password to fall back to. This keeps exactly one thing able to vouch for each user, and keeps local accounts working when the directory is unreachable.
+- **Accounts are still created in Orbit first.** A directory account on its own grants nothing: if no Orbit user has that email, sign-in fails exactly as it does for any unknown user. Role and department are Orbit's to decide, and self-registration stays disabled (§6.5). There is no provisioning from, or sync with, the directory (§3).
+- **Matching:** the person signs in with their Orbit **email**, as now. Orbit looks up the Orbit user by that email and, for a directory user, asks the directory for the entry matching the **user filter** (default `(mail={0})`; `{0}` is the email, escaped). The filter must match **exactly one** entry — none, or more than one, is a failed sign-in. The filter is also how access can be narrowed to a group, e.g. `(&(mail={0})(memberOf=CN=Orbit Users,...))`.
+- **Login page:** one form for everyone. Outcomes for a directory user:
+  - *Correct password* → signed in; from here on the session is an ordinary Orbit session (same cookie, same two-factor step if the user has enabled it, same role/department rules).
+  - *Wrong password, unknown in the directory, ambiguous match, or an account the directory won't accept* (disabled, locked, expired, must-change-password) → the same generic "Invalid login attempt." a local user gets. The specific reason (e.g. "account disabled (AD 533)") is written to Orbit's log for the administrator and never shown to the person signing in. The failure counts towards lockout (§6.5).
+  - *The check couldn't be made at all* (no agent online, the agent timed out, the directory is unreachable, the service account's bind failed) → "Sign-in with your company directory account is temporarily unavailable…". This is **not** counted as a failed attempt: an outage must never lock people out.
+  - *Locked out or deactivated in Orbit* → refused **without contacting the directory**.
+- **Passwords:** Orbit never stores a directory user's password and never logs any password. A directory user who opens *Manage account > Password* is sent back with a note that their password is managed by the directory; a `SystemAdmin` cannot set or reset one for them (§6.5). Switching a user's sign-in method in either direction **discards any password hash Orbit holds** and signs the user out: switching to the directory must not leave a usable local password behind, and switching back must not revive an old one — the admin sets a new temporary password or reset link.
+- **Admin > Directory** (`SystemAdmin`-only): the directory settings of §5.1 — enable/disable, server, port, SSL, certificate validation, service account (bind DN + password), search base, user filter.
+  - The bind password is **write-only**: never rendered back, left blank to keep the stored one, stored encrypted.
+  - **Test connection** asks a connected agent to connect, bind as the service account and optionally look up a sample email, and reports each step ("Connected… Bound as… Found CN=…") or the step that failed. It tests **the values in the form, saved or not**, so settings can be proven before they go live. No user password is involved.
+  - The page shows whether any agent is connected, and warns when none is.
+  - Directory sign-in must be **enabled** before a user can be created as, or switched to, a directory user. Disabling it later doesn't convert anyone: directory users simply can't sign in until it is re-enabled.
+  - Changes are audited (`LdapSettings`: `Created`/`Updated` with the changed fields). The audit entry records *that* the bind password changed, never its value.
+- **Secure defaults:** LDAPS on 636 with the server's certificate validated. Both can be switched off for a directory that can't do better (the test result says so in words: "no TLS - passwords cross the network in the clear"), but they are never off by default.
+
+> **Assumptions flagged:**
+> - **Disabling someone in the directory stops new sign-ins but does not end an Orbit session that is already open** (the cookie lasts up to 7 days, sliding — §8). Deactivate the user in Orbit as well to end it at once. Having the agent report disabled accounts so Orbit can do this by itself is a natural follow-up, deliberately not in v1.
+> - The "temporarily unavailable" message differs from "Invalid login attempt", so *during an outage* someone could learn that a given email is a directory user. That was judged a fair price for telling staff the truth rather than implying they mistyped their password.
+> - The email is the join between an Orbit user and a directory entry. If someone's email changes in the directory, update it in Orbit too (or use a filter on an attribute that doesn't change).
+
+### 6.14 Orbit Agents
+
+- **Purpose:** the directory is behind the corporate firewall and Orbit is outside it. Rather than open a port inwards, an **Orbit Agent** — a small service installed on a machine inside the network — connects **outwards** to Orbit and carries out, on Orbit's behalf, the things that can only be done from inside. Today that is checking directory sign-ins (§6.13) and testing the directory settings; the agent is built as a general connector so further capabilities can be added without changing how it is installed or registered.
+- **Practically no settings on the agent.** The agent knows two things: Orbit's URL and the credential Orbit issued it. Both are written by one command. Directory servers, service accounts, filters — everything else — live in Orbit (§5.1 `LdapSettings`) and are sent to the agent with each request, so changing them never involves touching the agent.
+- **Registration, GitHub-runner style** (`SystemAdmin`-only, **Admin > Agents**):
+  1. *New agent* → the admin names it. Orbit creates it as `Pending` and shows, **once**, a ready-to-paste command: `Orbit.Agent configure --url https://<orbit> --token <one-time token>`, with the URL filled in from `App:BaseUrl`, plus the run/install-as-a-service commands.
+  2. The token is single-use and expires after an hour (`Agents:RegistrationTokenLifetimeMinutes`). *New token* on a still-pending agent issues another.
+  3. Running the command on the agent machine redeems the token for the agent's long-lived credential and saves it locally (§8.2). The agent becomes `Active`.
+  4. `Orbit.Agent run` — directly, or as a Windows service / systemd unit — connects, and the agent shows as **Online**.
+- **Agents list:** name, status (**Online** / **Offline** / *Waiting for configure* / *Token expired* / **Revoked**), machine name and OS, agent version, last seen, source address, created date.
+- **Revoke:** invalidates the credential and **disconnects the agent immediately**. **Delete** removes a pending or revoked row from the list. `Orbit.Agent remove`, run on the agent's machine, de-registers it from that side and deletes its local configuration.
+- **More than one agent** may be registered, for redundancy: Orbit asks each connected agent in turn until one can complete the request.
+- **Audit:** `Agent` `Created`, `Registered` (with the machine, OS, version and address it registered from), `Revoked`, `Deleted`.
+- The agent's operational side — credentials, connection, protocol, security — is specified in §8.2; installing it in §10.3.
+
 ## 7. Functional Requirements — Claude Integration (MCP Server)
 
 Orbit exposes an **MCP (Model Context Protocol) server** rather than a plain REST API, so Claude can connect to it directly as a tool provider (e.g. from a Claude Project's connector config) instead of needing a hand-rolled integration layer in between.
@@ -357,11 +427,12 @@ All of these are read-only except `create_task`, `update_task`, `add_comment`, `
 
 The MCP connection authenticates with the same API key scheme as §8 — Streamable HTTP supports custom headers, so the API key travels the same way (`Authorization: Bearer <key>`) as it would on a REST call. The key's `Role` and `DepartmentId` (Member/DepartmentAdmin/SystemAdmin) still govern what its tool calls are allowed to do, exactly as in §6.5.
 
-## 8. Authentication (Interactive Users vs MCP)
+## 8. Authentication (Interactive Users, MCP, Orbit Agents)
 
-Two different populations hit this system, so two different auth schemes make sense:
+Three different populations hit this system, so three different auth schemes make sense:
 
-- **Interactive users (Razor Pages UI):** ASP.NET Core Identity, cookie-based session, standard Individual Accounts login flow.
+- **Interactive users (Razor Pages UI):** ASP.NET Core Identity, cookie-based session, standard Individual Accounts login flow. How the password is *checked* depends on the user's sign-in method — Orbit's own hash, or the company directory via an Orbit Agent (§8.1). Everything after that check is identical.
+- **Orbit Agents (§8.2):** a long-lived agent secret sent as `Authorization: Bearer <secret>`, handled by its own authentication scheme. An agent principal identifies the agent and carries **no role and no department**, so it can reach the agent hub and nothing else — not a page, not the MCP server.
 - **Claude / machine callers (MCP server, §7):** since Individual Accounts has no external directory to issue machine tokens from, the natural fit is a long-lived **API key** — issued per integration, sent as `Authorization: Bearer <key>` on the MCP connection, validated against a hashed value stored in the `ApiKeys` table (§5.1). This is also the easiest option to wire into a Claude Project's connector config.
 
   Each key carries a `Role` (`SystemAdmin`, `DepartmentAdmin`, or `Member`) and, for the latter two, a `DepartmentId`, assigned when the key is issued. The same authorization checks that gate role and department scoping for human users (§6.5) apply to the key — e.g. a `Member`-role key can create and edit tasks in its own department but is rejected if it tries to close one or touch another department's data; a `DepartmentAdmin`-role key can close tasks within its own department; a `SystemAdmin`-role key can do both across any department. This means the same policy/handler code path enforces the rule regardless of whether the caller is a signed-in user, an API key on the MCP server, or (if a plain REST surface is ever added later) a REST caller — no separate "is this the API" special case for authorization.
@@ -370,12 +441,60 @@ Two different populations hit this system, so two different auth schemes make se
 
 Either way, the MCP identity should map to a synthetic `User` row (e.g. "Claude Agent") so `CreatedById`/audit trails have something to point at, distinct from a null value.
 
+### 8.1 Directory sign-in flow
+
+```
+Browser ──login form (TLS)──▶ Orbit ──command, down the agent's own connection──▶ Orbit Agent ──LDAPS──▶ Directory
+                                 ▲                                                    │
+                                 └──────────────── result ◀───────────────────────────┘
+```
+
+1. The login page calls Identity's `PasswordSignInAsync` as it always has. Orbit substitutes its own `SignInManager` whose **only** override is the password check (`CheckPasswordSignInAsync`): for a `Local` user it defers to Identity unchanged; for an `Ldap` user it asks the directory instead of comparing a hash.
+2. Because the override sits *beneath* `PasswordSignInAsync`, everything around the password check is stock Identity and therefore identical for both kinds of user: the deactivation/lockout pre-check (which runs **before** the directory is contacted), failure counting and lockout, the two-factor step, the cookie, the security-stamp revalidation.
+3. For a directory user Orbit loads the directory settings, picks a connected agent that advertises the `ldap.authenticate` capability, and invokes `Authenticate` on it with `{ settings, username, password }`, waiting up to `Agents:CommandTimeoutSeconds` (default 15). If that agent doesn't answer, or reports it couldn't reach the directory, the next connected agent is tried.
+4. The agent (a) binds as the service account, (b) searches for the entry matching the user filter — requiring exactly one, (c) binds **as that entry** with the supplied password on a fresh connection, and returns `Success`, `InvalidCredentials`, `UserNotFound`, `Ambiguous`, `Unavailable` or `Error`, with a diagnostic detail for Orbit's log.
+5. Orbit maps that to the three outcomes of §6.13: success → sign in; invalid/not-found/ambiguous → generic failure, counted; unavailable/error/no agent/timeout → "temporarily unavailable", **not** counted.
+
+Rules the implementation must keep, each of which closes a specific hole:
+- **An empty password is refused before it reaches the directory** — by Orbit and again by the agent. An LDAP simple bind with an empty password is an "unauthenticated bind", which Active Directory answers with *success* without checking anything; passing one through would sign anyone in as anyone.
+- **The sign-in name is escaped (RFC 4515) before it is placed in the search filter**, so input such as `*)(objectClass=*` is searched for literally instead of rewriting the filter.
+- **Exactly one match.** Taking "the first" of several entries would let whichever entry the server happened to list first decide who is signing in.
+- **The server certificate is validated by default**; accepting any certificate would let anything on the network path pose as the directory and harvest passwords. It can be switched off, explicitly, per §6.13.
+- **Failures before the user's own bind are never the user's fault** (unreachable server, service account rejected, timeout) and must be reported as `Unavailable`, not as a wrong password — otherwise an outage would lock out everyone who tried to sign in during it.
+
+### 8.2 Orbit Agent: registration, credential, connection, commands
+
+**Registration.** `POST /agent/register` with `{ token, machineName, osDescription, version }`. It is anonymous by necessity — the token *is* the credential — so the token is 256 bits of randomness, stored only as a SHA-256 hash, single-use and short-lived, and the endpoint is rate-limited. Redemption is a single conditional update (*pending, this token, not expired* → *active, this secret*), so two racing `configure` runs cannot both succeed. Any failure returns the same 401 without saying which check failed. On success Orbit returns `{ agentId, name, secret }` — the only time the secret exists outside the agent's machine.
+
+**Credential.** The secret (`orbitagent_…`) is stored in Orbit only as a SHA-256 hash, like an API key (§5.1); its prefix differs from an API key's (`orbit_…`) so neither is ever looked up as the other. On the agent it is saved in `agent.json` beside the executable — encrypted with DPAPI (machine scope, so the service account can read what the installing admin wrote) on Windows, file mode `600` elsewhere. The agent refuses a non-`https` Orbit URL (loopback excepted, for development), because users' passwords travel over this connection.
+
+**Connection.** The agent opens a SignalR connection to `/agent/hub` — **outbound**, HTTPS, WebSocket where the path allows and Server-Sent Events/long polling where it doesn't, through the machine's configured proxy if it has one. Nothing listens on the agent's side. It reconnects forever with capped back-off, and re-establishes the connection itself if Orbit closes it deliberately (a server-initiated close forbids SignalR's automatic reconnect, so the agent must not rely on it). After each (re)connect it sends `Hello { machineName, osDescription, version, capabilities[] }`; **until then Orbit sends it nothing**. One connection per agent: a second connection with the same credential replaces the first.
+
+**Commands.** Orbit → agent, as SignalR *client results* (Orbit invokes a method on one specific connection and awaits its return value): `Authenticate(LdapAuthRequest) → LdapAuthResult` and `TestDirectory(LdapTestRequest) → LdapTestResult`. **Every command carries everything it needs** — the directory settings travel with each request — so the agent is stateless: nothing to cache, nothing to invalidate, and a settings change in Orbit applies to the very next sign-in. Orbit only sends a command to an agent whose `Hello` listed the matching **capability** (`ldap.authenticate`, `ldap.test`); that is the extension point for future agent features — a new command is a new capability name, and agents that predate it are simply never asked.
+
+**Shared contract.** The message types and method/route names live in one small library (`Orbit.Agents.Contracts`) referenced by both Orbit and the agent, so the two cannot drift. Types that carry a secret are classes rather than records, because a record's generated `ToString()` prints every property.
+
+> **Assumption flagged:** the registry of connected agents is in memory, which assumes a **single Orbit instance** — the same assumption the in-memory Quartz store already makes (§6.4). Running several instances would need a SignalR backplane and a shared registry.
+
+### 8.3 Security properties
+
+- **No inbound exposure.** The corporate firewall is untouched; the agent needs outbound HTTPS to Orbit and LDAP(S) to the directory.
+- **Where a user's directory password goes:** browser → Orbit (TLS) → agent (TLS, over the agent's authenticated connection) → directory (LDAPS). It is held in memory for the duration of the request and is **never stored and never logged** by Orbit or the agent. Orbit necessarily sees it — the login form posts to Orbit — so relaying it to the agent adds no party that didn't already have to be trusted, other than the agent itself.
+- **What Orbit stores about the directory:** the settings, with the service-account password encrypted under the Data Protection key ring. Use a **read-only, least-privilege service account**: Orbit is internet-facing, and this is the one directory credential it holds.
+- **The agent's credential is the crown jewel.** Whoever holds a valid `agent.json` can connect as that agent, and would then be *sent* directory users' passwords to check, along with the service-account password. Hence: stored hashed in Orbit and protected on disk on the agent; shown to nobody; the agents list shows each agent's machine and source address so an unexpected one stands out; registration is audited; and **Revoke** takes effect immediately, dropping the live connection.
+- **Orbit cannot be used to attack the directory from the internet:** sign-in goes only to users that already exist in Orbit, failures are counted and lock the Orbit account (§6.5), and a locked or deactivated account is refused without the directory being contacted at all.
+- **An agent cannot be used to attack Orbit:** its principal has no role or department and is accepted by the agent hub only. The agent never initiates anything but its connection and its `Hello`.
+- **Break-glass:** at least one `SystemAdmin` always has a local password (§6.5), so Orbit stays administrable when the directory or the agent is down.
+
 ## 9. Non-Functional Requirements
 
 - **Auditability:** every MCP-originated write is logged (§5.1 AuditLog) — this matters more here than in a typical CRUD app, since an AI agent is writing data unsupervised.
 - **Idempotency:** `create_task` should accept an optional client-supplied `IdempotencyKey` argument so a retried Claude call doesn't create duplicate tasks.
 - **Performance:** trivial at expected team scale (tens of users, hundreds of tasks) — no special work needed beyond normal EF Core indexing on `ProjectId`, `AssigneeId`, `Status`.
-- **Hosting:** production runs on Ubuntu Linux (§10); dev/local runs wherever a developer runs `dotnet run`.
+- **Hosting:** production runs on Ubuntu Linux (§10); dev/local runs wherever a developer runs `dotnet run`. The Orbit Agent runs wherever it can reach the directory — typically a Windows server inside the corporate network — and is cross-platform (§10.3).
+- **Credentials at rest:** nothing that authenticates anyone is stored in the clear. API keys, agent secrets and agent registration tokens are stored as SHA-256 hashes; the directory service-account password is encrypted with Data Protection; directory users' passwords are not stored at all (§8.3).
+- **Secrets never reach a log:** no password — a user's or the service account's — is logged by Orbit or by the agent; sign-in log lines carry the username, the outcome and the directory's reason.
+- **Availability of directory sign-in** depends on Orbit, an agent and the directory all being up. It degrades safely: an outage produces a clear "temporarily unavailable" rather than a misleading failure, never counts towards lockout, never affects local accounts, and can be mitigated by registering a second agent (§6.14). The break-glass rule (§6.5) keeps Orbit administrable throughout.
 
 ## 10. Configuration & Deployment
 
@@ -394,7 +513,19 @@ Orbit relies on ASP.NET Core's standard layered configuration (`appsettings.json
 - **Least privilege:** the database connection string uses a dedicated `orbit` role scoped to just the `orbit` database (created by a setup script, not the Postgres superuser) — so a compromised app process can't reach other databases on the same server or alter roles/permissions.
 - **Data Protection key ring:** persisted to a stable directory outside the app's deployment folder (so a redeploy doesn't wipe it) and `chmod 700`. This is a real, easy-to-miss requirement: ASP.NET Core's Data Protection keys sign auth cookies and antiforgery tokens; without a stable, persisted key ring, every app restart regenerates the keys and silently signs out every logged-in user. The directory should be included in backups for the same reason.
 - **First-run admin bootstrap:** initial `SystemAdmin` account details (email, display name, a temporary password) are supplied via environment variables and only consumed if no such account exists yet — i.e. it's a one-time seed, not something the app re-applies on every start. Operationally, the person deploying signs in with the seeded account, changes the password immediately, then removes the seed variables from the env file and restarts — leaving a real credential sitting in a config file indefinitely is exactly the kind of thing this pattern is meant to avoid.
-- **Optional feature toggles:** background-job settings (whether recurring-task generation or due-date notifications are enabled, their Quartz cron expressions, run-on-startup, notification lead time: `Jobs__RecurringTasks__Cron`, `Jobs__DueDateNotifications__Cron`, etc.) are also environment-variable-overridable, with sane defaults baked into `appsettings.json` so they don't need to be set explicitly.
+- **Optional feature toggles:** background-job settings (whether recurring-task generation or due-date notifications are enabled, their Quartz cron expressions, run-on-startup, notification lead time: `Jobs__RecurringTasks__Cron`, `Jobs__DueDateNotifications__Cron`, etc.) are also environment-variable-overridable, with sane defaults baked into `appsettings.json` so they don't need to be set explicitly. The same goes for the two agent timings, `Agents__CommandTimeoutSeconds` and `Agents__RegistrationTokenLifetimeMinutes`. Directory settings are deliberately **not** configuration: they are edited in the UI (§6.13) so that neither Orbit's env file nor the agent has to be touched to change them.
+- **Behind the reverse proxy:** Orbit honours `X-Forwarded-For`/`X-Forwarded-Proto`, from a proxy on the same host only (the framework's loopback-only default), so the request scheme and the source addresses it records — an agent's, notably — are the real ones rather than `127.0.0.1` over `http`. The proxy must allow WebSocket upgrade and long-lived connections on `/agent/hub`; if it doesn't, the agent falls back to Server-Sent Events or long polling by itself. `App__BaseUrl` must be the public `https` address: it is what the agent's `configure` command is built from.
+- **Data Protection key ring, again:** it now also encrypts the directory service-account password. Losing it means re-entering that password under Admin > Directory; nothing else about directory sign-in is affected.
+
+### 10.3 Orbit Agent (inside the corporate network)
+
+- **What it is:** a self-contained .NET Worker Service (the `Orbit.Agent` project), published separately from the web app (`dotnet publish Orbit.Agent -r win-x64|linux-x64 --self-contained -p:PublishSingleFile=true`) so the target machine needs no .NET installed. It is not part of the web app's (`Orbit.Web`) publish output.
+- **Where it runs:** any machine inside the network that can reach the directory server. **Network needs: outbound HTTPS to Orbit, LDAP(S) to the directory. Nothing inbound.** It uses the machine's proxy settings (`HTTPS_PROXY`, or the Windows system proxy) automatically.
+- **Configuration: one command.** `Orbit.Agent configure --url <orbit> --token <token>`, copied from Admin > Agents (§6.14), writes `agent.json` beside the executable. There is no other configuration file to maintain, and no directory setting on the agent.
+- **Commands:** `configure` (register; `--replace` to overwrite an existing registration), `run` (connect and serve — what the service runs), `remove` (de-register and delete the local configuration).
+- **As a service:** Windows — `sc.exe create OrbitAgent binPath= "…\Orbit.Agent.exe run" start= auto`; Linux — the supplied `deploy/orbit-agent.service` unit, under a dedicated unprivileged user that owns `agent.json`. Logs go to the console, the Windows Event Log or the journal.
+- **Protecting `agent.json`:** treat it as a password (§8.3). DPAPI-encrypted on Windows; mode `600` and owned by the service user on Linux. If it may have been copied, **Revoke** the agent in Orbit and register a new one.
+- **Redundancy / upgrades:** register a second agent on another machine; Orbit uses whichever is connected. Replacing the executable needs no re-registration — `agent.json` stays.
 
 > Note: the config file you pasted contains real database and admin credentials. I haven't reproduced any of those values here — the section above describes the pattern (env file + systemd `EnvironmentFile`, double-underscore nesting, `chmod 600`, first-run-only admin seed) rather than your actual secrets. Worth treating that password as already-exposed and rotating it, since it's now in this chat's history.
 
@@ -409,6 +540,19 @@ Orbit.sln
 ```
 
 Keeping `Application` separate from `Web` means the same `TaskService.CreateTask(...)` call is used by both a Razor Page handler and the API controller — no duplicated business logic between the two entry points.
+
+The Orbit Agent adds two projects alongside, as siblings at the solution root:
+
+```
+ ├─ Orbit.Agents.Contracts/   (messages + method/route names shared by Orbit and the agent — no dependencies)
+ └─ Orbit.Agent/              (the on-premises Worker Service: SignalR client + LDAP client)
+```
+
+`Orbit.Web` references only the contracts; the LDAP library is a dependency of the agent alone.
+
+**As built**, the solution (`Orbit.slnx`) is those three projects — `Orbit.Web`, `Orbit.Agent`, `Orbit.Agents.Contracts` — each in its own folder at the root, with `deploy/`, this spec and the README beside them. `Orbit.Data` and `Orbit.Application` have not been split out: inside `Orbit.Web` the `Data/` and `Application/` folders stand in for them, and the **namespaces already follow the structure above** (`Orbit.Data`, `Orbit.Application`, `Orbit.Auth`… — the project sets `RootNamespace` to `Orbit`, not `Orbit.Web`). Splitting them into real projects later is therefore a matter of moving folders, with no namespace churn and no change to the EF migrations' namespace. Every project living in its own folder matters for a practical reason too: a project at the repository root globs everything beneath it, and would compile its siblings' sources as its own.
+
+> **Naming note:** the contracts namespace is `Orbit.Agents.Contracts` — plural — on purpose. A namespace `Orbit.Agent` visible to the web app would shadow the `Agent` entity throughout `Orbit.*` ("'Agent' is a namespace but is used like a type"). The agent executable's own namespace *is* `Orbit.Agent`, which is harmless because the web app never references that project.
 
 ## 12. Reporting
 
@@ -460,6 +604,21 @@ Earlier open questions, now resolved:
 24. **Inline assignee and due date on task lists (§6.2):** the quick status control is joined by inline Assignee and Due date controls, shown only on rows the user could edit in full and saved through dedicated service methods (`ChangeAssigneeAsync`, `ChangeDueDateAsync`) with the same validation, audit and notification as the edit form. Enabled on the Tasks list, the sprint detail page and the project detail page; the shared task table switches it on per page, and My Tasks / Backlog stay status-only. Candidate assignees come from one lookup (`GetQuickEditCandidatesAsync`: all active users for a System Admin, own department plus System Admins otherwise), filtered per row to the task's department.
 25. **Day planner (§6.12):** the morning-scrum plan is a `PlannedFor` date on the task rather than a boolean or a separate table — it expires by itself, needs no reset job, and gives "not finished last time" for free. Ticking "Today" follows the sprint-planning permission (anyone in the department), not the edit permission, so a Member can pick up an unassigned task. `PlannedFor` is deliberately outside `TaskInput`/`update_task`'s full-state edit and is set only through `SetPlannedForAsync`, so an ordinary edit can never wipe the plan. The Today page groups by assignee (not a kanban) so it can reuse the shared task table and its inline controls. "Today" is the UTC date like every other date in Orbit; v1 plans today only.
 
+26. **Directory (LDAP / Active Directory) sign-in via an on-premises Orbit Agent (§6.13, §6.14, §8.1–§8.3, §10.3).** The directory is behind the corporate firewall and no inbound port may be opened, so a small agent inside the network connects *out* to Orbit and checks passwords on its behalf. Decisions taken:
+    - **Sign-in method is per user** (`AuthSource`: `Local` | `Ldap`), chosen by a `SystemAdmin` — not "try the directory, fall back to local". One thing vouches for each user; a directory user has no `PasswordHash`; local accounts keep working when the directory doesn't.
+    - **No auto-provisioning.** A directory account without an Orbit account is rejected, consistent with self-registration being disabled and every user needing a role and department (§6.5).
+    - **Directory settings, including the service-account password, live in Orbit** (encrypted with Data Protection), not on the agent — the agent was to have "practically no settings". They are sent with every command, which also makes the agent stateless. The trade-off, accepted knowingly: internet-facing Orbit holds one directory credential, so it should be a read-only, least-privilege account.
+    - **Registration copies the GitHub Actions runner:** a one-time, short-lived token and a paste-ready `configure --url … --token …` command; the agent ends up holding only Orbit's URL and its own credential.
+    - **Transport is SignalR with client results** over the agent's outbound connection — built into ASP.NET Core, request/response without polling, degrades to SSE/long polling behind awkward proxies. Assumes a single Orbit instance (flagged in §8.2).
+    - **Capabilities** announced in the agent's `Hello` make it a general connector: directory sign-in is its first job, and later ones need no change to installation or registration.
+    - **Implemented as one override** — `SignInManager.CheckPasswordSignInAsync` — so lockout, two-factor, deactivation and the cookie are stock Identity and identical for both kinds of user.
+    - The LDAP code was ported from an existing `LdapService` with five defects fixed rather than copied: unescaped filter input (LDAP injection), certificate validation unconditionally disabled, empty passwords passed to the directory (an unauthenticated bind succeeds on Active Directory), first-match-wins on an ambiguous search, and directory outages reported as wrong passwords (§8.1).
+27. **Two behaviour changes that came with item 26, called out because they affect existing users and deployments:**
+    - **Account lockout now actually applies.** The stock login page passes `lockoutOnFailure: false`, so failed sign-ins were never counted. Orbit's login page now passes `true`: 5 wrong passwords lock an account for 5 minutes, local or directory. It was needed so Orbit can't be used to guess directory passwords, and it is the right behaviour for local accounts too.
+    - **The "one active System Admin must remain" rule became "one active System Admin *with a local password* must remain"** (§6.5) — the break-glass account for when the directory or agent is down.
+    - Also: Orbit now honours `X-Forwarded-*` headers from a same-host reverse proxy (§10.2), so the agent's source address and the request scheme are real. As a side effect the MCP URL shown on the API Keys page is now `https://` behind the proxy.
+28. **Solution restructured into three sibling projects (§11):** the web app moved from the repository root into `Orbit.Web/` (project and assembly renamed `Orbit` → `Orbit.Web`), and `Orbit.Agent` / `Orbit.Agents.Contracts` came out of the `agent/` folder to sit beside it. The root-level web project had been globbing the agent's sources and needed explicit exclusions; with every project in its own folder those are gone. **Namespaces did not change** — `RootNamespace` stays `Orbit`, so code is still `Orbit.Data`, `Orbit.Application`, etc., matching §11, and the migrations' namespace is untouched. **Deployment consequence:** the entry point is now `Orbit.Web.dll`. An existing server must have its app folder emptied before the new output is copied in, and its systemd `ExecStart` updated — otherwise the old `Orbit.dll` is still there and the service carries on running the previous build without complaint (`deploy/README.md` §2). Data Protection is unaffected because the application name is pinned to `"Orbit"` in code rather than derived from the assembly or path, so production sessions and the encrypted directory bind password survive the rename.
+
 ## 14. Suggested Build Order
 
 1. Data layer: entities, DbContext, initial EF migration against Postgres — including `Department` and the `DepartmentId` FKs on `User`/`Project`/`Task`/`RecurringTaskDefinition`/`ApiKey`.
@@ -477,3 +636,4 @@ Earlier open questions, now resolved:
 13. Configuration & deployment: `appsettings.Development.json` for dev; production env-file/systemd setup, Data Protection key ring path, least-privilege DB role script, first-run admin seed (§10).
 14. Appearance: light/dark theme on Bootstrap colour modes, navbar toggle, per-browser persistence (§6.11).
 15. Day planner: `PlannedFor` migration, Today tick box in the shared task table + Quick handler, "Planned today" filter, Today page with carry-over, dashboard card, `plannedFor` MCP args (§6.12).
+16. Directory sign-in and the Orbit Agent (§6.13, §6.14, §8.1–§8.3, §10.3), in this order so each step can be tested before the next: shared contracts project → `User.AuthSource` + `Agent` + `LdapSettings` migration (backfilling existing users as `Local`) → agent authentication scheme, hub, connection registry and the register/de-register endpoints → Admin > Agents with the one-time `configure` command → the agent itself (`configure` / `run` / `remove`, reconnect loop, `Hello`) → Admin > Directory with *Test connection* (proves the whole path before any user depends on it) → the `SignInManager` override, the login page, per-user sign-in method and the break-glass rule → deployment assets (systemd unit, reverse-proxy WebSocket settings).

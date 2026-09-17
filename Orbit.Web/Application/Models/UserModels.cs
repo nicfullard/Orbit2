@@ -8,7 +8,8 @@ public sealed class UserInput
     public string DisplayName { get; set; } = string.Empty;
     public Guid? DepartmentId { get; set; }
     public OrbitRole Role { get; set; } = OrbitRole.Member;
-    /// <summary>Temporary password (create only).</summary>
+    public AuthSource AuthSource { get; set; } = AuthSource.Local;
+    /// <summary>Temporary password (create only, local users only).</summary>
     public string? Password { get; set; }
 }
 
@@ -21,7 +22,8 @@ public sealed record UserSummary(
     string? DepartmentName,
     bool IsActive,
     bool IsSystemAccount,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    AuthSource AuthSource = AuthSource.Local);
 
 public sealed record CreatedApiKey(ApiKey Key, string RawKey);
 

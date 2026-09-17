@@ -70,6 +70,23 @@ document.addEventListener('DOMContentLoaded', function () {
   document.querySelectorAll('select.js-department-select').forEach(orbitFilterAssignees);
 });
 
+// User form (Admin > Users): a directory (LDAP) user has no Orbit password, so the temporary-password field is
+// hidden and disabled for them (a disabled input is neither validated nor submitted).
+function orbitToggleLocalPassword(select) {
+  var isLocal = select.value !== 'Ldap';
+  document.querySelectorAll('.js-local-password').forEach(function (el) {
+    el.hidden = !isLocal;
+    el.querySelectorAll('input').forEach(function (input) { input.disabled = !isLocal; });
+  });
+}
+document.addEventListener('change', function (e) {
+  var el = e.target;
+  if (el && el.classList && el.classList.contains('js-auth-source')) orbitToggleLocalPassword(el);
+});
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('select.js-auth-source').forEach(orbitToggleLocalPassword);
+});
+
 // Light / dark theme toggle (navbar icon). The chosen theme is stored in localStorage and re-applied by the
 // inline script in _Layout.cshtml before first paint; this just flips it and keeps the button's label current.
 (function () {

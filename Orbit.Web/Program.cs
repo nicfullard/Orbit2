@@ -1,8 +1,12 @@
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.AspNetCore;
+using Orbit.Agents;
+using Orbit.Agents.Contracts;
 using Orbit.Application;
 using Orbit.Application.Services;
 using Orbit.Auth;
@@ -25,6 +29,13 @@ builder.Services.Configure<AppOptions>(config.GetSection(AppOptions.Section));
 builder.Services.Configure<JobOptions>(config.GetSection(JobOptions.Section));
 builder.Services.Configure<SeedOptions>(config.GetSection(SeedOptions.Section));
 builder.Services.Configure<DatabaseOptions>(config.GetSection(DatabaseOptions.Section));
+builder.Services.Configure<AgentOptions>(config.GetSection(AgentOptions.Section));
+
+// Behind nginx/Caddy on the same host (deploy/README.md) the app only ever sees 127.0.0.1 over plain http.
+// Honour X-Forwarded-For/Proto - from loopback proxies only, the default - so an agent's source address and
+// the request scheme are the real ones.
+builder.Services.Configure<ForwardedHeadersOptions>(o =>
+    o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto);
 
 // Persisted key ring (production): without it every restart signs everyone out. See deploy/README.md.
 var keyRingPath = config[$"{Orbit.Application.DataProtectionOptions.Section}:KeyRingPath"];
@@ -46,7 +57,8 @@ builder.Services.AddDefaultIdentity<ApplicationUser>(options =>
     })
     .AddRoles<IdentityRole<Guid>>()
     .AddEntityFrameworkStores<ApplicationDbContext>()
-    .AddClaimsPrincipalFactory<OrbitClaimsPrincipalFactory>();
+    .AddClaimsPrincipalFactory<OrbitClaimsPrincipalFactory>()
+    .AddSignInManager<OrbitSignInManager>(); // directory (LDAP) users are checked against AD via an Orbit Agent
 
 // Re-validate the cookie against the security stamp often so role/department changes and deactivation bite quickly.
 builder.Services.Configure<SecurityStampValidatorOptions>(o => o.ValidationInterval = TimeSpan.FromMinutes(5));
@@ -58,15 +70,19 @@ builder.Services.ConfigureApplicationCookie(o =>
     o.SlidingExpiration = true;
 });
 
-// --- API keys (MCP / machine callers) -----------------------------------------------------
+// --- API keys (MCP / machine callers) and Orbit Agents --------------------------------------
 builder.Services.AddAuthentication()
-    .AddScheme<ApiKeyAuthenticationOptions, ApiKeyAuthenticationHandler>(ApiKeyAuthenticationDefaults.Scheme, null);
+    .AddScheme<ApiKeyAuthenticationOptions, ApiKeyAuthenticationHandler>(ApiKeyAuthenticationDefaults.Scheme, null)
+    .AddScheme<AgentAuthenticationOptions, AgentAuthenticationHandler>(AgentAuthenticationDefaults.Scheme, null);
 
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy(Policies.SystemAdmin, p => p.RequireRole(Roles.SystemAdmin))
     .AddPolicy(Policies.McpApiKey, p => p
         .AddAuthenticationSchemes(ApiKeyAuthenticationDefaults.Scheme)
-        .RequireAuthenticatedUser());
+        .RequireAuthenticatedUser())
+    .AddPolicy(Policies.Agent, p => p
+        .AddAuthenticationSchemes(AgentAuthenticationDefaults.Scheme)
+        .RequireClaim(OrbitClaims.AgentId));
 
 // --- Razor Pages --------------------------------------------------------------------------
 builder.Services.AddRazorPages(options =>
@@ -76,7 +92,11 @@ builder.Services.AddRazorPages(options =>
         options.Conventions.AuthorizeFolder("/Admin", Policies.SystemAdmin);
         options.Conventions.AuthorizeFolder("/Reports", Policies.SystemAdmin);
     })
-    .AddMvcOptions(o => o.Filters.Add(new OrbitExceptionPageFilter()));
+    .AddMvcOptions(o =>
+    {
+        o.Filters.Add(new OrbitExceptionPageFilter());
+        o.Filters.Add(new DirectoryAccountPageFilter());
+    });
 
 // --- Application services -----------------------------------------------------------------
 builder.Services.AddHttpContextAccessor();
@@ -93,6 +113,9 @@ builder.Services.AddScoped<DepartmentService>();
 builder.Services.AddScoped<UserDirectoryService>();
 builder.Services.AddScoped<UserAdminService>();
 builder.Services.AddScoped<ApiKeyService>();
+builder.Services.AddScoped<AgentService>();
+builder.Services.AddScoped<LdapSettingsService>();
+builder.Services.AddScoped<DirectoryAuthService>();
 builder.Services.AddScoped<ReportingService>();
 builder.Services.AddScoped<DashboardService>();
 builder.Services.AddTransient<IEmailSender, LoggingEmailSender>();
@@ -107,6 +130,21 @@ builder.Services.AddMcpServer(o =>
     .WithHttpTransport(o => o.SessionMode = HttpServerSessionMode.Stateless)
     .WithTools<OrbitTools>();
 
+// --- Orbit Agents (on-premises connector, outbound SignalR connection) ----------------------
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<AgentConnectionRegistry>();
+builder.Services.AddRateLimiter(o =>
+{
+    o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    // One shared window rather than one per client address: registration is a rare, admin-initiated event.
+    o.AddFixedWindowLimiter(AgentEndpoints.RegistrationRateLimit, w =>
+    {
+        w.PermitLimit = 10;
+        w.Window = TimeSpan.FromMinutes(1);
+        w.QueueLimit = 0;
+    });
+});
+
 // --- Background jobs (Quartz.NET, cron-scheduled from Jobs:*) ------------------------------
 builder.Services.AddOrbitJobs(config);
 
@@ -115,6 +153,8 @@ QuestPDF.Settings.License = LicenseType.Community;
 var app = builder.Build();
 
 // --- Pipeline -----------------------------------------------------------------------------
+app.UseForwardedHeaders();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseMigrationsEndPoint();
@@ -129,10 +169,13 @@ app.UseHttpsRedirection();
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.MapStaticAssets();
 app.MapRazorPages().WithStaticAssets();
 app.MapMcp("/mcp").RequireAuthorization(Policies.McpApiKey);
+app.MapHub<AgentHub>(AgentProtocol.HubPath); // authorised by [Authorize(Policy = Policies.Agent)] on the hub
+app.MapAgentEndpoints();
 
 await DbInitializer.InitializeAsync(app.Services);
 

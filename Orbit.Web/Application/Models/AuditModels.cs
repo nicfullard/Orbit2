@@ -9,6 +9,8 @@ public static class AuditEntity
     public const string Department = "Department";
     public const string User = "User";
     public const string ApiKey = "ApiKey";
+    public const string Agent = "Agent";
+    public const string LdapSettings = "LdapSettings";
 }
 
 public static class AuditAction
@@ -36,6 +38,8 @@ public static class AuditAction
     public const string Reactivated = "Reactivated";
     public const string PasswordReset = "PasswordReset";
     public const string Revoked = "Revoked";
+    public const string Registered = "Registered";
+    public const string Deleted = "Deleted";
 }
 
 public sealed class AuditFilter

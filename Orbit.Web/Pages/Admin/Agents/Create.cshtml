@@ -1,0 +1,40 @@
+@page
+@model Orbit.Pages.Admin.Agents.CreateModel
+@{
+    ViewData["Title"] = "New agent";
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Admin/Agents/Index">Agents</a></li>
+        <li class="breadcrumb-item active" aria-current="page">New</li>
+    </ol>
+</nav>
+
+@if (Model.Setup is not null)
+{
+    <h1 class="h3 mb-3">Agent created</h1>
+    <partial name="_AgentSetup" model="Model.Setup" />
+    <a class="btn btn-outline-secondary btn-sm" asp-page="/Admin/Agents/Index">Done</a>
+}
+else
+{
+    <h1 class="h3 mb-3">New agent</h1>
+    <div class="card" style="max-width:40rem">
+        <div class="card-body">
+            <form method="post">
+                <div asp-validation-summary="ModelOnly" class="text-danger mb-2"></div>
+                <div class="mb-3">
+                    <label class="form-label" for="Name">Name</label>
+                    <input class="form-control" id="Name" name="Name" value="@Model.Name" maxlength="200" required />
+                    <div class="form-text">Something that tells you where it runs, e.g. "Head office - DC01".</div>
+                </div>
+                <p class="small text-muted mb-0">An Orbit Agent is a small service you run inside your own network. It connects <em>out</em> to Orbit and lets Orbit check sign-ins against your directory (Active Directory / LDAP) without opening any firewall ports. Creating one here gives you a one-time command that configures it.</p>
+                <div class="mt-4 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary">Create agent</button>
+                    <a class="btn btn-outline-secondary" asp-page="/Admin/Agents/Index">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+}

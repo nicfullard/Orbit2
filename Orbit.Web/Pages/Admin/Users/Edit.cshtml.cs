@@ -5,12 +5,14 @@ using System.Text;
 using Orbit.Application;
 using Orbit.Application.Models;
 using Orbit.Application.Services;
+using Orbit.Data.Entities;
 using ValidationException = Orbit.Application.ValidationException;
 
 namespace Orbit.Pages.Admin.Users;
 
-public class EditModel(UserAdminService users, DepartmentService departments, IActorProvider actors) : OrbitPageModel
+public class EditModel(UserAdminService users, DepartmentService departments, IActorProvider actors, LdapSettingsService ldapSettings) : OrbitPageModel
 {
+    public bool DirectoryEnabled { get; private set; }
     [BindProperty] public UserForm Form { get; set; } = new();
     [BindProperty] public string? TemporaryPassword { get; set; }
     public UserSummary Account { get; private set; } = null!;
@@ -36,8 +38,11 @@ public class EditModel(UserAdminService users, DepartmentService departments, IA
         {
             try
             {
+                var wasDirectoryUser = Account.AuthSource == AuthSource.Ldap;
                 var updated = await users.UpdateAsync(id, Form.ToInput(), ct);
-                Success($"{updated.DisplayName} saved.");
+                Success(wasDirectoryUser && updated.AuthSource == AuthSource.Local
+                    ? $"{updated.DisplayName} saved. They now sign in with a local password and don't have one yet: set a temporary password or generate a reset link below."
+                    : $"{updated.DisplayName} saved.");
                 return RedirectToPage(new { id });
             }
             catch (ValidationException ex) { ModelState.AddModelError(string.Empty, ex.Message); }
@@ -97,5 +102,6 @@ public class EditModel(UserAdminService users, DepartmentService departments, IA
     {
         Actor = await actors.GetAsync(ct);
         Account = await users.GetAsync(id, ct);
+        DirectoryEnabled = await ldapSettings.IsEnabledAsync(ct);
     }
 }

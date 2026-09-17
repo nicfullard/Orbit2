@@ -50,6 +50,25 @@ public enum SprintStatus
     Completed
 }
 
+/// <summary>
+/// How a user proves who they are at sign-in (spec §6.13). <see cref="Local"/> is a password held by Orbit;
+/// <see cref="Ldap"/> is checked against the company directory through an Orbit Agent, and Orbit holds no password.
+/// </summary>
+public enum AuthSource
+{
+    Local,
+    Ldap
+}
+
+/// <summary>Lifecycle of an on-premises Orbit Agent (spec §6.14).</summary>
+public enum AgentStatus
+{
+    /// <summary>Created in Orbit, waiting for <c>Orbit.Agent configure</c> to redeem its registration token.</summary>
+    Pending,
+    Active,
+    Revoked
+}
+
 /// <summary>Who performed an audited action. <see cref="System"/> covers background jobs.</summary>
 public enum ActorType
 {
@@ -89,5 +108,11 @@ public static class TaskStatusExtensions
         OrbitRole.SystemAdmin => "System Admin",
         OrbitRole.DepartmentAdmin => "Department Admin",
         _ => role.ToString()
+    };
+
+    public static string Label(this AuthSource source) => source switch
+    {
+        AuthSource.Ldap => "Directory (LDAP)",
+        _ => "Local password"
     };
 }

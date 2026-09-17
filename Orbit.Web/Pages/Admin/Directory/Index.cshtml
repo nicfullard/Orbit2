@@ -1,0 +1,133 @@
+@page
+@model Orbit.Pages.Admin.Directory.IndexModel
+@{
+    ViewData["Title"] = "Directory sign-in";
+    var f = Model.Form;
+}
+
+<div class="mb-3">
+    <h1 class="h3 mb-0">Directory sign-in (LDAP)</h1>
+    <div class="text-muted small">Lets users sign in with their company directory (Active Directory / LDAP) password. Orbit can't reach the directory itself, so the check is carried out by an <a asp-page="/Admin/Agents/Index">Orbit Agent</a> inside your network. These settings are sent to the agent with each request - there is nothing to configure on the agent.</div>
+</div>
+
+@if (Model.AgentsAbleToSignIn == 0)
+{
+    <div class="alert alert-warning">
+        <span class="fw-semibold">No Orbit Agent is connected.</span>
+        Directory users can't sign in until one is - local accounts are unaffected. <a asp-page="/Admin/Agents/Index">Manage agents</a>
+    </div>
+}
+else
+{
+    <div class="alert alert-success py-2">@Model.AgentsAbleToSignIn Orbit Agent@(Model.AgentsAbleToSignIn == 1 ? "" : "s") connected.</div>
+}
+
+@if (Model.Test is not null)
+{
+    var ok = Model.Test.Result?.Success == true;
+    <div class="alert @(ok ? "alert-success" : "alert-danger")">
+        <div class="fw-semibold mb-1">@(ok ? "Connection test passed" : "Connection test failed")@(Model.Test.AgentName is null ? "" : $" (agent \"{Model.Test.AgentName}\")")</div>
+        @if (Model.Test.Error is not null) { <div>@Model.Test.Error</div> }
+        @if (Model.Test.Result is not null)
+        {
+            <ol class="mb-0 ps-3 small">
+                @foreach (var step in Model.Test.Result.Steps) { <li>@step</li> }
+            </ol>
+        }
+        <div class="small mt-1">Nothing was saved - this tested the values in the form below.</div>
+    </div>
+}
+
+<form method="post">
+    <div asp-validation-summary="All" class="text-danger mb-2"></div>
+    <div class="row g-3">
+        <div class="col-lg-7">
+            <div class="card mb-3">
+                <div class="card-header fw-semibold">Directory server</div>
+                <div class="card-body">
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" role="switch" id="Form_Enabled" name="Form.Enabled" value="true" checked="@f.Enabled" />
+                        <label class="form-check-label" for="Form_Enabled">Enable directory sign-in</label>
+                        <div class="form-text">While off, nobody can sign in with a directory password and users can't be switched to it.</div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-8">
+                            <label class="form-label" for="Form_Server">Server</label>
+                            <input class="form-control" id="Form_Server" name="Form.Server" value="@f.Server" maxlength="255" placeholder="dc01.corp.example.com" />
+                            <div class="form-text">As reachable from the agent's machine, not from Orbit. With SSL, use the name on the server's certificate.</div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" for="Form_Port">Port</label>
+                            <input type="number" class="form-control" id="Form_Port" name="Form.Port" value="@f.Port" min="1" max="65535" />
+                            <div class="form-text">636 for LDAPS, 389 without.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="Form_UseSsl" name="Form.UseSsl" value="true" checked="@f.UseSsl" />
+                                <label class="form-check-label" for="Form_UseSsl">Use SSL (LDAPS)</label>
+                            </div>
+                            <div class="form-text">Without it, passwords cross your network unencrypted.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="Form_ValidateCertificate" name="Form.ValidateCertificate" value="true" checked="@f.ValidateCertificate" />
+                                <label class="form-check-label" for="Form_ValidateCertificate">Validate the server certificate</label>
+                            </div>
+                            <div class="form-text">Untick only for a certificate the agent's machine can't be made to trust.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header fw-semibold">Finding the user</div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-12">
+                            <label class="form-label" for="Form_BindDn">Bind DN (service account)</label>
+                            <input class="form-control" id="Form_BindDn" name="Form.BindDn" value="@f.BindDn" maxlength="500" placeholder="CN=svc-orbit,OU=Service Accounts,DC=corp,DC=example,DC=com" autocomplete="off" />
+                            <div class="form-text">A read-only account used to look the user up. Give it no more than read access to the users it needs to find.</div>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label" for="Form_BindPassword">Bind password</label>
+                            <input type="password" class="form-control" id="Form_BindPassword" name="Form.BindPassword" autocomplete="new-password" placeholder="@(Model.HasBindPassword ? "(stored - leave blank to keep it)" : "")" />
+                            <div class="form-text">Stored encrypted and never shown again.</div>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label" for="Form_SearchBase">Search base</label>
+                            <input class="form-control" id="Form_SearchBase" name="Form.SearchBase" value="@f.SearchBase" maxlength="500" placeholder="OU=Staff,DC=corp,DC=example,DC=com" />
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label" for="Form_UserFilter">User filter</label>
+                            <input class="form-control key-box" id="Form_UserFilter" name="Form.UserFilter" value="@f.UserFilter" maxlength="500" />
+                            <div class="form-text"><code>{0}</code> is the email the person signs in to Orbit with. It must match exactly one entry. Examples: <code>(mail={0})</code>, <code>(userPrincipalName={0})</code>, or to restrict to a group <code>(&amp;(mail={0})(memberOf=CN=Orbit Users,OU=Groups,DC=corp,DC=example,DC=com))</code>.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="card mb-3">
+                <div class="card-header fw-semibold">Test connection</div>
+                <div class="card-body">
+                    <p class="small text-muted">Asks a connected agent to reach the server and bind as the service account using the values in this form, saved or not. Add an email to also prove the search base and filter find that person. No user password is involved.</p>
+                    <label class="form-label small mb-0" for="SampleUsername">Look up this email (optional)</label>
+                    <input class="form-control form-control-sm mb-2" id="SampleUsername" name="SampleUsername" value="@Model.SampleUsername" placeholder="someone@example.com" />
+                    <button type="submit" class="btn btn-outline-primary btn-sm" asp-page-handler="Test">Test connection</button>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header fw-semibold">How sign-in works</div>
+                <div class="card-body small text-muted">
+                    <p>Each user has a sign-in method, set under <a asp-page="/Admin/Users/Index">Users</a>: a local Orbit password, or the directory. Users are still created in Orbit first - a directory account alone doesn't grant access.</p>
+                    <p class="mb-0">Keep at least one System Admin on a local password: it is your way in if the directory or the agent is down. Orbit enforces this.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>

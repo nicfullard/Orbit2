@@ -1,0 +1,27 @@
+[Unit]
+Description=Orbit Agent (on-premises connector for Orbit)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+WorkingDirectory=/opt/orbit-agent
+ExecStart=/opt/orbit-agent/Orbit.Agent run
+Restart=always
+RestartSec=10
+SyslogIdentifier=orbit-agent
+User=orbit-agent
+Group=orbit-agent
+
+# The agent needs outbound HTTPS to Orbit and LDAP(S) to the directory - nothing inbound, and no settings beyond
+# /opt/orbit-agent/agent.json, which 'Orbit.Agent configure' writes (mode 600). Run configure as this same user:
+#   sudo -u orbit-agent /opt/orbit-agent/Orbit.Agent configure --url https://orbit.example.com --token <token>
+# If outbound traffic must go through a proxy, uncomment:
+# Environment=HTTPS_PROXY=http://proxy.corp.example.com:8080
+Environment=DOTNET_PRINT_TELEMETRY_MESSAGE=false
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -12,6 +12,8 @@ appsettings.Development.json
 appsettings.*.local.json
 *.env
 !deploy/orbit.env.example
+# An Orbit Agent's registration (its credential). Normally lands in bin/, but never commit one from anywhere.
+agent.json
 
 ## OS
 .DS_Store
