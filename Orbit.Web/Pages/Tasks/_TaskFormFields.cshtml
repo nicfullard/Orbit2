@@ -89,7 +89,7 @@
 <div class="row g-3 mt-0">
     @if (isEdit)
     {
-        <div class="col-md-4">
+        <div class="col-md-3">
             <label class="form-label" for="Form_Status">Status</label>
             <select class="form-select" id="Form_Status" name="Form.Status" asp-items="Model.StatusItems(existing, form.Status)"></select>
             @if (existing is not null && !Model.Actor.IsAdminFor(existing.DepartmentId))
@@ -102,7 +102,7 @@
     {
         <input type="hidden" name="Form.Status" value="Todo" />
     }
-    <div class="col-md-4">
+    <div class="col-md-3">
         <label class="form-label" for="Form_SprintId">Sprint</label>
         <select class="form-select" id="Form_SprintId" name="Form.SprintId" asp-items="Model.Sprints"></select>
     </div>
@@ -116,5 +116,17 @@
             }
         </select>
         <div class="form-text">Makes this a subtask. Only tasks on the same project are offered (for a standalone task, standalone tasks in its department).</div>
+    </div>
+    <div class="col-md-2">
+        <label class="form-label" for="Form_EstimateMinutes">Estimate</label>
+        <div class="input-group">
+            <input type="number" class="form-control" id="Form_EstimateMinutes" name="Form.EstimateMinutes" value="@form.EstimateMinutes" min="0" max="525600" step="5" placeholder="e.g. 90" />
+            <span class="input-group-text">min</span>
+        </div>
+        @if (ViewData.ModelState.TryGetValue("Form.EstimateMinutes", out var estimateState) && estimateState.Errors.Count > 0)
+        {
+            <span class="text-danger small">@estimateState.Errors[0].ErrorMessage</span>
+        }
+        <div class="form-text">Expected effort in minutes; blank for none.</div>
     </div>
 </div>

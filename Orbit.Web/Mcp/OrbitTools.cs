@@ -47,6 +47,7 @@ public sealed class OrbitTools(
         [Description("Optional idempotency key. Retrying with the same key returns the already-created task instead of a duplicate.")] string? idempotencyKey = null,
         [Description("Planned start date as yyyy-MM-dd (not after the due date).")] string? startDate = null,
         [Description("Parent task id (GUID) to create this as a subtask. The parent must be on the same project (or, for a standalone task, be a standalone task in the same department) and still open.")] string? parentTaskId = null,
+        [Description("Estimated effort in minutes, e.g. 90 for an hour and a half. Omit or 0 for no estimate.")] int? estimateMinutes = null,
         CancellationToken ct = default) => Run(async () =>
     {
         var input = new TaskInput
@@ -61,6 +62,7 @@ public sealed class OrbitTools(
             DueDate = ParseDate(dueDate, "dueDate"),
             AssigneeId = ParseGuid(assigneeId, "assigneeId"),
             ParentTaskId = ParseGuid(parentTaskId, "parentTaskId"),
+            EstimateMinutes = estimateMinutes,
             IdempotencyKey = idempotencyKey
         };
         var task = await tasks.CreateAsync(input, TaskSource.Api, ct);
@@ -151,7 +153,7 @@ public sealed class OrbitTools(
 
     [McpServerTool(Name = "update_task"), Description(
         "Update any field of a task. Only the arguments you pass change; omit an argument to leave it as is. " +
-        "Pass the literal string \"none\" to clear assigneeId, dueDate, startDate, parentTaskId, projectId, sprintId or plannedFor (sprintId \"none\" moves the task to the backlog; " +
+        "Pass the literal string \"none\" to clear assigneeId, dueDate, startDate, parentTaskId, estimateMinutes, projectId, sprintId or plannedFor (sprintId \"none\" moves the task to the backlog; " +
         "plannedFor \"none\" takes it off the day plan, plannedFor \"today\" puts it on today's plan - closed tasks can't be planned). " +
         "Setting status to Done or Cancelled requires a DepartmentAdmin or SystemAdmin key; a Member key is rejected. " +
         "Member keys can only edit tasks they created or that are assigned to them. " +
@@ -172,6 +174,7 @@ public sealed class OrbitTools(
         [Description("Day-plan date yyyy-MM-dd, \"today\" to put the task on today's plan, or \"none\" to take it off. Anyone in the task's department may plan it; closed tasks can't be planned.")] string? plannedFor = null,
         [Description("Planned start date yyyy-MM-dd (not after the due date), or \"none\" to clear.")] string? startDate = null,
         [Description("Parent task id (GUID) to make this a subtask (same project, or same department for standalone tasks), or \"none\" to detach it. A status change gated by a dependency, or closing a parent with open subtasks, is rejected with the reason.")] string? parentTaskId = null,
+        [Description("Estimated effort in minutes (e.g. 90), or \"none\" to clear the estimate.")] string? estimateMinutes = null,
         CancellationToken ct = default) => Run(async () =>
     {
         var id = RequireGuid(taskId, "taskId");
@@ -188,6 +191,7 @@ public sealed class OrbitTools(
             StartDate = IsClear(startDate) ? null : ParseDate(startDate, "startDate") ?? current.StartDate,
             DueDate = IsClear(dueDate) ? null : ParseDate(dueDate, "dueDate") ?? current.DueDate,
             ParentTaskId = IsClear(parentTaskId) ? null : ParseGuid(parentTaskId, "parentTaskId") ?? current.ParentTaskId,
+            EstimateMinutes = IsClear(estimateMinutes) ? null : ParseInt(estimateMinutes, "estimateMinutes") ?? current.EstimateMinutes,
             Status = ParseEnum<TaskItemStatus>(status, "status") ?? current.Status,
             SprintId = IsClear(sprintId) ? null : ParseGuid(sprintId, "sprintId") ?? current.SprintId
         };
@@ -321,6 +325,7 @@ public sealed class OrbitTools(
             totalTasks = s.Total, openTasks = s.Open, todo = s.Todo, inProgress = s.InProgress, blocked = s.Blocked,
             done = s.Done, cancelled = s.Cancelled, overdue = s.Overdue, percentDone = s.PercentDone,
             totalMinutesLogged = s.TotalMinutesLogged,
+            totalMinutesEstimated = s.TotalMinutesEstimated,
             crossDepartment = s.IsCrossDepartment,
             departments = s.ByDepartment.Select(d => new
             {
@@ -483,6 +488,7 @@ public sealed class OrbitTools(
         status = t.Status,
         priority = t.Priority,
         type = t.Type,
+        estimateMinutes = t.EstimateMinutes,
         source = t.Source,
         departmentId = t.DepartmentId,
         department = t.Department?.Name,
@@ -586,6 +592,14 @@ public sealed class OrbitTools(
 
     private static Guid RequireGuid(string? value, string name) =>
         ParseGuid(value, name) ?? throw new McpException($"{name} is required.");
+
+    private static int? ParseInt(string? value, string name)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        return int.TryParse(value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var i)
+            ? i
+            : throw new McpException($"{name} must be a whole number; got \"{value}\".");
+    }
 
     private static Guid? ParseGuid(string? value, string name)
     {

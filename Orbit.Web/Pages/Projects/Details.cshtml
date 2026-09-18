@@ -88,7 +88,17 @@
                     <span class="badge text-bg-dark">Cancelled @s.Cancelled</span>
                     @if (s.Overdue > 0) { <span class="badge text-bg-warning">Overdue @s.Overdue</span> }
                 </div>
-                <div class="mt-2 small text-muted">Time logged: <span class="fw-semibold text-body">@TimeFormat.Minutes(s.TotalMinutesLogged)</span></div>
+                <div class="mt-2 small text-muted">
+                    Time logged: <span class="fw-semibold text-body">@TimeFormat.Minutes(s.TotalMinutesLogged)</span>
+                    @if (s.TotalMinutesEstimated > 0)
+                    {
+                        <span> · Estimated: <span class="fw-semibold text-body">@TimeFormat.Minutes(s.TotalMinutesEstimated)</span></span>
+                        @if (s.TotalMinutesLogged > s.TotalMinutesEstimated)
+                        {
+                            <span class="badge text-bg-warning ms-1" title="More time has been logged than the open and done tasks were estimated at">Over estimate</span>
+                        }
+                    }
+                </div>
             </div>
         </div>
     </div>

@@ -361,7 +361,13 @@
         <div class="card mb-3">
             <div class="card-header d-flex justify-content-between">
                 <span class="fw-semibold">Time logged</span>
-                <span class="text-muted">@TimeFormat.Minutes(Model.TotalMinutes) total</span>
+                <span class="text-muted">
+                    @TimeFormat.Minutes(Model.TotalMinutes) logged@(t.EstimateMinutes is int est ? $" of {TimeFormat.Minutes(est)} estimated" : "")
+                    @if (t.EstimateMinutes is int limit && Model.TotalMinutes > limit)
+                    {
+                        <span class="badge text-bg-warning ms-1" title="More time has been logged than was estimated">Over estimate</span>
+                    }
+                </span>
             </div>
             <div class="card-body">
                 @if (Model.TimeEntries.Count > 0)
@@ -474,6 +480,7 @@
                     <dt class="col-5">Assignee</dt><dd class="col-7">@(t.Assignee?.DisplayName ?? "Unassigned")</dd>
                     <dt class="col-5">Start</dt><dd class="col-7">@Ui.Day(t.StartDate)</dd>
                     <dt class="col-5">Due</dt><dd class="col-7 @(overdue ? "text-danger fw-semibold" : "")">@Ui.Day(t.DueDate)</dd>
+                    <dt class="col-5">Estimate</dt><dd class="col-7">@(t.EstimateMinutes is int estimate ? TimeFormat.Minutes(estimate) : "-")</dd>
                     <dt class="col-5">Planned for</dt><dd class="col-7">@Ui.Day(t.PlannedFor)@(t.PlannedFor == today ? " (today)" : "")</dd>
                     <dt class="col-5">Created by</dt><dd class="col-7">@Ui.AuthorName(t.CreatedBy) <span class="text-muted">@Ui.When(t.CreatedAt)</span></dd>
                     <dt class="col-5">Updated</dt><dd class="col-7">@Ui.When(t.UpdatedAt)</dd>

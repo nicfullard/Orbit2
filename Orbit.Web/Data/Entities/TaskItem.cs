@@ -20,6 +20,8 @@ public class TaskItem
     public TaskItemStatus Status { get; set; } = TaskItemStatus.Todo;
     public TaskPriority Priority { get; set; } = TaskPriority.Medium;
     public TaskType Type { get; set; } = TaskType.Task;
+    /// <summary>Estimated effort in minutes (spec §6.10); null = no estimate. Compared with the time logged on the task page.</summary>
+    public int? EstimateMinutes { get; set; }
     public Guid? AssigneeId { get; set; }
     public ApplicationUser? Assignee { get; set; }
     public Guid? CreatedById { get; set; }

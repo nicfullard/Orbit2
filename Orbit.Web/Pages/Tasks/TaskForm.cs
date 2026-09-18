@@ -25,6 +25,10 @@ public sealed class TaskForm
 
     public TaskType Type { get; set; } = TaskType.Task;
 
+    /// <summary>Estimated effort in minutes (§6.10); blank or 0 = no estimate.</summary>
+    [Display(Name = "Estimate (minutes)"), Range(0, 525600)]
+    public int? EstimateMinutes { get; set; }
+
     [Display(Name = "Assignee")]
     public Guid? AssigneeId { get; set; }
 
@@ -51,6 +55,7 @@ public sealed class TaskForm
         DepartmentId = DepartmentId,
         Priority = Priority,
         Type = Type,
+        EstimateMinutes = EstimateMinutes,
         AssigneeId = AssigneeId,
         StartDate = StartDate,
         DueDate = DueDate,
@@ -67,6 +72,7 @@ public sealed class TaskForm
         DepartmentId = t.DepartmentId,
         Priority = t.Priority,
         Type = t.Type,
+        EstimateMinutes = t.EstimateMinutes,
         AssigneeId = t.AssigneeId,
         StartDate = t.StartDate,
         DueDate = t.DueDate,

@@ -49,6 +49,8 @@ public sealed class TaskInput
     public Guid? DepartmentId { get; set; }
     public TaskPriority Priority { get; set; } = TaskPriority.Medium;
     public TaskType Type { get; set; } = TaskType.Task;
+    /// <summary>Estimated effort in minutes (§6.10). Null or 0 = no estimate.</summary>
+    public int? EstimateMinutes { get; set; }
     public Guid? AssigneeId { get; set; }
     /// <summary>Planned start (§6.15); never after <see cref="DueDate"/>.</summary>
     public DateOnly? StartDate { get; set; }

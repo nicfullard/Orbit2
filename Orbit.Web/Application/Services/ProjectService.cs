@@ -108,6 +108,8 @@ public sealed class ProjectService(ApplicationDbContext db, IActorProvider actor
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var minutes = await db.TimeEntries.Where(e => e.Task.ProjectId == id).SumAsync(e => (int?)e.DurationMinutes, ct) ?? 0;
+        var estimated = await db.Tasks.Where(t => t.ProjectId == id && t.Status != TaskItemStatus.Cancelled)
+            .SumAsync(t => t.EstimateMinutes, ct) ?? 0;
         // One grouped query gives the per-department breakdown; the project-wide counts are its sums.
         var byDepartment = (await db.Tasks.Where(t => t.ProjectId == id)
             .GroupBy(t => new { t.DepartmentId, t.Department.Name })
@@ -131,7 +133,7 @@ public sealed class ProjectService(ApplicationDbContext db, IActorProvider actor
         return new ProjectStatusSummary(project.Id, project.Name, project.Status, project.Department.Name, project.DepartmentId,
             project.Owner.DisplayName, project.TargetDate, byDepartment.Sum(d => d.Total),
             byDepartment.Sum(d => d.Todo), byDepartment.Sum(d => d.InProgress), byDepartment.Sum(d => d.Blocked),
-            byDepartment.Sum(d => d.Done), byDepartment.Sum(d => d.Cancelled), byDepartment.Sum(d => d.Overdue), minutes,
+            byDepartment.Sum(d => d.Done), byDepartment.Sum(d => d.Cancelled), byDepartment.Sum(d => d.Overdue), minutes, estimated,
             byDepartment);
     }
 

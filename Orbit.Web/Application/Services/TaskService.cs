@@ -133,6 +133,7 @@ public sealed class TaskService(
             ProjectId = input.ProjectId,
             Priority = input.Priority,
             Type = input.Type,
+            EstimateMinutes = CleanEstimate(input.EstimateMinutes),
             AssigneeId = assignee?.Id,
             ParentTaskId = parent?.Id,
             StartDate = input.StartDate,
@@ -149,7 +150,7 @@ public sealed class TaskService(
         db.Tasks.Add(task);
         audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.Created, departmentId, task.Title, new
         {
-            task.Title, task.Status, task.Priority, task.Type, task.ProjectId, task.DepartmentId, task.AssigneeId,
+            task.Title, task.Status, task.Priority, task.Type, task.EstimateMinutes, task.ProjectId, task.DepartmentId, task.AssigneeId,
             task.ParentTaskId, task.StartDate, task.DueDate, task.Source, task.SprintId
         });
         await db.SaveChangesAsync(ct);
@@ -196,6 +197,7 @@ public sealed class TaskService(
 
         var previousAssigneeId = task.AssigneeId;
         var previousParentId = task.ParentTaskId;
+        var estimate = CleanEstimate(input.EstimateMinutes);
         var changes = new ChangeSet()
             .TrackText("title", task.Title, title)
             .TrackText("description", task.Description, input.Description)
@@ -203,6 +205,7 @@ public sealed class TaskService(
             .Track("projectId", task.ProjectId, input.ProjectId)
             .Track("priority", task.Priority, input.Priority)
             .Track("type", task.Type, input.Type)
+            .Track("estimateMinutes", task.EstimateMinutes, estimate)
             .Track("assigneeId", task.AssigneeId, assignee?.Id)
             .Track("parentTaskId", task.ParentTaskId, parent?.Id)
             .Track("startDate", task.StartDate, input.StartDate)
@@ -219,6 +222,7 @@ public sealed class TaskService(
         task.ProjectId = input.ProjectId;
         task.Priority = input.Priority;
         task.Type = input.Type;
+        task.EstimateMinutes = estimate;
         task.AssigneeId = assignee?.Id;
         if (changes.Contains("dueDate")) task.DueSoonNotifiedAt = null; // a new due date earns a fresh reminder
         task.ParentTaskId = parent?.Id;
@@ -456,6 +460,15 @@ public sealed class TaskService(
     }
 
     private static string? Clean(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    /// <summary>An estimate (§6.10) is whole minutes: null or 0 clears it; at most a year.</summary>
+    private static int? CleanEstimate(int? minutes)
+    {
+        if (minutes is null or 0) return null;
+        if (minutes < 0) throw new ValidationException("The estimate can't be negative.");
+        if (minutes > 525_600) throw new ValidationException("The estimate must be at most a year (525,600 minutes).");
+        return minutes;
+    }
 
     private static void ApplyStatus(TaskItem task, TaskItemStatus status, DateTime now)
     {

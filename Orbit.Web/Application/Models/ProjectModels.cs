@@ -58,6 +58,8 @@ public sealed record ProjectStatusSummary(
     int Cancelled,
     int Overdue,
     int TotalMinutesLogged,
+    /// <summary>Sum of the tasks' estimates (§6.10), cancelled tasks excluded.</summary>
+    int TotalMinutesEstimated,
     IReadOnlyList<DepartmentTaskCount> ByDepartment)
 {
     public int Open => Todo + InProgress + Blocked;
