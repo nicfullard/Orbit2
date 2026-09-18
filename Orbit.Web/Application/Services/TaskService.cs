@@ -13,10 +13,12 @@ public sealed class TaskService(
     ApplicationDbContext db,
     IActorProvider actors,
     AuditService audit,
-    NotificationService notifications)
+    NotificationService notifications,
+    TaskStructureService structure)
 {
     private static IQueryable<TaskItem> WithIncludes(IQueryable<TaskItem> q) => q
         .Include(t => t.Department)
+        .Include(t => t.ParentTask)
         .Include(t => t.Project).ThenInclude(p => p!.Department)
         .Include(t => t.Assignee)
         .Include(t => t.CreatedBy)
@@ -39,6 +41,7 @@ public sealed class TaskService(
         if (f.DueAfter is DateOnly after) q = q.Where(t => t.DueDate != null && t.DueDate >= after);
         if (f.SprintId is Guid sprintId) q = q.Where(t => t.SprintId == sprintId);
         if (f.RecurringTaskDefinitionId is Guid defId) q = q.Where(t => t.RecurringTaskDefinitionId == defId);
+        if (f.ParentTaskId is Guid parentId) q = q.Where(t => t.ParentTaskId == parentId);
         if (f.BacklogOnly) q = q.Where(t => t.SprintId == null);
         if (f.OpenOnly) q = q.Where(t => t.Status != TaskItemStatus.Done && t.Status != TaskItemStatus.Cancelled);
         var plannedFor = f.PlannedFor ?? (f.PlannedToday ? DateOnly.FromDateTime(DateTime.UtcNow) : null);
@@ -118,6 +121,8 @@ public sealed class TaskService(
         var status = input.Status ?? TaskItemStatus.Todo;
         AccessPolicy.Require(!status.IsClosed() || actor.IsAdminFor(departmentId),
             "Only a Department Admin or System Admin can close a task.");
+        DependencyRules.RequireDatesInOrder(input.StartDate, input.DueDate);
+        var parent = await structure.ValidateParentAsync(null, input.ParentTaskId, input.ProjectId, departmentId, childOpen: !status.IsClosed(), ct);
 
         var now = DateTime.UtcNow;
         var task = new TaskItem
@@ -129,6 +134,8 @@ public sealed class TaskService(
             Priority = input.Priority,
             Type = input.Type,
             AssigneeId = assignee?.Id,
+            ParentTaskId = parent?.Id,
+            StartDate = input.StartDate,
             DueDate = input.DueDate,
             SprintId = input.SprintId,
             Source = source,
@@ -142,7 +149,8 @@ public sealed class TaskService(
         db.Tasks.Add(task);
         audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.Created, departmentId, task.Title, new
         {
-            task.Title, task.Status, task.Priority, task.Type, task.ProjectId, task.DepartmentId, task.AssigneeId, task.DueDate, task.Source, task.SprintId
+            task.Title, task.Status, task.Priority, task.Type, task.ProjectId, task.DepartmentId, task.AssigneeId,
+            task.ParentTaskId, task.StartDate, task.DueDate, task.Source, task.SprintId
         });
         await db.SaveChangesAsync(ct);
 
@@ -180,8 +188,14 @@ public sealed class TaskService(
             AccessPolicy.Require(AccessPolicy.CanPlanTask(actor, task), "You can't plan tasks from another department.");
             await ValidateSprintAsync(input.SprintId, ct);
         }
+        DependencyRules.RequireDatesInOrder(input.StartDate, input.DueDate);
+        if (newStatus != task.Status) await structure.EnsureStatusChangeAllowedAsync(task, newStatus, ct);
+        // §6.15: a child can't leave its parent's project on its own, a parent takes its subtree along, and no link may end up crossing projects.
+        var subtree = await structure.PrepareMoveAsync(task, input.ProjectId, departmentId, input.ParentTaskId, actor, ct);
+        var parent = await structure.ValidateParentAsync(task, input.ParentTaskId, input.ProjectId, departmentId, childOpen: !newStatus.IsClosed(), ct);
 
         var previousAssigneeId = task.AssigneeId;
+        var previousParentId = task.ParentTaskId;
         var changes = new ChangeSet()
             .TrackText("title", task.Title, title)
             .TrackText("description", task.Description, input.Description)
@@ -190,6 +204,8 @@ public sealed class TaskService(
             .Track("priority", task.Priority, input.Priority)
             .Track("type", task.Type, input.Type)
             .Track("assigneeId", task.AssigneeId, assignee?.Id)
+            .Track("parentTaskId", task.ParentTaskId, parent?.Id)
+            .Track("startDate", task.StartDate, input.StartDate)
             .Track("dueDate", task.DueDate, input.DueDate)
             .Track("status", task.Status, newStatus)
             .Track("sprintId", task.SprintId, input.SprintId);
@@ -205,15 +221,34 @@ public sealed class TaskService(
         task.Type = input.Type;
         task.AssigneeId = assignee?.Id;
         if (changes.Contains("dueDate")) task.DueSoonNotifiedAt = null; // a new due date earns a fresh reminder
+        task.ParentTaskId = parent?.Id;
+        task.StartDate = input.StartDate;
         task.DueDate = input.DueDate;
         task.SprintId = input.SprintId;
         if (newStatus != task.Status) ApplyStatus(task, newStatus, now);
         task.UpdatedAt = now;
 
+        // A parent takes its subtree along when it changes project (or, standalone, department) - §6.15.
+        foreach (var child in subtree)
+        {
+            var childChanges = new ChangeSet()
+                .Track("projectId", child.ProjectId, input.ProjectId)
+                .Track("departmentId", child.DepartmentId, input.ProjectId is null ? departmentId : child.DepartmentId);
+            child.ProjectId = input.ProjectId;
+            if (input.ProjectId is null) child.DepartmentId = departmentId;
+            child.UpdatedAt = now;
+            var details = new Dictionary<string, object?>(childChanges.Changes) { ["movedWithParent"] = task.Title };
+            audit.Add(actor, AuditEntity.Task, child.Id, AuditAction.Updated, child.DepartmentId, child.Title, details);
+        }
+
         var action = changes.Contains("status")
             ? (newStatus == TaskItemStatus.Done ? AuditAction.Completed : AuditAction.StatusChanged)
             : AuditAction.Updated;
-        audit.Add(actor, AuditEntity.Task, task.Id, action, departmentId, task.Title, changes.Changes);
+        if (changes.Changes.Keys.Any(k => k != "parentTaskId"))
+            audit.Add(actor, AuditEntity.Task, task.Id, action, departmentId, task.Title, changes.Changes);
+        if (changes.Contains("parentTaskId"))
+            audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.ParentChanged, departmentId, task.Title,
+                new { parent = new { from = previousParentId, to = parent?.Id }, parentTitle = parent?.Title });
         await db.SaveChangesAsync(ct);
 
         if (assignee is not null && assignee.Id != previousAssigneeId && assignee.Id != actor.UserId)
@@ -232,6 +267,7 @@ public sealed class TaskService(
         AccessPolicy.Require(AccessPolicy.CanChangeStatus(actor, task, status),
             "Only a Department Admin or System Admin can close or reopen a task.");
         if (task.Status == status) return task;
+        await structure.EnsureStatusChangeAllowedAsync(task, status, ct);
 
         var previous = task.Status;
         var now = DateTime.UtcNow;
@@ -276,12 +312,43 @@ public sealed class TaskService(
         AccessPolicy.Require(AccessPolicy.CanViewTask(actor, task), "This task belongs to another department.");
         AccessPolicy.Require(AccessPolicy.CanEditTask(actor, task), "Members can only edit tasks they created or are assigned to.");
         if (task.DueDate == dueDate) return task;
+        DependencyRules.RequireDatesInOrder(task.StartDate, dueDate);
 
         var changes = new ChangeSet().Track("dueDate", task.DueDate, dueDate);
         task.DueDate = dueDate;
         task.DueSoonNotifiedAt = null; // a new due date earns a fresh reminder
         task.UpdatedAt = DateTime.UtcNow;
         audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.Updated, task.DepartmentId, task.Title, changes.Changes);
+        await db.SaveChangesAsync(ct);
+        return task;
+    }
+
+    /// <summary>
+    /// The Gantt's drag-to-reschedule (§6.16): set both planned dates at once. Same rights as a full edit, the same
+    /// "start not after due" rule, and an ordinary <c>Updated</c> audit entry. Only this task moves - successors never shift.
+    /// </summary>
+    public async Task<TaskItem> ChangeDatesAsync(Guid id, DateOnly? startDate, DateOnly? dueDate, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        var task = await db.Tasks.FirstOrDefaultAsync(t => t.Id == id, ct)
+            ?? throw new NotFoundException("Task not found.");
+        AccessPolicy.Require(AccessPolicy.CanViewTask(actor, task), "This task belongs to another department.");
+        AccessPolicy.Require(AccessPolicy.CanEditTask(actor, task), "Members can only edit tasks they created or are assigned to.");
+        DependencyRules.RequireDatesInOrder(startDate, dueDate);
+
+        var changes = new ChangeSet()
+            .Track("startDate", task.StartDate, startDate)
+            .Track("dueDate", task.DueDate, dueDate);
+        if (!changes.HasChanges) return task;
+        task.StartDate = startDate;
+        if (changes.Contains("dueDate"))
+        {
+            task.DueDate = dueDate;
+            task.DueSoonNotifiedAt = null; // a new due date earns a fresh reminder
+        }
+        task.UpdatedAt = DateTime.UtcNow;
+        var details = new Dictionary<string, object?>(changes.Changes) { ["rescheduledOn"] = "gantt" };
+        audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.Updated, task.DepartmentId, task.Title, details);
         await db.SaveChangesAsync(ct);
         return task;
     }

@@ -50,6 +50,7 @@ public sealed class SprintService(ApplicationDbContext db, IActorProvider actors
             .Include(s => s.Tasks).ThenInclude(t => t.Department)
             .Include(s => s.Tasks).ThenInclude(t => t.Project)
             .Include(s => s.Tasks).ThenInclude(t => t.Assignee)
+            .Include(s => s.Tasks).ThenInclude(t => t.ParentTask)
             .AsSplitQuery()
             .FirstOrDefaultAsync(s => s.Id == id, ct)
             ?? throw new NotFoundException("Sprint not found.");

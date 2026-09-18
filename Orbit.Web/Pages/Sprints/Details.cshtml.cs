@@ -7,11 +7,12 @@ using ValidationException = Orbit.Application.ValidationException;
 
 namespace Orbit.Pages.Sprints;
 
-public class DetailsModel(SprintService sprints, TaskService tasks, UserDirectoryService users, IActorProvider actors) : OrbitPageModel
+public class DetailsModel(SprintService sprints, TaskService tasks, UserDirectoryService users, TaskStructureService structure, IActorProvider actors) : OrbitPageModel
 {
     public Actor Actor { get; private set; } = null!;
     public Sprint Sprint { get; private set; } = null!;
     public IReadOnlyList<TaskItem> Tasks { get; private set; } = [];
+    public IReadOnlyDictionary<Guid, WaitingSummary> Waiting { get; private set; } = new Dictionary<Guid, WaitingSummary>();
     /// <summary>Candidates for the inline assignee control (a sprint spans departments).</summary>
     public IReadOnlyList<UserSummary> QuickEditAssignees { get; private set; } = [];
     public IReadOnlyList<NameCountRow> ByDepartment { get; private set; } = [];
@@ -31,6 +32,7 @@ public class DetailsModel(SprintService sprints, TaskService tasks, UserDirector
         ByDepartment = Tasks.GroupBy(t => t.Department.Name).OrderBy(g => g.Key)
             .Select(g => new NameCountRow(g.Key, g.Count(), g.Count(t => t.IsOpen))).ToList();
         QuickEditAssignees = await users.GetQuickEditCandidatesAsync(ct);
+        Waiting = await structure.GetWaitingAsync(Tasks, ct);
         return Page();
     }
 

@@ -28,8 +28,15 @@ public sealed class TaskForm
     [Display(Name = "Assignee")]
     public Guid? AssigneeId { get; set; }
 
+    [Display(Name = "Start date"), DataType(DataType.Date)]
+    public DateOnly? StartDate { get; set; }
+
     [Display(Name = "Due date"), DataType(DataType.Date)]
     public DateOnly? DueDate { get; set; }
+
+    /// <summary>Makes this a subtask (§6.15): a task on the same project, or a standalone task in the same department.</summary>
+    [Display(Name = "Parent task")]
+    public Guid? ParentTaskId { get; set; }
 
     public TaskItemStatus Status { get; set; } = TaskItemStatus.Todo;
 
@@ -45,7 +52,9 @@ public sealed class TaskForm
         Priority = Priority,
         Type = Type,
         AssigneeId = AssigneeId,
+        StartDate = StartDate,
         DueDate = DueDate,
+        ParentTaskId = ParentTaskId,
         Status = includeStatus ? Status : null,
         SprintId = SprintId
     };
@@ -59,7 +68,9 @@ public sealed class TaskForm
         Priority = t.Priority,
         Type = t.Type,
         AssigneeId = t.AssigneeId,
+        StartDate = t.StartDate,
         DueDate = t.DueDate,
+        ParentTaskId = t.ParentTaskId,
         Status = t.Status,
         SprintId = t.SprintId
     };

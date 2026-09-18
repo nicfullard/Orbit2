@@ -12,7 +12,8 @@ public class IndexModel(
     IActorProvider actors,
     DepartmentService departments,
     ProjectService projects,
-    UserDirectoryService users) : OrbitPageModel
+    UserDirectoryService users,
+    TaskStructureService structure) : OrbitPageModel
 {
     [BindProperty(SupportsGet = true)] public TaskFilter Filter { get; set; } = new();
 
@@ -23,6 +24,8 @@ public class IndexModel(
     public IReadOnlyList<SelectListItem> AssigneeItems { get; private set; } = [];
     /// <summary>Candidates for the inline assignee control: everyone the actor may assign to, across all listed departments.</summary>
     public IReadOnlyList<UserSummary> QuickEditAssignees { get; private set; } = [];
+    /// <summary>Tasks on this page whose next move is gated by a dependency (§6.15).</summary>
+    public IReadOnlyDictionary<Guid, WaitingSummary> Waiting { get; private set; } = new Dictionary<Guid, WaitingSummary>();
 
     public async Task OnGetAsync(CancellationToken ct)
     {
@@ -31,6 +34,7 @@ public class IndexModel(
         Filter.BacklogOnly = false;
         Filter.PageSize = 50;
         Result = await tasks.ListAsync(Filter, ct);
+        Waiting = await structure.GetWaitingAsync(Result.Items, ct);
 
         if (Actor.IsSystemAdmin)
         {
@@ -50,6 +54,6 @@ public class IndexModel(
     public string PageUrl(int page) => Url.Page("/Tasks/Index", new
     {
         Filter.ProjectId, Filter.DepartmentId, Filter.Status, Filter.AssigneeId, Filter.Priority, Filter.Type, Filter.Source,
-        Filter.DueBefore, Filter.DueAfter, Filter.OpenOnly, Filter.PlannedToday, Filter.PlannedFor, Filter.Search, Page = page
+        Filter.DueBefore, Filter.DueAfter, Filter.OpenOnly, Filter.PlannedToday, Filter.PlannedFor, Filter.ParentTaskId, Filter.Search, Page = page
     })!;
 }

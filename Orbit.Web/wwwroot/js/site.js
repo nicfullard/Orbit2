@@ -70,6 +70,34 @@ document.addEventListener('DOMContentLoaded', function () {
   document.querySelectorAll('select.js-department-select').forEach(orbitFilterAssignees);
 });
 
+// Task form: the Parent task picker only offers tasks on the chosen project - or, for a standalone task,
+// standalone tasks in the chosen department (spec §6.15). The department source may be a select or a hidden input.
+function orbitFilterParents() {
+  var parents = document.querySelector('select.js-parent-select');
+  if (!parents) return;
+  var projectEl = document.querySelector(parents.dataset.projectSource || '#Form_ProjectId');
+  var deptEl = document.querySelector(parents.dataset.departmentSource || '#Form_DepartmentId');
+  var project = projectEl ? projectEl.value : '';
+  var dept = deptEl ? deptEl.value : '';
+  var selectedHidden = false;
+  Array.prototype.forEach.call(parents.options, function (opt) {
+    if (!opt.value) return;
+    var ownProject = opt.dataset.project || '';
+    var ownDept = opt.dataset.department || '';
+    var show = project ? ownProject === project : (!ownProject && (!dept || ownDept === dept));
+    opt.hidden = !show;
+    opt.disabled = !show;
+    if (!show && opt.selected) selectedHidden = true;
+  });
+  if (selectedHidden) parents.value = '';
+}
+document.addEventListener('change', function (e) {
+  var el = e.target;
+  if (!el || !el.classList) return;
+  if (el.classList.contains('js-project-select') || el.classList.contains('js-department-select')) orbitFilterParents();
+});
+document.addEventListener('DOMContentLoaded', orbitFilterParents);
+
 // User form (Admin > Users): a directory (LDAP) user has no Orbit password, so the temporary-password field is
 // hidden and disabled for them (a disabled input is neither validated nor submitted).
 function orbitToggleLocalPassword(select) {

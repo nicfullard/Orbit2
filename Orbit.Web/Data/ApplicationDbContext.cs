@@ -11,6 +11,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<Department> Departments => Set<Department>();
     public DbSet<Project> Projects => Set<Project>();
     public DbSet<TaskItem> Tasks => Set<TaskItem>();
+    public DbSet<TaskDependency> TaskDependencies => Set<TaskDependency>();
     public DbSet<Sprint> Sprints => Set<Sprint>();
     public DbSet<RecurringTaskDefinition> RecurringTaskDefinitions => Set<RecurringTaskDefinition>();
     public DbSet<Comment> Comments => Set<Comment>();
@@ -68,6 +69,11 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
                 .HasForeignKey(t => t.SprintId).OnDelete(DeleteBehavior.SetNull);
             b.HasOne(t => t.RecurringTaskDefinition).WithMany(r => r.GeneratedTasks)
                 .HasForeignKey(t => t.RecurringTaskDefinitionId).OnDelete(DeleteBehavior.SetNull);
+            // Subtasks (§6.15): a self-reference. A parent with children can't be deleted from under them.
+            b.HasOne(t => t.ParentTask).WithMany(p => p.Children)
+                .HasForeignKey(t => t.ParentTaskId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(t => t.ParentTaskId);
+            b.HasIndex(t => t.StartDate);
             b.HasIndex(t => t.ProjectId);
             b.HasIndex(t => t.AssigneeId);
             b.HasIndex(t => t.Status);
@@ -78,6 +84,19 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             b.HasIndex(t => t.IdempotencyKey).IsUnique().HasFilter("\"IdempotencyKey\" IS NOT NULL");
             b.HasIndex(t => new { t.RecurringTaskDefinitionId, t.DueDate });
             b.Ignore(t => t.IsOpen);
+        });
+
+        builder.Entity<TaskDependency>(b =>
+        {
+            // A link dies with either of its tasks. One link per ordered pair; the graph must stay acyclic (TaskStructureService).
+            b.HasOne(d => d.Predecessor).WithMany(t => t.SuccessorLinks)
+                .HasForeignKey(d => d.PredecessorTaskId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(d => d.Successor).WithMany(t => t.PredecessorLinks)
+                .HasForeignKey(d => d.SuccessorTaskId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(d => d.CreatedBy).WithMany()
+                .HasForeignKey(d => d.CreatedById).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(d => new { d.PredecessorTaskId, d.SuccessorTaskId }).IsUnique();
+            b.HasIndex(d => d.SuccessorTaskId);
         });
 
         builder.Entity<Sprint>(b =>

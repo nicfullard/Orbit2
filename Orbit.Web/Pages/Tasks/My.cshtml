@@ -4,7 +4,7 @@
     ViewData["Title"] = "My Tasks";
     var today = DateOnly.FromDateTime(DateTime.UtcNow);
     var overdue = Model.Tasks.Count(t => t.IsOverdue(today));
-    var rows = new TaskRowsVm { Tasks = Model.Tasks, Actor = Model.Actor, ReturnUrl = Request.Path + Request.QueryString, ShowDepartment = false, ShowAssignee = false, ShowSprint = true, ShowPlanToday = true, EmptyMessage = "Nothing assigned to you.", Today = today };
+    var rows = new TaskRowsVm { Tasks = Model.Tasks, Actor = Model.Actor, ReturnUrl = Request.Path + Request.QueryString, ShowDepartment = false, ShowAssignee = false, ShowSprint = true, ShowPlanToday = true, Waiting = Model.Waiting, EmptyMessage = "Nothing assigned to you.", Today = today };
 }
 
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">

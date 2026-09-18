@@ -7,8 +7,9 @@ using ValidationException = Orbit.Application.ValidationException;
 
 namespace Orbit.Pages.Projects;
 
-public class DetailsModel(ProjectService projects, UserDirectoryService users, IActorProvider actors) : OrbitPageModel
+public class DetailsModel(ProjectService projects, UserDirectoryService users, TaskStructureService structure, IActorProvider actors) : OrbitPageModel
 {
+    public IReadOnlyDictionary<Guid, WaitingSummary> Waiting { get; private set; } = new Dictionary<Guid, WaitingSummary>();
     [BindProperty(SupportsGet = true)] public TaskItemStatus? Status { get; set; }
     [BindProperty(SupportsGet = true)] public Guid? AssigneeId { get; set; }
     [BindProperty(SupportsGet = true)] public Guid? DepartmentId { get; set; }
@@ -54,6 +55,7 @@ public class DetailsModel(ProjectService projects, UserDirectoryService users, I
         Departments = Project.Tasks.Select(t => t.Department)
             .DistinctBy(x => x.Id).OrderBy(x => x.Name).ToList();
         QuickEditAssignees = await users.GetQuickEditCandidatesAsync(ct);
+        Waiting = await structure.GetWaitingAsync(Tasks, ct);
         return Page();
     }
 

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Orbit.Application;
+using Orbit.Application.Models;
 using Orbit.Application.Services;
 using Orbit.Data.Entities;
 
@@ -18,14 +19,31 @@ public sealed class TaskFormLookups
     /// <summary>Assignable users. DepartmentId is null for System Admins, who can be assigned anywhere.</summary>
     public IReadOnlyList<DepartmentedOption> Assignees { get; init; } = [];
     public IReadOnlyList<SelectListItem> Sprints { get; init; } = [];
+    /// <summary>Parent task options (§6.15), each carrying its project and department so the form can filter them client-side.</summary>
+    public IReadOnlyList<ParentCandidate> Parents { get; init; } = [];
 
-    public static async Task<TaskFormLookups> BuildAsync(
+    /// <summary>Lookups without the Parent task picker - for the recurring-definition form, which shares these fields but has no parent (§6.15).</summary>
+    public static Task<TaskFormLookups> BuildAsync(
         Actor actor,
         DepartmentService departments,
         ProjectService projects,
         UserDirectoryService users,
         SprintService sprints,
         TaskForm form,
+        CancellationToken ct) =>
+        BuildAsync(actor, departments, projects, users, sprints, null, form, null, ct);
+
+    /// <param name="structure">Supplies the Parent task options; null leaves the picker empty.</param>
+    /// <param name="existingTaskId">The task being edited, so it is not offered as its own parent.</param>
+    public static async Task<TaskFormLookups> BuildAsync(
+        Actor actor,
+        DepartmentService departments,
+        ProjectService projects,
+        UserDirectoryService users,
+        SprintService sprints,
+        TaskStructureService? structure,
+        TaskForm form,
+        Guid? existingTaskId,
         CancellationToken ct)
     {
         var deptItems = new List<SelectListItem>();
@@ -58,13 +76,22 @@ public sealed class TaskFormLookups
         sprintItems.AddRange((await sprints.ListOpenAsync(ct))
             .Select(s => new SelectListItem($"{s.Name} ({s.Status})", s.Id.ToString(), s.Id == form.SprintId)));
 
+        // Open tasks only; a closed parent that the task already sits under is kept so saving doesn't silently detach it.
+        var parents = structure is null ? new List<ParentCandidate>() : (await structure.ListParentCandidatesAsync(existingTaskId, ct)).ToList();
+        if (structure is not null && form.ParentTaskId is Guid currentParent && parents.All(p => p.Id != currentParent)
+            && (await structure.LoadAncestorsAsync(currentParent, ct)).LastOrDefault() is { } current)
+        {
+            parents.Insert(0, new ParentCandidate(current.Id, current.Title, current.ProjectId, current.Project?.Name, current.DepartmentId, current.Department.Name));
+        }
+
         return new TaskFormLookups
         {
             Actor = actor,
             Departments = deptItems,
             Projects = projectItems,
             Assignees = assigneeItems,
-            Sprints = sprintItems
+            Sprints = sprintItems,
+            Parents = parents
         };
     }
 

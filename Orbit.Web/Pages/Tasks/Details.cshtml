@@ -15,6 +15,19 @@
         {
             <li class="breadcrumb-item"><a asp-page="/Projects/Details" asp-route-id="@t.ProjectId">@t.Project.Name</a></li>
         }
+        @foreach (var a in Model.Structure.Ancestors)
+        {
+            <li class="breadcrumb-item">
+                @if (AccessPolicy.CanViewTask(Model.Actor, a))
+                {
+                    <a asp-page="/Tasks/Details" asp-route-id="@a.Id" title="Parent task">@Ui.Truncate(a.Title, 40)</a>
+                }
+                else
+                {
+                    <span title="Parent task (@a.Department.Name)">@Ui.Truncate(a.Title, 40)</span>
+                }
+            </li>
+        }
         <li class="breadcrumb-item active" aria-current="page">@Ui.Truncate(t.Title, 60)</li>
     </ol>
 </nav>
@@ -39,6 +52,14 @@
             @if (overdue)
             {
                 <span class="badge text-bg-danger">Overdue</span>
+            }
+            @if (Model.Structure.WaitingOn.Count > 0)
+            {
+                <span class="badge text-bg-warning" title="@(t.Status == TaskItemStatus.Todo ? "Can't start until: " : "Can't finish until: ")@string.Join("; ", Model.Structure.WaitingOn.Select(w => w.Describe()))">Waiting</span>
+            }
+            @if (Model.Structure.HasDateConflict)
+            {
+                <span class="badge bg-warning-subtle text-warning-emphasis border" title="A dependency's planned dates don't add up - see Dependencies">Date conflict</span>
             }
             @if (t.PlannedFor == today)
             {
@@ -110,6 +131,204 @@
                 else
                 {
                     <div class="description-box">@t.Description</div>
+                }
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="fw-semibold">Subtasks <span class="text-muted fw-normal">(@Model.Structure.ChildrenClosed/@Model.Structure.Children.Count done)</span></span>
+                @if (Model.CanAddSubtask)
+                {
+                    <a class="btn btn-sm btn-outline-primary" asp-page="/Tasks/Create" asp-route-parentTaskId="@t.Id">Add subtask</a>
+                }
+            </div>
+            @if (Model.Structure.Children.Count > 0)
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light"><tr><th>Task</th><th>Department</th><th>Assignee</th><th>Start</th><th>Due</th><th>Status</th></tr></thead>
+                        <tbody>
+                            @foreach (var c in Model.Structure.Children)
+                            {
+                                <tr>
+                                    <td>
+                                        @if (AccessPolicy.CanViewTask(Model.Actor, c))
+                                        {
+                                            <a asp-page="/Tasks/Details" asp-route-id="@c.Id" class="text-decoration-none fw-semibold">@c.Title</a>
+                                        }
+                                        else
+                                        {
+                                            <span class="fw-semibold">@c.Title</span>
+                                        }
+                                    </td>
+                                    <td><span class="badge text-bg-light border">@c.Department.Name</span></td>
+                                    <td>@(c.Assignee?.DisplayName ?? "-")</td>
+                                    <td>@Ui.Day(c.StartDate)</td>
+                                    <td class="@(c.IsOverdue(today) ? "text-danger fw-semibold" : "")">@Ui.Day(c.DueDate)</td>
+                                    <td><span class="badge @Ui.StatusBadge(c.Status)">@c.Status.Label()</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <div class="card-body py-2"><p class="text-muted small mb-0">No subtasks.@(Model.CanAddSubtask ? " Break this task down with \"Add subtask\"." : "")</p></div>
+            }
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Dependencies</div>
+            <div class="card-body">
+                <h2 class="h6">Waiting on <span class="text-muted fw-normal">(@Model.Structure.Predecessors.Count)</span></h2>
+                @if (Model.Structure.Predecessors.Count == 0)
+                {
+                    <p class="text-muted small">This task doesn't wait on any other task.</p>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-3">
+                            <thead class="table-light"><tr><th>Task</th><th>Type</th><th>Lag</th><th>Its status</th><th>Gate</th><th></th></tr></thead>
+                            <tbody>
+                                @foreach (var d in Model.Structure.Predecessors)
+                                {
+                                    <tr>
+                                        <td>
+                                            @if (AccessPolicy.CanViewTask(Model.Actor, d.Other))
+                                            {
+                                                <a asp-page="/Tasks/Details" asp-route-id="@d.Other.Id" class="text-decoration-none">@d.Other.Title</a>
+                                            }
+                                            else
+                                            {
+                                                <span>@d.Other.Title</span>
+                                            }
+                                            <span class="badge text-bg-light border ms-1">@d.Other.Department.Name</span>
+                                            @if (d.DateConflict)
+                                            {
+                                                <span class="badge bg-warning-subtle text-warning-emphasis border ms-1" title="This task's planned dates are earlier than this link allows">Date conflict</span>
+                                            }
+                                        </td>
+                                        <td><abbr title="@d.Link.Type.Label()">@d.Link.Type.Code()</abbr></td>
+                                        <td>@Ui.Lag(d.Link.LagDays)</td>
+                                        <td><span class="badge @Ui.StatusBadge(d.Other.Status)">@d.Other.Status.Label()</span></td>
+                                        <td>
+                                            @if (d.Met)
+                                            {
+                                                <span class="text-success">met</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-warning-emphasis">waiting for it to @(d.Link.Type.WaitsForFinish() ? "finish" : "start")</span>
+                                            }
+                                        </td>
+                                        <td class="text-end text-nowrap">
+                                            @if (d.CanRemove)
+                                            {
+                                                <form method="post" asp-page-handler="RemoveDependency" asp-route-id="@t.Id" asp-route-linkId="@d.Link.Id" class="d-inline" data-confirm="Remove this dependency?">
+                                                    <button class="btn btn-link btn-sm py-0 text-danger" type="submit">Remove</button>
+                                                </form>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+
+                <h2 class="h6">Blocks <span class="text-muted fw-normal">(@Model.Structure.Successors.Count)</span></h2>
+                @if (Model.Structure.Successors.Count == 0)
+                {
+                    <p class="text-muted small">No task waits on this one.</p>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-3">
+                            <thead class="table-light"><tr><th>Task</th><th>Type</th><th>Lag</th><th>Its status</th><th>Gate</th><th></th></tr></thead>
+                            <tbody>
+                                @foreach (var d in Model.Structure.Successors)
+                                {
+                                    <tr>
+                                        <td>
+                                            @if (AccessPolicy.CanViewTask(Model.Actor, d.Other))
+                                            {
+                                                <a asp-page="/Tasks/Details" asp-route-id="@d.Other.Id" class="text-decoration-none">@d.Other.Title</a>
+                                            }
+                                            else
+                                            {
+                                                <span>@d.Other.Title</span>
+                                            }
+                                            <span class="badge text-bg-light border ms-1">@d.Other.Department.Name</span>
+                                            @if (d.DateConflict)
+                                            {
+                                                <span class="badge bg-warning-subtle text-warning-emphasis border ms-1" title="That task's planned dates are earlier than this link allows">Date conflict</span>
+                                            }
+                                        </td>
+                                        <td><abbr title="@d.Link.Type.Label()">@d.Link.Type.Code()</abbr></td>
+                                        <td>@Ui.Lag(d.Link.LagDays)</td>
+                                        <td><span class="badge @Ui.StatusBadge(d.Other.Status)">@d.Other.Status.Label()</span></td>
+                                        <td>
+                                            @if (d.Met)
+                                            {
+                                                <span class="text-success">released</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">held until this task @(d.Link.Type.WaitsForFinish() ? "finishes" : "starts")</span>
+                                            }
+                                        </td>
+                                        <td class="text-end text-nowrap">
+                                            @if (d.CanRemove)
+                                            {
+                                                <form method="post" asp-page-handler="RemoveDependency" asp-route-id="@t.Id" asp-route-linkId="@d.Link.Id" class="d-inline" data-confirm="Remove this dependency?">
+                                                    <button class="btn btn-link btn-sm py-0 text-danger" type="submit">Remove</button>
+                                                </form>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+
+                @if (Model.CanLink)
+                {
+                    <form method="post" asp-page-handler="AddDependency" asp-route-id="@t.Id" class="row g-2 align-items-end mt-1">
+                        <div class="col-sm-3">
+                            <label class="form-label small mb-0" for="depDirection">This task</label>
+                            <select class="form-select form-select-sm" id="depDirection" name="direction">
+                                <option value="waits-on">waits on</option>
+                                <option value="blocks">is waited on by</option>
+                            </select>
+                        </div>
+                        <div class="col-sm-4">
+                            <label class="form-label small mb-0" for="depOther">Task</label>
+                            <select class="form-select form-select-sm" id="depOther" name="otherTaskId" required>
+                                <option value="">Choose a task on the same @(t.Project is null ? "department (standalone)" : "project")</option>
+                                @foreach (var c in Model.LinkCandidates)
+                                {
+                                    <option value="@c.Id">@c.Title (@c.Department.Name, @c.Status.Label())</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-sm-3">
+                            <label class="form-label small mb-0" for="depType">Type</label>
+                            <select class="form-select form-select-sm" id="depType" name="type" asp-items="Ui.DependencyTypeItems(DependencyType.FinishToStart)"></select>
+                        </div>
+                        <div class="col-sm-1">
+                            <label class="form-label small mb-0" for="depLag">Lag (d)</label>
+                            <input type="number" class="form-control form-control-sm" id="depLag" name="lagDays" value="0" min="-3650" max="3650" />
+                        </div>
+                        <div class="col-auto">
+                            <button class="btn btn-sm btn-outline-primary" type="submit">Add</button>
+                        </div>
+                    </form>
+                    <div class="form-text">FS: can't start until it finishes. SS: can't start until it starts. FF: can't finish until it finishes. SF: can't finish until it starts. Lag only affects the planned-date check, never the workflow gate.</div>
                 }
             </div>
         </div>
@@ -233,8 +452,27 @@
                             <span class="text-muted">Standalone</span>
                         }
                     </dd>
+                    <dt class="col-5">Parent task</dt>
+                    <dd class="col-7">
+                        @if (t.ParentTask is not null)
+                        {
+                            @if (AccessPolicy.CanViewTask(Model.Actor, t.ParentTask))
+                            {
+                                <a asp-page="/Tasks/Details" asp-route-id="@t.ParentTaskId">@t.ParentTask.Title</a>
+                            }
+                            else
+                            {
+                                <span>@t.ParentTask.Title</span>
+                            }
+                        }
+                        else
+                        {
+                            <span class="text-muted">None (top-level)</span>
+                        }
+                    </dd>
                     <dt class="col-5">Department</dt><dd class="col-7">@t.Department.Name</dd>
                     <dt class="col-5">Assignee</dt><dd class="col-7">@(t.Assignee?.DisplayName ?? "Unassigned")</dd>
+                    <dt class="col-5">Start</dt><dd class="col-7">@Ui.Day(t.StartDate)</dd>
                     <dt class="col-5">Due</dt><dd class="col-7 @(overdue ? "text-danger fw-semibold" : "")">@Ui.Day(t.DueDate)</dd>
                     <dt class="col-5">Planned for</dt><dd class="col-7">@Ui.Day(t.PlannedFor)@(t.PlannedFor == today ? " (today)" : "")</dd>
                     <dt class="col-5">Created by</dt><dd class="col-7">@Ui.AuthorName(t.CreatedBy) <span class="text-muted">@Ui.When(t.CreatedAt)</span></dd>

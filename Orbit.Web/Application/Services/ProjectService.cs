@@ -86,6 +86,7 @@ public sealed class ProjectService(ApplicationDbContext db, IActorProvider actor
             .Include(p => p.Tasks).ThenInclude(t => t.Department)
             .Include(p => p.Tasks).ThenInclude(t => t.Assignee)
             .Include(p => p.Tasks).ThenInclude(t => t.Sprint)
+            .Include(p => p.Tasks).ThenInclude(t => t.ParentTask)
             .Include(p => p.RecurringTaskDefinitions).ThenInclude(r => r.Department)
             .Include(p => p.RecurringTaskDefinitions).ThenInclude(r => r.Assignee)
             .AsSplitQuery()

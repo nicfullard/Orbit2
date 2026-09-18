@@ -7,11 +7,17 @@
     var priorityItems = Ui.EnumItems<TaskPriority>(f.Priority, "All");
     var typeItems = Ui.EnumItems<TaskType>(f.Type, "All");
     var sourceItems = Ui.EnumItems<TaskSource>(f.Source, "All", Ui.SourceLabel);
-    var rows = new TaskRowsVm { Tasks = Model.Result.Items, Actor = Model.Actor, ReturnUrl = Request.Path + Request.QueryString, ShowDepartment = Model.Actor.IsSystemAdmin, ShowSprint = true, ShowPlanToday = true, QuickEditAssignees = Model.QuickEditAssignees, EmptyMessage = "No tasks match these filters." };
+    var rows = new TaskRowsVm { Tasks = Model.Result.Items, Actor = Model.Actor, ReturnUrl = Request.Path + Request.QueryString, ShowDepartment = Model.Actor.IsSystemAdmin, ShowSprint = true, ShowPlanToday = true, QuickEditAssignees = Model.QuickEditAssignees, Waiting = Model.Waiting, EmptyMessage = "No tasks match these filters." };
 }
 
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
-    <h1 class="h3 mb-0">Tasks <span class="text-muted fs-6">@Model.Result.TotalCount</span></h1>
+    <h1 class="h3 mb-0">
+        Tasks <span class="text-muted fs-6">@Model.Result.TotalCount</span>
+        @if (f.ParentTaskId is not null)
+        {
+            <span class="badge text-bg-light border fs-6 fw-normal">Subtasks of one task <a class="ms-1" asp-page="/Tasks/Index">clear</a></span>
+        }
+    </h1>
     <a class="btn btn-primary btn-sm" asp-page="/Tasks/Create">New task</a>
 </div>
 
@@ -21,6 +27,10 @@
             <div class="col-sm-6 col-lg-3">
                 <label class="form-label small mb-0">Search</label>
                 <input class="form-control form-control-sm" name="Search" value="@f.Search" placeholder="title or description" />
+                @if (f.ParentTaskId is Guid parentFilter)
+                {
+                    <input type="hidden" name="ParentTaskId" value="@parentFilter" />
+                }
             </div>
             @if (Model.Actor.IsSystemAdmin)
             {

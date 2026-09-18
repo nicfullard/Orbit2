@@ -61,6 +61,18 @@ public enum SprintStatus
 }
 
 /// <summary>
+/// How a <see cref="TaskDependency"/> ties its two tasks together (spec §6.15) - the four standard project-management
+/// link types. Read as "the successor can't <em>start</em> until the predecessor <em>finishes</em>", and so on.
+/// </summary>
+public enum DependencyType
+{
+    FinishToStart,
+    StartToStart,
+    FinishToFinish,
+    StartToFinish
+}
+
+/// <summary>
 /// How a user proves who they are at sign-in (spec §6.13). <see cref="Local"/> is a password held by Orbit;
 /// <see cref="Ldap"/> is checked against the company directory through an Orbit Agent, and Orbit holds no password.
 /// </summary>
@@ -125,4 +137,31 @@ public static class TaskStatusExtensions
         AuthSource.Ldap => "Directory (LDAP)",
         _ => "Local password"
     };
+
+    public static string Label(this DependencyType type) => type switch
+    {
+        DependencyType.FinishToStart => "Finish-to-Start",
+        DependencyType.StartToStart => "Start-to-Start",
+        DependencyType.FinishToFinish => "Finish-to-Finish",
+        DependencyType.StartToFinish => "Start-to-Finish",
+        _ => type.ToString()
+    };
+
+    /// <summary>The conventional two-letter code: FS, SS, FF, SF.</summary>
+    public static string Code(this DependencyType type) => type switch
+    {
+        DependencyType.FinishToStart => "FS",
+        DependencyType.StartToStart => "SS",
+        DependencyType.FinishToFinish => "FF",
+        DependencyType.StartToFinish => "SF",
+        _ => type.ToString()
+    };
+
+    /// <summary>FS and SS gate the successor's <em>start</em> (leaving Todo); FF and SF gate its <em>finish</em> (Done).</summary>
+    public static bool GatesStart(this DependencyType type) =>
+        type is DependencyType.FinishToStart or DependencyType.StartToStart;
+
+    /// <summary>Whether the link waits for the predecessor to <em>finish</em> (FS, FF) rather than merely to <em>start</em> (SS, SF).</summary>
+    public static bool WaitsForFinish(this DependencyType type) =>
+        type is DependencyType.FinishToStart or DependencyType.FinishToFinish;
 }

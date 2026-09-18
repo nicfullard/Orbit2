@@ -11,21 +11,29 @@ public class CreateModel(
     DepartmentService departments,
     ProjectService projects,
     UserDirectoryService users,
-    SprintService sprints) : OrbitPageModel
+    SprintService sprints,
+    TaskStructureService structure) : OrbitPageModel
 {
     [BindProperty] public TaskForm Form { get; set; } = new();
     public TaskFormLookups Lookups { get; private set; } = null!;
 
-    public async Task OnGetAsync(Guid? projectId, Guid? sprintId, CancellationToken ct)
+    public async Task OnGetAsync(Guid? projectId, Guid? sprintId, Guid? parentTaskId, CancellationToken ct)
     {
         var actor = await actors.GetAsync(ct);
+        // "Add subtask" (§6.15): the new task starts on the parent's project, in the parent's department.
+        if (parentTaskId is Guid parentId && (await structure.LoadAncestorsAsync(parentId, ct)).LastOrDefault() is { } parent)
+        {
+            Form.ParentTaskId = parent.Id;
+            projectId = parent.ProjectId;
+            Form.DepartmentId = parent.DepartmentId;
+        }
         Form.ProjectId = projectId;
         Form.SprintId = sprintId;
         // A task defaults to its project's department; a System Admin can change that on the form (§6.2.1).
-        Form.DepartmentId = projectId is Guid pid
+        Form.DepartmentId ??= projectId is Guid pid
             ? await projects.GetDepartmentIdAsync(pid, ct) ?? actor.DepartmentId
             : actor.DepartmentId;
-        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, Form, ct);
+        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, structure, Form, null, ct);
     }
 
     public async Task<IActionResult> OnPostAsync(CancellationToken ct)
@@ -45,7 +53,7 @@ public class CreateModel(
                 ModelState.AddModelError(string.Empty, ex.Message);
             }
         }
-        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, Form, ct);
+        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, structure, Form, null, ct);
         return Page();
     }
 }

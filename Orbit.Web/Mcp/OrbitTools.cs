@@ -22,7 +22,8 @@ public sealed class OrbitTools(
     CommentService comments,
     AuditService audit,
     UserDirectoryService users,
-    DepartmentService departments)
+    DepartmentService departments,
+    TaskStructureService structure)
 {
     private const string Clear = "none";
 
@@ -44,6 +45,8 @@ public sealed class OrbitTools(
         [Description("Due date as yyyy-MM-dd.")] string? dueDate = null,
         [Description("Assignee user id (GUID). Must be an active user in the task's department (not necessarily the project's), or a SystemAdmin. Omit to leave unassigned.")] string? assigneeId = null,
         [Description("Optional idempotency key. Retrying with the same key returns the already-created task instead of a duplicate.")] string? idempotencyKey = null,
+        [Description("Planned start date as yyyy-MM-dd (not after the due date).")] string? startDate = null,
+        [Description("Parent task id (GUID) to create this as a subtask. The parent must be on the same project (or, for a standalone task, be a standalone task in the same department) and still open.")] string? parentTaskId = null,
         CancellationToken ct = default) => Run(async () =>
     {
         var input = new TaskInput
@@ -54,15 +57,20 @@ public sealed class OrbitTools(
             DepartmentId = ParseGuid(departmentId, "departmentId"),
             Priority = ParseEnum<TaskPriority>(priority, "priority") ?? TaskPriority.Medium,
             Type = ParseEnum<TaskType>(type, "type") ?? TaskType.Task,
+            StartDate = ParseDate(startDate, "startDate"),
             DueDate = ParseDate(dueDate, "dueDate"),
             AssigneeId = ParseGuid(assigneeId, "assigneeId"),
+            ParentTaskId = ParseGuid(parentTaskId, "parentTaskId"),
             IdempotencyKey = idempotencyKey
         };
         var task = await tasks.CreateAsync(input, TaskSource.Api, ct);
         return TaskDto(task);
     });
 
-    [McpServerTool(Name = "get_task"), Description("Get a single task's full detail, including its comments and logged time total.")]
+    [McpServerTool(Name = "get_task"), Description(
+        "Get a single task's full detail: its fields, parent chain (ancestors), subtasks, the dependencies it waits on (predecessors) and the ones " +
+        "waiting on it (successors) - each with type FS/SS/FF/SF, lag, whether the gate is met and any planned-date conflict - plus waitingOn: " +
+        "the unmet links (own or inherited from a parent) that currently block its next status move. Also its comments.")]
     public Task<string> GetTask(
         [Description("Task id (GUID).")] string taskId,
         CancellationToken ct = default) => Run(async () =>
@@ -70,9 +78,25 @@ public sealed class OrbitTools(
         var id = RequireGuid(taskId, "taskId");
         var task = await tasks.GetAsync(id, ct);
         var taskComments = await comments.ListAsync(id, ct);
+        var s = await structure.GetStructureAsync(task, ct);
         return new
         {
             task = TaskDto(task),
+            ancestors = s.Ancestors.Select(a => new { id = a.Id, title = a.Title, status = a.Status, departmentId = a.DepartmentId, department = a.Department?.Name }).ToList(),
+            subtasks = s.Children.Select(c => new
+            {
+                id = c.Id, title = c.Title, status = c.Status, priority = c.Priority,
+                departmentId = c.DepartmentId, department = c.Department?.Name,
+                assigneeId = c.AssigneeId, assignee = c.Assignee?.DisplayName, startDate = c.StartDate, dueDate = c.DueDate
+            }).ToList(),
+            subtasksClosed = s.ChildrenClosed,
+            predecessors = s.Predecessors.Select(LinkDto).ToList(),
+            successors = s.Successors.Select(LinkDto).ToList(),
+            waitingOn = s.WaitingOn.Select(w => new
+            {
+                dependencyId = w.Link.Id, taskId = w.Predecessor.Id, title = w.Predecessor.Title, status = w.Predecessor.Status,
+                type = w.Link.Type, code = w.Link.Type.Code(), viaParentId = w.ViaAncestor?.Id, viaParent = w.ViaAncestor?.Title, reason = w.Describe()
+            }).ToList(),
             comments = taskComments.Select(CommentDto).ToList()
         };
     });
@@ -96,6 +120,7 @@ public sealed class OrbitTools(
         [Description("true = exclude Done and Cancelled tasks.")] bool? openOnly = null,
         [Description("Free-text search over title and description.")] string? search = null,
         [Description("Only tasks on the day plan for this date (yyyy-MM-dd), or the literal \"today\".")] string? plannedFor = null,
+        [Description("Only the direct subtasks of this task id (GUID).")] string? parentTaskId = null,
         [Description("Page number, starting at 1.")] int page = 1,
         [Description("Page size (1-200). Default 50.")] int pageSize = 50,
         CancellationToken ct = default) => Run(async () =>
@@ -115,6 +140,7 @@ public sealed class OrbitTools(
             BacklogOnly = backlogOnly ?? false,
             OpenOnly = openOnly ?? false,
             PlannedFor = ParsePlanDate(plannedFor, "plannedFor"),
+            ParentTaskId = ParseGuid(parentTaskId, "parentTaskId"),
             Search = search,
             Page = page,
             PageSize = Math.Clamp(pageSize, 1, 200)
@@ -125,7 +151,7 @@ public sealed class OrbitTools(
 
     [McpServerTool(Name = "update_task"), Description(
         "Update any field of a task. Only the arguments you pass change; omit an argument to leave it as is. " +
-        "Pass the literal string \"none\" to clear assigneeId, dueDate, projectId, sprintId or plannedFor (sprintId \"none\" moves the task to the backlog; " +
+        "Pass the literal string \"none\" to clear assigneeId, dueDate, startDate, parentTaskId, projectId, sprintId or plannedFor (sprintId \"none\" moves the task to the backlog; " +
         "plannedFor \"none\" takes it off the day plan, plannedFor \"today\" puts it on today's plan - closed tasks can't be planned). " +
         "Setting status to Done or Cancelled requires a DepartmentAdmin or SystemAdmin key; a Member key is rejected. " +
         "Member keys can only edit tasks they created or that are assigned to them. " +
@@ -144,6 +170,8 @@ public sealed class OrbitTools(
         [Description("Sprint id (GUID) to plan the task into, or \"none\" for the backlog.")] string? sprintId = null,
         [Description("Department id (GUID) to move the task to. SystemAdmin keys only. Omit to keep the task's department (it only follows the project when projectId changes).")] string? departmentId = null,
         [Description("Day-plan date yyyy-MM-dd, \"today\" to put the task on today's plan, or \"none\" to take it off. Anyone in the task's department may plan it; closed tasks can't be planned.")] string? plannedFor = null,
+        [Description("Planned start date yyyy-MM-dd (not after the due date), or \"none\" to clear.")] string? startDate = null,
+        [Description("Parent task id (GUID) to make this a subtask (same project, or same department for standalone tasks), or \"none\" to detach it. A status change gated by a dependency, or closing a parent with open subtasks, is rejected with the reason.")] string? parentTaskId = null,
         CancellationToken ct = default) => Run(async () =>
     {
         var id = RequireGuid(taskId, "taskId");
@@ -157,7 +185,9 @@ public sealed class OrbitTools(
             Priority = ParseEnum<TaskPriority>(priority, "priority") ?? current.Priority,
             Type = ParseEnum<TaskType>(type, "type") ?? current.Type,
             AssigneeId = IsClear(assigneeId) ? null : ParseGuid(assigneeId, "assigneeId") ?? current.AssigneeId,
+            StartDate = IsClear(startDate) ? null : ParseDate(startDate, "startDate") ?? current.StartDate,
             DueDate = IsClear(dueDate) ? null : ParseDate(dueDate, "dueDate") ?? current.DueDate,
+            ParentTaskId = IsClear(parentTaskId) ? null : ParseGuid(parentTaskId, "parentTaskId") ?? current.ParentTaskId,
             Status = ParseEnum<TaskItemStatus>(status, "status") ?? current.Status,
             SprintId = IsClear(sprintId) ? null : ParseGuid(sprintId, "sprintId") ?? current.SprintId
         };
@@ -190,6 +220,52 @@ public sealed class OrbitTools(
     {
         var list = await comments.ListAsync(RequireGuid(taskId, "taskId"), ct);
         return new { items = list.Select(CommentDto).ToList(), totalCount = list.Count };
+    });
+
+    // --------------------------------------------------------- dependencies
+
+    [McpServerTool(Name = "add_dependency"), Description(
+        "Link two tasks: the successor waits on the predecessor. type: FS (default - the successor can't start until the predecessor finishes), " +
+        "SS (can't start until it starts), FF (can't finish until it finishes), SF (can't finish until it starts). Start = leaving Todo, finish = Done; " +
+        "a Cancelled predecessor releases its successors. lagDays is calendar days between the two ends (negative = lead) and only affects the " +
+        "planned-date check, never the workflow gate. Both tasks must be on the same project (or both standalone in one department); the key needs " +
+        "edit rights on the successor. Self-links, duplicates, links between a task and its own parent/subtask, and cycles are rejected with the reason.")]
+    public Task<string> AddDependency(
+        [Description("The task that must start/finish first (GUID).")] string predecessorTaskId,
+        [Description("The task that waits (GUID).")] string successorTaskId,
+        [Description("FS, SS, FF or SF (FinishToStart etc. also accepted). Default FS.")] string? type = null,
+        [Description("Lag in calendar days; negative is a lead. Default 0.")] int lagDays = 0,
+        CancellationToken ct = default) => Run(async () =>
+    {
+        var link = await structure.AddAsync(new DependencyInput
+        {
+            PredecessorTaskId = RequireGuid(predecessorTaskId, "predecessorTaskId"),
+            SuccessorTaskId = RequireGuid(successorTaskId, "successorTaskId"),
+            Type = ParseDependencyType(type),
+            LagDays = lagDays
+        }, ct);
+        return new
+        {
+            id = link.Id, predecessorId = link.PredecessorTaskId, predecessor = link.Predecessor.Title,
+            successorId = link.SuccessorTaskId, successor = link.Successor.Title,
+            type = link.Type, code = link.Type.Code(), lagDays = link.LagDays, createdAt = link.CreatedAt
+        };
+    });
+
+    [McpServerTool(Name = "remove_dependency"), Description(
+        "Remove a dependency link by its id (from get_task or add_dependency), or by the predecessorTaskId + successorTaskId pair. " +
+        "Same rights as add_dependency: the key must be able to edit the successor.")]
+    public Task<string> RemoveDependency(
+        [Description("The dependency id (GUID). Omit when passing the pair.")] string? dependencyId = null,
+        [Description("Predecessor task id (GUID), together with successorTaskId.")] string? predecessorTaskId = null,
+        [Description("Successor task id (GUID), together with predecessorTaskId.")] string? successorTaskId = null,
+        CancellationToken ct = default) => Run(async () =>
+    {
+        if (ParseGuid(dependencyId, "dependencyId") is Guid id)
+            await structure.RemoveAsync(id, ct);
+        else
+            await structure.RemoveAsync(RequireGuid(predecessorTaskId, "predecessorTaskId"), RequireGuid(successorTaskId, "successorTaskId"), ct);
+        return new { removed = true };
     });
 
     // ------------------------------------------------------------- projects
@@ -228,7 +304,8 @@ public sealed class OrbitTools(
         CancellationToken ct = default) => Run(async () =>
     {
         var project = await projects.GetAsync(RequireGuid(projectId, "projectId"), ct);
-        return ProjectDto(project, includeTasks: true);
+        var links = await structure.ListForProjectAsync(project.Id, ct);
+        return ProjectDto(project, includeTasks: true, links);
     });
 
     [McpServerTool(Name = "get_project_status"), Description("Lightweight status summary of a project: task counts by status, overdue count, progress and time logged. No task list.")]
@@ -415,6 +492,9 @@ public sealed class OrbitTools(
         assignee = t.Assignee?.DisplayName,
         createdById = t.CreatedById,
         createdBy = t.CreatedBy is null ? null : t.CreatedBy.IsSystemAccount ? "Claude" : t.CreatedBy.DisplayName,
+        parentTaskId = t.ParentTaskId,
+        parentTask = t.ParentTask?.Title,
+        startDate = t.StartDate,
         dueDate = t.DueDate,
         plannedFor = t.PlannedFor,
         sprintId = t.SprintId,
@@ -437,7 +517,7 @@ public sealed class OrbitTools(
         createdAt = c.CreatedAt
     };
 
-    private static object ProjectDto(Project p, bool includeTasks)
+    private static object ProjectDto(Project p, bool includeTasks, IReadOnlyList<TaskDependency>? dependencies = null)
     {
         var all = p.Tasks ?? [];
         return new
@@ -462,14 +542,47 @@ public sealed class OrbitTools(
                 {
                     id = t.Id, title = t.Title, status = t.Status, priority = t.Priority, type = t.Type, source = t.Source,
                     departmentId = t.DepartmentId, department = t.Department?.Name,
-                    assigneeId = t.AssigneeId, assignee = t.Assignee?.DisplayName, dueDate = t.DueDate,
+                    assigneeId = t.AssigneeId, assignee = t.Assignee?.DisplayName,
+                    parentTaskId = t.ParentTaskId, startDate = t.StartDate, dueDate = t.DueDate,
                     sprintId = t.SprintId, updatedAt = t.UpdatedAt
                 }).ToList()
-                : null
+                : null,
+            // Every link on the project (§6.15) - with parentTaskId on each task, enough to rebuild the tree and the graph a Gantt draws.
+            dependencies = dependencies?.Select(l => new
+            {
+                id = l.Id, predecessorId = l.PredecessorTaskId, predecessor = l.Predecessor?.Title,
+                successorId = l.SuccessorTaskId, successor = l.Successor?.Title,
+                type = l.Type, code = l.Type.Code(), lagDays = l.LagDays
+            }).ToList()
         };
     }
 
     private static bool IsClear(string? value) => string.Equals(value?.Trim(), Clear, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>A dependency link as seen from one task: the task at the far end, the type, lag, and whether the gate is met.</summary>
+    private static object LinkDto(DependencyView v) => new
+    {
+        dependencyId = v.Link.Id,
+        taskId = v.Other.Id, title = v.Other.Title, status = v.Other.Status,
+        departmentId = v.Other.DepartmentId, department = v.Other.Department?.Name,
+        startDate = v.Other.StartDate, dueDate = v.Other.DueDate,
+        type = v.Link.Type, code = v.Link.Type.Code(), lagDays = v.Link.LagDays,
+        met = v.Met, dateConflict = v.DateConflict
+    };
+
+    /// <summary>FS / SS / FF / SF, or the enum names; default FS.</summary>
+    private static DependencyType ParseDependencyType(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return DependencyType.FinishToStart;
+        return value.Trim().ToUpperInvariant() switch
+        {
+            "FS" => DependencyType.FinishToStart,
+            "SS" => DependencyType.StartToStart,
+            "FF" => DependencyType.FinishToFinish,
+            "SF" => DependencyType.StartToFinish,
+            _ => ParseEnum<DependencyType>(value, "type") ?? DependencyType.FinishToStart
+        };
+    }
 
     private static Guid RequireGuid(string? value, string name) =>
         ParseGuid(value, name) ?? throw new McpException($"{name} is required.");

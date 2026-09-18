@@ -15,6 +15,7 @@ public class DetailsModel(
     TimeEntryService time,
     AuditService audit,
     UserDirectoryService users,
+    TaskStructureService structure,
     IActorProvider actors) : OrbitPageModel
 {
     public sealed class TimeForm
@@ -39,6 +40,13 @@ public class DetailsModel(
     public RunningClock? Clock { get; private set; }
     public bool CanStartClock { get; private set; }
     public IReadOnlyList<TaskItemStatus> Statuses { get; private set; } = [];
+    /// <summary>Subtasks and dependencies (§6.15).</summary>
+    public TaskStructure Structure { get; private set; } = null!;
+    /// <summary>Tasks this one can be linked to: the same project, or the same department's standalone tasks.</summary>
+    public IReadOnlyList<TaskItem> LinkCandidates { get; private set; } = [];
+    /// <summary>Whether the actor may add a link from this task's page (edit rights on it; the far end is checked server-side).</summary>
+    public bool CanLink { get; private set; }
+    public bool CanAddSubtask { get; private set; }
 
     [BindProperty] public string? CommentBody { get; set; }
     [BindProperty] public TimeForm Time { get; set; } = new();
@@ -119,6 +127,41 @@ public class DetailsModel(
         return RedirectToPage(new { id });
     }
 
+    /// <summary>Add a dependency (§6.15). direction "waits-on": this task waits on the other; "blocks": the other waits on this task.</summary>
+    public async Task<IActionResult> OnPostAddDependencyAsync(Guid id, Guid? otherTaskId, string? direction, DependencyType type, int lagDays, CancellationToken ct)
+    {
+        if (otherTaskId is not Guid other)
+        {
+            Error("Choose a task to link.");
+            return RedirectToPage(new { id });
+        }
+        try
+        {
+            var waitsOn = direction != "blocks";
+            var link = await structure.AddAsync(new DependencyInput
+            {
+                PredecessorTaskId = waitsOn ? other : id,
+                SuccessorTaskId = waitsOn ? id : other,
+                Type = type,
+                LagDays = lagDays
+            }, ct);
+            Success($"\"{Ui.Truncate(link.Successor.Title, 40)}\" now waits on \"{Ui.Truncate(link.Predecessor.Title, 40)}\" ({link.Type.Code()}).");
+        }
+        catch (ValidationException ex) { Error(ex.Message); }
+        return RedirectToPage(new { id });
+    }
+
+    public async Task<IActionResult> OnPostRemoveDependencyAsync(Guid id, Guid linkId, CancellationToken ct)
+    {
+        try
+        {
+            await structure.RemoveAsync(linkId, ct);
+            Success("Dependency removed.");
+        }
+        catch (ValidationException ex) { Error(ex.Message); }
+        return RedirectToPage(new { id });
+    }
+
     private async Task LoadAsync(Guid id, CancellationToken ct)
     {
         Actor = await actors.GetAsync(ct);
@@ -146,5 +189,12 @@ public class DetailsModel(
         CanLogTime = Actor.UserId is Guid me && AccessPolicy.CanLogTimeFor(Actor, Task, me) || CanLogForOthers;
         Statuses = Ui.AllowedStatuses(Actor, Task);
         if (CanLogForOthers) TimeUsers = await users.GetAssignableAsync(Task.DepartmentId, ct);
+
+        Structure = await structure.GetStructureAsync(Task, ct);
+        CanLink = CanEdit;
+        CanAddSubtask = Task.IsOpen && (Task.Project is null
+            ? Actor.CanAccessDepartment(Task.DepartmentId)
+            : Task.Project.Status != ProjectStatus.Archived && AccessPolicy.CanAddTaskToProject(Actor, Task.Project));
+        if (CanLink) LinkCandidates = await structure.ListLinkCandidatesAsync(Task, ct);
     }
 }

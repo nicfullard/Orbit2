@@ -15,6 +15,8 @@ public sealed class TaskFilter
     public DateOnly? DueAfter { get; set; }
     public Guid? SprintId { get; set; }
     public Guid? RecurringTaskDefinitionId { get; set; }
+    /// <summary>Only the direct subtasks of this task (§6.15).</summary>
+    public Guid? ParentTaskId { get; set; }
     /// <summary>Only tasks with no sprint.</summary>
     public bool BacklogOnly { get; set; }
     /// <summary>Exclude Done/Cancelled.</summary>
@@ -48,7 +50,11 @@ public sealed class TaskInput
     public TaskPriority Priority { get; set; } = TaskPriority.Medium;
     public TaskType Type { get; set; } = TaskType.Task;
     public Guid? AssigneeId { get; set; }
+    /// <summary>Planned start (§6.15); never after <see cref="DueDate"/>.</summary>
+    public DateOnly? StartDate { get; set; }
     public DateOnly? DueDate { get; set; }
+    /// <summary>The parent task (§6.15): a task on the same project (or a standalone task in the same department). Null = top level.</summary>
+    public Guid? ParentTaskId { get; set; }
     /// <summary>Null on create = Todo; null on update = unchanged.</summary>
     public TaskItemStatus? Status { get; set; }
     /// <summary>Null = backlog.</summary>

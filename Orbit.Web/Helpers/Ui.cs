@@ -114,6 +114,9 @@ public static class Ui
         "ClockStopped" => "stopped the clock on",
         "Planned" => "planned for the day",
         "Unplanned" => "took off the day plan",
+        "ParentChanged" => "changed the parent of",
+        "DependencyAdded" => "added a dependency on",
+        "DependencyRemoved" => "removed a dependency on",
         "Paused" => "paused",
         "Resumed" => "resumed",
         "Generated" => "generated",
@@ -143,4 +146,11 @@ public static class Ui
     /// <summary>Status options the actor may pick for this task in an inline control.</summary>
     public static IReadOnlyList<TaskItemStatus> AllowedStatuses(Actor actor, TaskItem task) =>
         Enum.GetValues<TaskItemStatus>().Where(s => s == task.Status || AccessPolicy.CanChangeStatus(actor, task, s)).ToList();
+
+    /// <summary>Options for the dependency type picker (§6.15): "FS - Finish-to-Start" and so on.</summary>
+    public static IEnumerable<SelectListItem> DependencyTypeItems(DependencyType selected) =>
+        EnumItems<DependencyType>(selected, null, t => $"{t.Code()} - {t.Label()}");
+
+    /// <summary>A lag in days as "+2 d" / "-1 d", or "-" for none.</summary>
+    public static string Lag(int lagDays) => lagDays == 0 ? "-" : $"{(lagDays > 0 ? "+" : "")}{lagDays} d";
 }

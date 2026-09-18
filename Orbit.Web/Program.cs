@@ -111,6 +111,7 @@ builder.Services.AddSingleton<LoginThrottle>();
 builder.Services.AddScoped<AuditService>();
 builder.Services.AddScoped<NotificationService>();
 builder.Services.AddScoped<TaskService>();
+builder.Services.AddScoped<TaskStructureService>();
 builder.Services.AddScoped<ProjectService>();
 builder.Services.AddScoped<CommentService>();
 builder.Services.AddScoped<SprintService>();

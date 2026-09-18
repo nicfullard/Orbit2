@@ -9,8 +9,9 @@ using ValidationException = Orbit.Application.ValidationException;
 namespace Orbit.Pages.Today;
 
 /// <summary>The day plan (spec §6.12): what the team picked to work on today, grouped by person.</summary>
-public class IndexModel(TaskService tasks, UserDirectoryService users, DepartmentService departments, IActorProvider actors) : OrbitPageModel
+public class IndexModel(TaskService tasks, UserDirectoryService users, DepartmentService departments, TaskStructureService structure, IActorProvider actors) : OrbitPageModel
 {
+    public IReadOnlyDictionary<Guid, WaitingSummary> Waiting { get; private set; } = new Dictionary<Guid, WaitingSummary>();
     /// <summary>System Admins may narrow the plan to one department; ignored for everyone else.</summary>
     [BindProperty(SupportsGet = true)] public Guid? DepartmentId { get; set; }
 
@@ -32,6 +33,7 @@ public class IndexModel(TaskService tasks, UserDirectoryService users, Departmen
         Today = DateOnly.FromDateTime(DateTime.UtcNow);
         if (!Actor.IsSystemAdmin) DepartmentId = null;
         Plan = await tasks.GetDayPlanAsync(Today, DepartmentId, ct);
+        Waiting = await structure.GetWaitingAsync(Plan.Planned.Concat(Plan.Unfinished), ct);
         Groups = Plan.Planned
             .GroupBy(t => t.AssigneeId)
             .Select(g => new AssigneeGroup(g.Key, g.First().Assignee?.DisplayName ?? "Unassigned", g.ToList()))

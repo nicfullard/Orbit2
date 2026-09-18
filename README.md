@@ -60,6 +60,7 @@ Self-registration is disabled: accounts are created under **Admin > Users**.
 | Edit tasks | own/assigned | any in department | any |
 | Close tasks (Done/Cancelled) | no | own department | any |
 | File a task under another department's project (spec §6.2.1) | no | no | yes |
+| Set a task's parent; add/remove its dependencies (spec §6.15) | tasks they can edit | own department | any |
 | Sprints (create/start/complete) | no | no | yes |
 | Users, departments, API keys, reports | no | no | yes |
 | Directory (LDAP) settings, Orbit Agents, users' sign-in method | no | no | yes |
@@ -109,8 +110,12 @@ dotnet run --project Orbit.Agent -- help
 - Auth: `Authorization: Bearer <api key>` - keys are issued under **Admin > API Keys** with a role and
   department, and are shown once.
 - Tools: `create_task`, `get_task`, `list_tasks`, `update_task`, `add_comment`, `list_comments`,
-  `create_project`, `get_project`, `get_project_status`, `list_projects`, `update_project`,
-  `list_activity`, `list_users`, `list_departments`.
+  `add_dependency`, `remove_dependency`, `create_project`, `get_project`, `get_project_status`,
+  `list_projects`, `update_project`, `list_activity`, `list_users`, `list_departments`.
+- Tasks can be subtasks (`parentTaskId`) and can depend on each other (`add_dependency`: FS, SS, FF or SF
+  plus a lag in days, spec §6.15). Links gate status changes - the successor can't start / finish until the
+  predecessor has - and a parent can't close while a subtask is open; `get_task` reports what a task is
+  waiting on, and `get_project` returns the whole dependency list.
 
 Every API write is stamped `Source = Api`, attributed to the `Claude` user and written to the audit log.
 `create_task` accepts an `idempotencyKey` so retries do not create duplicates.

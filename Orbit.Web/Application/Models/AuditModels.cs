@@ -31,6 +31,11 @@ public static class AuditAction
     public const string ClockStopped = "ClockStopped";
     public const string Planned = "Planned";
     public const string Unplanned = "Unplanned";
+    /// <summary>Recorded on the child when its parent task changes (§6.15).</summary>
+    public const string ParentChanged = "ParentChanged";
+    /// <summary>Recorded on both ends of a dependency link (§6.15).</summary>
+    public const string DependencyAdded = "DependencyAdded";
+    public const string DependencyRemoved = "DependencyRemoved";
     public const string Paused = "Paused";
     public const string Resumed = "Resumed";
     public const string Generated = "Generated";

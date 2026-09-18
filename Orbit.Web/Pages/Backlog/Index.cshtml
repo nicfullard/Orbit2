@@ -5,7 +5,7 @@
     var f = Model.Filter;
     var priorityItems = Ui.EnumItems<TaskPriority>(f.Priority, "All");
     var showDepartments = Model.Actor.IsSystemAdmin || f.AllDepartments;
-    var rows = new TaskRowsVm { Tasks = Model.Result.Items, Actor = Model.Actor, ReturnUrl = Request.Path + Request.QueryString, ShowDepartment = showDepartments, ShowPlanToday = true, SelectionFormId = "planForm", EmptyMessage = "The backlog is empty." };
+    var rows = new TaskRowsVm { Tasks = Model.Result.Items, Actor = Model.Actor, ReturnUrl = Request.Path + Request.QueryString, ShowDepartment = showDepartments, ShowPlanToday = true, SelectionFormId = "planForm", Waiting = Model.Waiting, EmptyMessage = "The backlog is empty." };
 }
 
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">

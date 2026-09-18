@@ -80,6 +80,14 @@ else
                             {
                                 <span class="badge @Ui.SourceBadge(t.Source) ms-1">@Ui.SourceLabel(t.Source)</span>
                             }
+                            @if (Model.Waiting is not null && Model.Waiting.TryGetValue(t.Id, out var waiting))
+                            {
+                                <span class="badge text-bg-warning ms-1" title="@waiting.Reason">Waiting</span>
+                            }
+                            @if (t.ParentTask is not null)
+                            {
+                                <div class="small text-muted" title="Subtask of @t.ParentTask.Title">in: @Ui.Truncate(t.ParentTask.Title, 60)</div>
+                            }
                         </td>
                         @if (Model.ShowProject)
                         {

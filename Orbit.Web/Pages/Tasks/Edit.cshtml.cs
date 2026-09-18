@@ -11,7 +11,8 @@ public class EditModel(
     DepartmentService departments,
     ProjectService projects,
     UserDirectoryService users,
-    SprintService sprints) : OrbitPageModel
+    SprintService sprints,
+    TaskStructureService structure) : OrbitPageModel
 {
     [BindProperty] public TaskForm Form { get; set; } = new();
     public TaskItem Task { get; private set; } = null!;
@@ -23,7 +24,7 @@ public class EditModel(
         Task = await tasks.GetAsync(id, ct);
         AccessPolicy.Require(AccessPolicy.CanEditTask(actor, Task), "Members can only edit tasks they created or are assigned to.");
         Form = TaskForm.From(Task);
-        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, Form, ct);
+        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, structure, Form, Task.Id, ct);
         return Page();
     }
 
@@ -45,7 +46,7 @@ public class EditModel(
                 ModelState.AddModelError(string.Empty, ex.Message);
             }
         }
-        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, Form, ct);
+        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, structure, Form, Task.Id, ct);
         return Page();
     }
 }

@@ -14,6 +14,7 @@ public class IndexModel(
     DepartmentService departments,
     ProjectService projects,
     UserDirectoryService users,
+    TaskStructureService structure,
     IActorProvider actors) : OrbitPageModel
 {
     [BindProperty(SupportsGet = true)] public TaskFilter Filter { get; set; } = new();
@@ -24,6 +25,7 @@ public class IndexModel(
     public IReadOnlyList<SelectListItem> DepartmentItems { get; private set; } = [];
     public IReadOnlyList<SelectListItem> ProjectItems { get; private set; } = [];
     public IReadOnlyList<SelectListItem> AssigneeItems { get; private set; } = [];
+    public IReadOnlyDictionary<Guid, WaitingSummary> Waiting { get; private set; } = new Dictionary<Guid, WaitingSummary>();
 
     public async Task OnGetAsync(CancellationToken ct)
     {
@@ -33,6 +35,7 @@ public class IndexModel(
         Filter.SprintId = null;
         Filter.PageSize = 100;
         Result = await tasks.ListAsync(Filter, ct);
+        Waiting = await structure.GetWaitingAsync(Result.Items, ct);
         OpenSprints = await sprints.ListOpenAsync(ct);
 
         var showAllDepartments = Actor.IsSystemAdmin || Filter.AllDepartments;

@@ -4,7 +4,7 @@
     var s = Model.Sprint;
     ViewData["Title"] = s.Name;
     var canManage = AccessPolicy.CanManageSprints(Model.Actor);
-    var rows = new TaskRowsVm { Tasks = Model.Tasks, Actor = Model.Actor, ReturnUrl = Request.Path.ToString(), ShowDepartment = true, ShowSprint = false, ShowPlanToday = true, QuickEditAssignees = Model.QuickEditAssignees, SelectionFormId = s.Status == SprintStatus.Completed ? null : "removeForm", EmptyMessage = "No tasks in this sprint. Plan some from the backlog." };
+    var rows = new TaskRowsVm { Tasks = Model.Tasks, Actor = Model.Actor, ReturnUrl = Request.Path.ToString(), ShowDepartment = true, ShowSprint = false, ShowPlanToday = true, QuickEditAssignees = Model.QuickEditAssignees, Waiting = Model.Waiting, SelectionFormId = s.Status == SprintStatus.Completed ? null : "removeForm", EmptyMessage = "No tasks in this sprint. Plan some from the backlog." };
 }
 
 <nav aria-label="breadcrumb">

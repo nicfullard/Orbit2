@@ -1,0 +1,203 @@
+@page "{id:guid}"
+@model Orbit.Pages.Projects.GanttModel
+@{
+    var p = Model.Project;
+    var g = Model.Chart;
+    ViewData["Title"] = $"{p.Name} - Gantt";
+    string When(DateOnly d) => d.ToString("d MMM");
+    string Iso(DateOnly? d) => d?.ToString("yyyy-MM-dd") ?? string.Empty;
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Projects/Index">Projects</a></li>
+        <li class="breadcrumb-item"><a asp-page="/Projects/Details" asp-route-id="@p.Id">@p.Name</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Gantt</li>
+    </ol>
+</nav>
+
+<div class="d-flex flex-wrap justify-content-between align-items-start mb-2 gap-2">
+    <div>
+        <h1 class="h3 mb-1">@p.Name <span class="text-muted fs-6 fw-normal">Gantt</span></h1>
+        <div class="text-muted small">
+            @g.Rows.Count task(s), @g.DatedCount on the chart · @When(g.From) to @When(g.To)@if (g.CriticalIds.Count > 0 && g.CriticalEnd is DateOnly cpEnd) { <text> · <span class="gantt-cp">CP</span> critical path: @g.CriticalIds.Count task(s), ends @When(cpEnd)</text> }.
+            Drag a bar to move it, or drag its end to change one date; the change saves at once. Links are edited on each task's page.
+        </div>
+    </div>
+    <form method="get" class="d-flex flex-wrap gap-3 align-items-center">
+        <div class="form-check mb-0">
+            <input class="form-check-input js-autosubmit" type="checkbox" name="HideClosed" value="true" id="hideClosed" checked="@Model.HideClosed" />
+            <label class="form-check-label small" for="hideClosed">Hide done and cancelled</label>
+        </div>
+        <a class="btn btn-outline-secondary btn-sm" asp-page="/Projects/Details" asp-route-id="@p.Id">Back to project</a>
+    </form>
+</div>
+
+<div class="gantt-legend small text-muted mb-2 d-flex flex-wrap gap-3">
+    <span><span class="gantt-swatch status-todo"></span> To do</span>
+    <span><span class="gantt-swatch status-inprogress"></span> In progress</span>
+    <span><span class="gantt-swatch status-blocked"></span> Blocked</span>
+    <span><span class="gantt-swatch status-done"></span> Done</span>
+    <span><span class="gantt-swatch status-cancelled"></span> Cancelled</span>
+    <span><span class="gantt-swatch gantt-swatch-milestone status-todo"></span> Due date only</span>
+    <span><span class="gantt-swatch gantt-swatch-summary"></span> Span of subtasks</span>
+    <span><span class="gantt-swatch gantt-swatch-overdue"></span> Overdue edge</span>
+    <span><span class="gantt-swatch gantt-swatch-critical"></span> Critical path</span>
+    <span><span class="gantt-swatch gantt-swatch-arrow"></span> Dependency</span>
+    <span><span class="gantt-swatch gantt-swatch-arrow-critical"></span> Driving link</span>
+    <span><span class="gantt-swatch gantt-swatch-conflict"></span> Dates conflict</span>
+    <span><span class="gantt-swatch gantt-swatch-today"></span> Today</span>
+</div>
+
+@if (g.Rows.Count == 0)
+{
+    <div class="card"><div class="card-body text-muted">No tasks to show@(Model.HideClosed ? " - every task on this project is closed" : "").</div></div>
+}
+else
+{
+    <div class="gantt">
+        <div class="gantt-labels">
+            <div class="gantt-head small text-muted">Task</div>
+            @foreach (var r in g.Rows)
+            {
+                var t = r.Task;
+                var canView = AccessPolicy.CanViewTask(Model.Actor, t);
+                var dates = r.Bar is not null ? $"{When(r.Bar.Start)} → {When(r.Bar.End)}"
+                    : r.Milestone is not null ? $"due {When(r.Milestone.Start)}"
+                    : "unscheduled";
+                <div class="gantt-label" style="padding-left:@(8 + r.Depth * 18)px" title="@t.Title">
+                    <div class="flex-grow-1 overflow-hidden">
+                        <div class="text-truncate">
+                            @if (r.ChildCount > 0)
+                            {
+                                <span class="text-muted me-1" title="@r.ChildCount subtask(s)">▸</span>
+                            }
+                            @if (canView)
+                            {
+                                <a asp-page="/Tasks/Details" asp-route-id="@t.Id" class="text-decoration-none fw-semibold">@t.Title</a>
+                            }
+                            else
+                            {
+                                <span class="fw-semibold">@t.Title</span>
+                            }
+                        </div>
+                        <div class="text-muted gantt-sub text-truncate">@dates@(t.Assignee is null ? "" : $" · {t.Assignee.DisplayName}")@(Model.IsCrossDepartment ? $" · {t.Department.Name}" : "")</div>
+                    </div>
+                    @if (r.Critical)
+                    {
+                        <span class="gantt-cp" title="On the critical path">CP</span>
+                    }
+                    <span class="badge @Ui.StatusBadge(t.Status)">@t.Status.Label()</span>
+                </div>
+            }
+        </div>
+        <div class="gantt-timeline">
+            <div class="gantt-canvas" id="ganttCanvas" style="width:@(g.Width)px;height:@(g.Height)px" data-px-per-day="@g.PxPerDay" data-from="@Iso(g.From)">
+                @foreach (var m in g.Months)
+                {
+                    <div class="gantt-month" style="left:@(m.Left)px;width:@(m.Width)px">@m.Label</div>
+                }
+                @foreach (var d in g.Days)
+                {
+                    if (d.Weekend)
+                    {
+                        <div class="gantt-weekend" style="left:@(d.Left)px;width:@(g.PxPerDay)px"></div>
+                    }
+                    if (g.ShowDayNumbers)
+                    {
+                        <div class="gantt-day" style="left:@(d.Left)px;width:@(g.PxPerDay)px" title="@d.Date.ToString("ddd d MMM yyyy")">@d.Date.Day</div>
+                    }
+                    else if (g.ShowWeekMarks && d.WeekStart)
+                    {
+                        <div class="gantt-day" style="left:@(d.Left)px;width:@(g.PxPerDay * 7)px" title="Week of @d.Date.ToString("d MMM yyyy")">@d.Date.Day</div>
+                    }
+                    if (g.ShowDayNumbers || d.WeekStart)
+                    {
+                        <div class="gantt-grid" style="left:@(d.Left)px"></div>
+                    }
+                }
+                @foreach (var r in g.Rows)
+                {
+                    <div class="gantt-row" style="top:@(r.Y)px"></div>
+                }
+                @if (g.TodayVisible)
+                {
+                    <div class="gantt-today" style="left:@(g.TodayX)px" title="Today, @When(g.Today)"></div>
+                }
+                @foreach (var r in g.Rows)
+                {
+                    var t = r.Task;
+                    var overdue = r.Overdue ? ", overdue" : "";
+                    var critical = r.Critical ? ", on the critical path" : "";
+                    var canEdit = AccessPolicy.CanEditTask(Model.Actor, t);
+                    var editable = canEdit ? "true" : null;
+                    var hint = canEdit ? " - drag to reschedule" : "";
+                    if (r.Summary is not null)
+                    {
+                        <div class="gantt-summary" style="left:@(r.Summary.Left)px;top:@(r.Y + GanttChart.SummaryTop)px;width:@(r.Summary.Width)px"
+                             title="Subtasks of @t.Title: @When(r.Summary.Start) to @When(r.Summary.End)"></div>
+                    }
+                    if (r.Bar is not null)
+                    {
+                        <div class="gantt-bar @r.StatusClass @(r.Overdue ? "gantt-overdue" : "") @(r.Critical ? "gantt-critical" : "") @(canEdit ? "gantt-editable" : "")"
+                             style="left:@(r.Bar.Left)px;top:@(r.Y + GanttChart.BarTop)px;width:@(r.Bar.Width)px"
+                             data-task="@t.Id" data-start="@Iso(t.StartDate)" data-end="@Iso(t.DueDate)" data-editable="@editable"
+                             title="@t.Title: @When(r.Bar.Start) to @When(r.Bar.End) (@t.Status.Label()@overdue@critical)@hint"></div>
+                    }
+                    else if (r.Milestone is not null)
+                    {
+                        <div class="gantt-milestone @r.StatusClass @(r.Overdue ? "gantt-overdue" : "") @(r.Critical ? "gantt-critical" : "") @(canEdit ? "gantt-editable" : "")"
+                             style="left:@(r.Milestone.Left + g.PxPerDay / 2 - GanttChart.MilestoneSize / 2)px;top:@(r.Y + GanttChart.BarTop + 1)px"
+                             data-task="@t.Id" data-start="@Iso(t.StartDate)" data-end="@Iso(t.DueDate)" data-editable="@editable"
+                             title="@t.Title: due @When(r.Milestone.Start) (@t.Status.Label()@overdue@critical)@hint"></div>
+                    }
+                }
+                <svg class="gantt-arrows" width="@g.Width" height="@g.Height" aria-hidden="true">
+                    <defs>
+                        <marker id="gantt-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+                            <path class="gantt-arrowhead" d="M0,0 L10,5 L0,10 z" />
+                        </marker>
+                        <marker id="gantt-head-critical" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                            <path class="gantt-arrowhead gantt-arrowhead-critical" d="M0,0 L10,5 L0,10 z" />
+                        </marker>
+                        <marker id="gantt-head-conflict" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+                            <path class="gantt-arrowhead gantt-arrowhead-conflict" d="M0,0 L10,5 L0,10 z" />
+                        </marker>
+                    </defs>
+                    @foreach (var a in g.Arrows)
+                    {
+                        var head = a.Conflict ? "gantt-head-conflict" : a.Critical ? "gantt-head-critical" : "gantt-head";
+                        <path class="gantt-arrow @(a.Critical ? "gantt-arrow-critical" : "") @(a.Conflict ? "gantt-arrow-conflict" : "")" d="@a.Path" marker-end="url(#@head)"><title>@a.Title</title></path>
+                    }
+                </svg>
+                <div id="ganttDragLabel" class="gantt-drag-label" hidden></div>
+            </div>
+        </div>
+    </div>
+
+    <form method="post" asp-page-handler="Reschedule" asp-route-id="@p.Id" id="ganttReschedule" class="d-none">
+        <input type="hidden" name="taskId" />
+        <input type="hidden" name="startDate" />
+        <input type="hidden" name="dueDate" />
+        <input type="hidden" name="HideClosed" value="@(Model.HideClosed ? "true" : "false")" />
+    </form>
+}
+
+@if (g.Rows.Count > 0 && g.DatedCount == 0)
+{
+    <p class="text-muted small mt-2 mb-0">Nothing is on the chart yet: give tasks a start and/or due date to place them.</p>
+}
+@if (g.UndrawnLinks.Count > 0)
+{
+    <div class="small text-muted mt-2">
+        <span class="fw-semibold">Not drawn</span> (a task has no dates):
+        @foreach (var l in g.UndrawnLinks)
+        {
+            <span class="me-2">"@l.Successor.Title" waits on "@l.Predecessor.Title" (@l.Type.Code())</span>
+        }
+    </div>
+}
+
+@section Scripts {
+    <script src="~/js/gantt.js" asp-append-version="true"></script>
+}

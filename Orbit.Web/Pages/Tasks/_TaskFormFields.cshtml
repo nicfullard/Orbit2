@@ -55,13 +55,17 @@
 </div>
 
 <div class="row g-3 mt-0">
-    <div class="col-md-3">
+    <div class="col-md-2">
         <label class="form-label" for="Form_Type">Type</label>
         <select class="form-select" id="Form_Type" name="Form.Type" asp-items="Ui.EnumItems<TaskType>(form.Type)"></select>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-2">
         <label class="form-label" for="Form_Priority">Priority</label>
         <select class="form-select" id="Form_Priority" name="Form.Priority" asp-items="Ui.EnumItems<TaskPriority>(form.Priority)"></select>
+    </div>
+    <div class="col-md-2">
+        <label class="form-label" for="Form_StartDate">Start date</label>
+        <input type="date" class="form-control" id="Form_StartDate" name="Form.StartDate" value="@(form.StartDate?.ToString("yyyy-MM-dd"))" title="Planned start; not after the due date" />
     </div>
     <div class="col-md-3">
         <label class="form-label" for="Form_AssigneeId">Assignee</label>
@@ -101,5 +105,16 @@
     <div class="col-md-4">
         <label class="form-label" for="Form_SprintId">Sprint</label>
         <select class="form-select" id="Form_SprintId" name="Form.SprintId" asp-items="Model.Sprints"></select>
+    </div>
+    <div class="col-md-4">
+        <label class="form-label" for="Form_ParentTaskId">Parent task</label>
+        <select class="form-select js-parent-select" id="Form_ParentTaskId" name="Form.ParentTaskId" data-project-source="#Form_ProjectId" data-department-source="#Form_DepartmentId">
+            <option value="" selected="@(form.ParentTaskId is null)">(none - top-level task)</option>
+            @foreach (var p in Model.Parents)
+            {
+                <option value="@p.Id" data-project="@p.ProjectId" data-department="@p.DepartmentId" selected="@(p.Id == form.ParentTaskId)">@(p.ProjectName is null ? $"{p.Title} ({p.DepartmentName})" : $"{p.ProjectName} / {p.Title}")</option>
+            }
+        </select>
+        <div class="form-text">Makes this a subtask. Only tasks on the same project are offered (for a standalone task, standalone tasks in its department).</div>
     </div>
 </div>
