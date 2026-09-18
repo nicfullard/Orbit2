@@ -26,6 +26,15 @@ public static class Ui
         _ => "text-bg-light"
     };
 
+    public static string TypeBadge(TaskType t) => t switch
+    {
+        TaskType.Meeting => "bg-primary-subtle text-primary-emphasis border",
+        TaskType.Planning => "bg-info-subtle text-info-emphasis border",
+        TaskType.Training => "bg-success-subtle text-success-emphasis border",
+        TaskType.Audit => "bg-warning-subtle text-warning-emphasis border",
+        _ => "text-bg-light border"
+    };
+
     public static string SourceBadge(TaskSource s) => s switch
     {
         TaskSource.Api => "badge-claude",

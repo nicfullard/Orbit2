@@ -70,6 +70,7 @@ A task/project tracker for the whole business — organized into departments, ea
 - `Description` (markdown-capable, free text)
 - `Status` (`Todo`, `InProgress`, `Blocked`, `Done`, `Cancelled`)
 - `Priority` (`Low`, `Medium`, `High`, `Critical`)
+- `Type` (`Meeting`, `Planning`, `Task`, `Training`, `Audit`) — what kind of work it is; default `Task`. Editable on the create and edit pages and through the MCP tools
 - `AssigneeId` (FK → User, nullable — unassigned allowed)
 - `CreatedById` (FK → User, nullable — null when created by the API/Claude)
 - `Source` (`Manual`, `Api`) — where the task originated, so the team can see what Claude generated vs what a human typed

@@ -25,6 +25,7 @@
         <div class="d-flex flex-wrap gap-1 align-items-center">
             <span class="badge @Ui.StatusBadge(t.Status)">@t.Status.Label()</span>
             <span class="badge @Ui.PriorityBadge(t.Priority)">@t.Priority</span>
+            <span class="badge @Ui.TypeBadge(t.Type)" title="Type">@t.Type</span>
             <span class="badge @Ui.SourceBadge(t.Source)">@Ui.SourceLabel(t.Source)</span>
             <span class="badge text-bg-light border">@t.Department.Name</span>
             @if (t.Sprint is not null)

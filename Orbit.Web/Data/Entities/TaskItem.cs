@@ -12,6 +12,7 @@ public class TaskItem
     public string? Description { get; set; }
     public TaskItemStatus Status { get; set; } = TaskItemStatus.Todo;
     public TaskPriority Priority { get; set; } = TaskPriority.Medium;
+    public TaskType Type { get; set; } = TaskType.Task;
     public Guid? AssigneeId { get; set; }
     public ApplicationUser? Assignee { get; set; }
     public Guid? CreatedById { get; set; }

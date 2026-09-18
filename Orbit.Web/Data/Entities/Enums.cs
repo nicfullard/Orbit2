@@ -32,6 +32,16 @@ public enum TaskPriority
     Critical
 }
 
+/// <summary>What kind of work a task is. <see cref="Task"/> is the plain default for ordinary work items.</summary>
+public enum TaskType
+{
+    Meeting,
+    Planning,
+    Task,
+    Training,
+    Audit
+}
+
 /// <summary>
 /// Where a task originated. <see cref="Recurring"/> is an addition to the spec's Manual/Api pair
 /// so tasks spawned by the recurring-task job are distinguishable from human- and Claude-created ones.

@@ -40,6 +40,7 @@ public sealed class OrbitTools(
         [Description("Project id (GUID) to file the task under. Optional - tasks can be standalone.")] string? projectId = null,
         [Description("Department id (GUID) the task belongs to. With projectId it defaults to the project's department; a SystemAdmin key may pass another department to file a cross-department project task.")] string? departmentId = null,
         [Description("Low, Medium, High or Critical. Default Medium.")] string? priority = null,
+        [Description("Meeting, Planning, Task, Training or Audit - what kind of work it is. Default Task.")] string? type = null,
         [Description("Due date as yyyy-MM-dd.")] string? dueDate = null,
         [Description("Assignee user id (GUID). Must be an active user in the task's department (not necessarily the project's), or a SystemAdmin. Omit to leave unassigned.")] string? assigneeId = null,
         [Description("Optional idempotency key. Retrying with the same key returns the already-created task instead of a duplicate.")] string? idempotencyKey = null,
@@ -52,6 +53,7 @@ public sealed class OrbitTools(
             ProjectId = ParseGuid(projectId, "projectId"),
             DepartmentId = ParseGuid(departmentId, "departmentId"),
             Priority = ParseEnum<TaskPriority>(priority, "priority") ?? TaskPriority.Medium,
+            Type = ParseEnum<TaskType>(type, "type") ?? TaskType.Task,
             DueDate = ParseDate(dueDate, "dueDate"),
             AssigneeId = ParseGuid(assigneeId, "assigneeId"),
             IdempotencyKey = idempotencyKey
@@ -86,6 +88,7 @@ public sealed class OrbitTools(
         [Description("Filter by assignee user id (GUID).")] string? assigneeId = null,
         [Description("Manual, Api or Recurring - where the task originated.")] string? source = null,
         [Description("Low, Medium, High or Critical.")] string? priority = null,
+        [Description("Meeting, Planning, Task, Training or Audit.")] string? type = null,
         [Description("Only tasks due on or before this date (yyyy-MM-dd).")] string? dueBefore = null,
         [Description("Only tasks due on or after this date (yyyy-MM-dd).")] string? dueAfter = null,
         [Description("Filter by sprint id (GUID).")] string? sprintId = null,
@@ -105,6 +108,7 @@ public sealed class OrbitTools(
             AssigneeId = ParseGuid(assigneeId, "assigneeId"),
             Source = ParseEnum<TaskSource>(source, "source"),
             Priority = ParseEnum<TaskPriority>(priority, "priority"),
+            Type = ParseEnum<TaskType>(type, "type"),
             DueBefore = ParseDate(dueBefore, "dueBefore"),
             DueAfter = ParseDate(dueAfter, "dueAfter"),
             SprintId = ParseGuid(sprintId, "sprintId"),
@@ -133,6 +137,7 @@ public sealed class OrbitTools(
         [Description("New description.")] string? description = null,
         [Description("Todo, InProgress, Blocked, Done or Cancelled.")] string? status = null,
         [Description("Low, Medium, High or Critical.")] string? priority = null,
+        [Description("Meeting, Planning, Task, Training or Audit.")] string? type = null,
         [Description("Assignee user id (GUID), or \"none\" to unassign.")] string? assigneeId = null,
         [Description("Due date yyyy-MM-dd, or \"none\" to clear.")] string? dueDate = null,
         [Description("Project id (GUID), or \"none\" to make the task standalone.")] string? projectId = null,
@@ -150,6 +155,7 @@ public sealed class OrbitTools(
             ProjectId = IsClear(projectId) ? null : ParseGuid(projectId, "projectId") ?? current.ProjectId,
             DepartmentId = ParseGuid(departmentId, "departmentId"),
             Priority = ParseEnum<TaskPriority>(priority, "priority") ?? current.Priority,
+            Type = ParseEnum<TaskType>(type, "type") ?? current.Type,
             AssigneeId = IsClear(assigneeId) ? null : ParseGuid(assigneeId, "assigneeId") ?? current.AssigneeId,
             DueDate = IsClear(dueDate) ? null : ParseDate(dueDate, "dueDate") ?? current.DueDate,
             Status = ParseEnum<TaskItemStatus>(status, "status") ?? current.Status,
@@ -397,6 +403,7 @@ public sealed class OrbitTools(
         description = t.Description,
         status = t.Status,
         priority = t.Priority,
+        type = t.Type,
         source = t.Source,
         departmentId = t.DepartmentId,
         department = t.Department?.Name,
@@ -451,7 +458,7 @@ public sealed class OrbitTools(
             tasks = includeTasks
                 ? all.OrderBy(t => t.Status.IsClosed()).ThenBy(t => t.DueDate).Select(t => new
                 {
-                    id = t.Id, title = t.Title, status = t.Status, priority = t.Priority, source = t.Source,
+                    id = t.Id, title = t.Title, status = t.Status, priority = t.Priority, type = t.Type, source = t.Source,
                     departmentId = t.DepartmentId, department = t.Department?.Name,
                     assigneeId = t.AssigneeId, assignee = t.Assignee?.DisplayName, dueDate = t.DueDate,
                     sprintId = t.SprintId, updatedAt = t.UpdatedAt

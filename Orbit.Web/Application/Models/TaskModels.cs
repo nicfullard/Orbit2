@@ -9,6 +9,7 @@ public sealed class TaskFilter
     public TaskItemStatus? Status { get; set; }
     public Guid? AssigneeId { get; set; }
     public TaskPriority? Priority { get; set; }
+    public TaskType? Type { get; set; }
     public TaskSource? Source { get; set; }
     public DateOnly? DueBefore { get; set; }
     public DateOnly? DueAfter { get; set; }
@@ -45,6 +46,7 @@ public sealed class TaskInput
     /// </summary>
     public Guid? DepartmentId { get; set; }
     public TaskPriority Priority { get; set; } = TaskPriority.Medium;
+    public TaskType Type { get; set; } = TaskType.Task;
     public Guid? AssigneeId { get; set; }
     public DateOnly? DueDate { get; set; }
     /// <summary>Null on create = Todo; null on update = unchanged.</summary>

@@ -5,6 +5,7 @@
     var f = Model.Filter;
     var statusItems = Ui.EnumItems<TaskItemStatus>(f.Status, "All", s => s.Label());
     var priorityItems = Ui.EnumItems<TaskPriority>(f.Priority, "All");
+    var typeItems = Ui.EnumItems<TaskType>(f.Type, "All");
     var sourceItems = Ui.EnumItems<TaskSource>(f.Source, "All", Ui.SourceLabel);
     var rows = new TaskRowsVm { Tasks = Model.Result.Items, Actor = Model.Actor, ReturnUrl = Request.Path + Request.QueryString, ShowDepartment = Model.Actor.IsSystemAdmin, ShowSprint = true, ShowPlanToday = true, QuickEditAssignees = Model.QuickEditAssignees, EmptyMessage = "No tasks match these filters." };
 }
@@ -52,6 +53,10 @@
             <div class="col-sm-6 col-lg-1">
                 <label class="form-label small mb-0">Priority</label>
                 <select class="form-select form-select-sm" name="Priority" asp-items="priorityItems"></select>
+            </div>
+            <div class="col-sm-6 col-lg-2">
+                <label class="form-label small mb-0">Type</label>
+                <select class="form-select form-select-sm" name="Type" asp-items="typeItems"></select>
             </div>
             <div class="col-sm-6 col-lg-2">
                 <label class="form-label small mb-0">Source</label>

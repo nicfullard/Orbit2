@@ -33,6 +33,7 @@ public sealed class TaskService(
         if (f.Status is TaskItemStatus status) q = q.Where(t => t.Status == status);
         if (f.AssigneeId is Guid assigneeId) q = q.Where(t => t.AssigneeId == assigneeId);
         if (f.Priority is TaskPriority priority) q = q.Where(t => t.Priority == priority);
+        if (f.Type is TaskType type) q = q.Where(t => t.Type == type);
         if (f.Source is TaskSource source) q = q.Where(t => t.Source == source);
         if (f.DueBefore is DateOnly before) q = q.Where(t => t.DueDate != null && t.DueDate <= before);
         if (f.DueAfter is DateOnly after) q = q.Where(t => t.DueDate != null && t.DueDate >= after);
@@ -126,6 +127,7 @@ public sealed class TaskService(
             DepartmentId = departmentId,
             ProjectId = input.ProjectId,
             Priority = input.Priority,
+            Type = input.Type,
             AssigneeId = assignee?.Id,
             DueDate = input.DueDate,
             SprintId = input.SprintId,
@@ -140,7 +142,7 @@ public sealed class TaskService(
         db.Tasks.Add(task);
         audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.Created, departmentId, task.Title, new
         {
-            task.Title, task.Status, task.Priority, task.ProjectId, task.DepartmentId, task.AssigneeId, task.DueDate, task.Source, task.SprintId
+            task.Title, task.Status, task.Priority, task.Type, task.ProjectId, task.DepartmentId, task.AssigneeId, task.DueDate, task.Source, task.SprintId
         });
         await db.SaveChangesAsync(ct);
 
@@ -186,6 +188,7 @@ public sealed class TaskService(
             .Track("departmentId", task.DepartmentId, departmentId)
             .Track("projectId", task.ProjectId, input.ProjectId)
             .Track("priority", task.Priority, input.Priority)
+            .Track("type", task.Type, input.Type)
             .Track("assigneeId", task.AssigneeId, assignee?.Id)
             .Track("dueDate", task.DueDate, input.DueDate)
             .Track("status", task.Status, newStatus)
@@ -199,6 +202,7 @@ public sealed class TaskService(
         task.DepartmentId = departmentId;
         task.ProjectId = input.ProjectId;
         task.Priority = input.Priority;
+        task.Type = input.Type;
         task.AssigneeId = assignee?.Id;
         if (changes.Contains("dueDate")) task.DueSoonNotifiedAt = null; // a new due date earns a fresh reminder
         task.DueDate = input.DueDate;

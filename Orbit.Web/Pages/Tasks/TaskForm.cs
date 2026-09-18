@@ -23,6 +23,8 @@ public sealed class TaskForm
 
     public TaskPriority Priority { get; set; } = TaskPriority.Medium;
 
+    public TaskType Type { get; set; } = TaskType.Task;
+
     [Display(Name = "Assignee")]
     public Guid? AssigneeId { get; set; }
 
@@ -41,6 +43,7 @@ public sealed class TaskForm
         ProjectId = ProjectId,
         DepartmentId = DepartmentId,
         Priority = Priority,
+        Type = Type,
         AssigneeId = AssigneeId,
         DueDate = DueDate,
         Status = includeStatus ? Status : null,
@@ -54,6 +57,7 @@ public sealed class TaskForm
         ProjectId = t.ProjectId,
         DepartmentId = t.DepartmentId,
         Priority = t.Priority,
+        Type = t.Type,
         AssigneeId = t.AssigneeId,
         DueDate = t.DueDate,
         Status = t.Status,

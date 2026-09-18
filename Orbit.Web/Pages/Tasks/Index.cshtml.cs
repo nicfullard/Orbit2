@@ -49,7 +49,7 @@ public class IndexModel(
 
     public string PageUrl(int page) => Url.Page("/Tasks/Index", new
     {
-        Filter.ProjectId, Filter.DepartmentId, Filter.Status, Filter.AssigneeId, Filter.Priority, Filter.Source,
+        Filter.ProjectId, Filter.DepartmentId, Filter.Status, Filter.AssigneeId, Filter.Priority, Filter.Type, Filter.Source,
         Filter.DueBefore, Filter.DueAfter, Filter.OpenOnly, Filter.PlannedToday, Filter.PlannedFor, Filter.Search, Page = page
     })!;
 }

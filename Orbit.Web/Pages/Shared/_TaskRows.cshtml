@@ -72,6 +72,10 @@ else
                             {
                                 <span class="fw-semibold">@t.Title</span>
                             }
+                            @if (t.Type != TaskType.Task)
+                            {
+                                <span class="badge @Ui.TypeBadge(t.Type) ms-1" title="Type">@t.Type</span>
+                            }
                             @if (t.Source != TaskSource.Manual)
                             {
                                 <span class="badge @Ui.SourceBadge(t.Source) ms-1">@Ui.SourceLabel(t.Source)</span>
