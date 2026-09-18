@@ -247,7 +247,9 @@ public sealed class OrbitTools(
             crossDepartment = s.IsCrossDepartment,
             departments = s.ByDepartment.Select(d => new
             {
-                departmentId = d.DepartmentId, department = d.Name, totalTasks = d.Total, openTasks = d.Open
+                departmentId = d.DepartmentId, department = d.Name, totalTasks = d.Total, openTasks = d.Open,
+                todo = d.Todo, inProgress = d.InProgress, blocked = d.Blocked, done = d.Done, cancelled = d.Cancelled,
+                overdue = d.Overdue, percentDone = d.PercentDone
             }).ToList()
         };
     });

@@ -27,7 +27,20 @@ public sealed class ProjectInput
 }
 
 /// <summary>Task counts for one department represented on a project (§6.2.1 cross-department project tasks).</summary>
-public sealed record DepartmentTaskCount(Guid DepartmentId, string Name, int Total, int Open);
+public sealed record DepartmentTaskCount(
+    Guid DepartmentId,
+    string Name,
+    int Todo,
+    int InProgress,
+    int Blocked,
+    int Done,
+    int Cancelled,
+    int Overdue)
+{
+    public int Total => Todo + InProgress + Blocked + Done + Cancelled;
+    public int Open => Todo + InProgress + Blocked;
+    public int PercentDone => Total == 0 ? 0 : (int)Math.Round(Done * 100.0 / Total);
+}
 
 public sealed record ProjectStatusSummary(
     Guid Id,

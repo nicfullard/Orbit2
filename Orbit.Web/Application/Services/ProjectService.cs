@@ -106,29 +106,32 @@ public sealed class ProjectService(ApplicationDbContext db, IActorProvider actor
             "This project belongs to another department.");
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var counts = await db.Tasks.Where(t => t.ProjectId == id)
-            .GroupBy(t => t.Status).Select(g => new { g.Key, Count = g.Count() }).ToListAsync(ct);
-        int Count(TaskItemStatus s) => counts.FirstOrDefault(c => c.Key == s)?.Count ?? 0;
-        var overdue = await db.Tasks.CountAsync(t => t.ProjectId == id && t.DueDate != null && t.DueDate < today
-            && t.Status != TaskItemStatus.Done && t.Status != TaskItemStatus.Cancelled, ct);
         var minutes = await db.TimeEntries.Where(e => e.Task.ProjectId == id).SumAsync(e => (int?)e.DurationMinutes, ct) ?? 0;
-        var byDepartment = await db.Tasks.Where(t => t.ProjectId == id)
+        // One grouped query gives the per-department breakdown; the project-wide counts are its sums.
+        var byDepartment = (await db.Tasks.Where(t => t.ProjectId == id)
             .GroupBy(t => new { t.DepartmentId, t.Department.Name })
             .Select(g => new
             {
                 g.Key.DepartmentId,
                 g.Key.Name,
-                Total = g.Count(),
-                Open = g.Count(t => t.Status != TaskItemStatus.Done && t.Status != TaskItemStatus.Cancelled)
+                Todo = g.Count(t => t.Status == TaskItemStatus.Todo),
+                InProgress = g.Count(t => t.Status == TaskItemStatus.InProgress),
+                Blocked = g.Count(t => t.Status == TaskItemStatus.Blocked),
+                Done = g.Count(t => t.Status == TaskItemStatus.Done),
+                Cancelled = g.Count(t => t.Status == TaskItemStatus.Cancelled),
+                Overdue = g.Count(t => t.DueDate != null && t.DueDate < today
+                    && t.Status != TaskItemStatus.Done && t.Status != TaskItemStatus.Cancelled)
             })
             .OrderBy(d => d.Name)
-            .ToListAsync(ct);
+            .ToListAsync(ct))
+            .Select(d => new DepartmentTaskCount(d.DepartmentId, d.Name, d.Todo, d.InProgress, d.Blocked, d.Done, d.Cancelled, d.Overdue))
+            .ToList();
 
         return new ProjectStatusSummary(project.Id, project.Name, project.Status, project.Department.Name, project.DepartmentId,
-            project.Owner.DisplayName, project.TargetDate, counts.Sum(c => c.Count),
-            Count(TaskItemStatus.Todo), Count(TaskItemStatus.InProgress), Count(TaskItemStatus.Blocked),
-            Count(TaskItemStatus.Done), Count(TaskItemStatus.Cancelled), overdue, minutes,
-            byDepartment.Select(d => new DepartmentTaskCount(d.DepartmentId, d.Name, d.Total, d.Open)).ToList());
+            project.Owner.DisplayName, project.TargetDate, byDepartment.Sum(d => d.Total),
+            byDepartment.Sum(d => d.Todo), byDepartment.Sum(d => d.InProgress), byDepartment.Sum(d => d.Blocked),
+            byDepartment.Sum(d => d.Done), byDepartment.Sum(d => d.Cancelled), byDepartment.Sum(d => d.Overdue), minutes,
+            byDepartment);
     }
 
     public async Task<Project> CreateAsync(ProjectInput input, CancellationToken ct = default)
