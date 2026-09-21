@@ -21,7 +21,8 @@ html {
   --orbit-overdue: #b02a37;
   --orbit-claude: #6f42c1;
   --orbit-gantt-grid: #e9ecef;
-  --orbit-gantt-weekend: #f3f4f6;
+  --orbit-gantt-nonworking: #f3f4f6;
+  --orbit-gantt-holiday: #e2e5ea;
   --orbit-gantt-today: #d63384;
   --orbit-gantt-summary: #495057;
   --orbit-gantt-arrow: #6c757d;
@@ -41,7 +42,8 @@ html {
   --orbit-overdue: #f1707a;
   --orbit-claude: #8f66d6;
   --orbit-gantt-grid: #343a40;
-  --orbit-gantt-weekend: #262a2e;
+  --orbit-gantt-nonworking: #262a2e;
+  --orbit-gantt-holiday: #30353b;
   --orbit-gantt-today: #e685b5;
   --orbit-gantt-summary: #adb5bd;
   --orbit-gantt-arrow: #9aa1a8;
@@ -109,7 +111,13 @@ html {
 }
 .gantt-month { top: 0; font-weight: 600; }
 .gantt-day { top: 22px; }
-.gantt-weekend { position: absolute; top: 44px; bottom: 0; background: var(--orbit-gantt-weekend); }
+/* Non-working days come from the working calendar (§6.17): weekends plain, holidays and shutdown days hatched,
+   an exceptional working day marked by a strip under the header. */
+.gantt-nonworking { position: absolute; top: 44px; bottom: 0; background: var(--orbit-gantt-nonworking); }
+.gantt-holiday { background: repeating-linear-gradient(135deg, var(--orbit-gantt-nonworking) 0 5px, var(--orbit-gantt-holiday) 5px 8px); }
+.gantt-workday-exception { position: absolute; top: 44px; height: 4px; background: repeating-linear-gradient(90deg, var(--orbit-gantt-target) 0 3px, transparent 3px 6px); }
+.gantt-swatch-nonworking { background: var(--orbit-gantt-nonworking); border: 1px solid var(--orbit-surface-border); }
+.gantt-swatch-holiday { background: repeating-linear-gradient(135deg, var(--orbit-gantt-nonworking) 0 3px, var(--orbit-gantt-holiday) 3px 5px); border: 1px solid var(--orbit-surface-border); }
 .gantt-grid { position: absolute; top: 44px; bottom: 0; width: 0; border-left: 1px solid var(--orbit-gantt-grid); }
 .gantt-row { position: absolute; left: 0; right: 0; height: 34px; box-sizing: border-box; border-top: 1px solid var(--orbit-gantt-grid); }
 .gantt-today { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--orbit-gantt-today); opacity: .85; z-index: 2; }

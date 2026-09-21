@@ -3,8 +3,8 @@ namespace Orbit.Data.Entities;
 /// <summary>
 /// The organisation's working week (spec §6.17): a single row (<see cref="WellKnownIds.WorkingCalendarId"/>) saying
 /// which weekdays are working days, edited under Admin &gt; Working Calendar. Dated exceptions (public holidays,
-/// shutdown days, exceptional working days) are <see cref="WorkingCalendarException"/> rows. Used only by critical
-/// path analysis; nothing else in Orbit moves a date because of it.
+/// shutdown days, exceptional working days) are <see cref="WorkingCalendarException"/> rows. Critical path analysis
+/// counts in it and the Gantt shades its non-working days; nothing in Orbit moves a date because of it.
 /// </summary>
 public class WorkingCalendar
 {

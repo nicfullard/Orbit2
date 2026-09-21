@@ -1,4 +1,5 @@
 using Orbit.Application;
+using Orbit.Application.Scheduling;
 using Orbit.Data.Entities;
 
 namespace Orbit.Helpers;
@@ -60,8 +61,10 @@ public sealed class GanttChart
     public int EndX(DateOnly d) => X(d) + PxPerDay;
     public static int RowY(int index) => HeaderHeight + index * RowHeight;
 
-    public static GanttChart Build(IEnumerable<TaskItem> tasks, IEnumerable<TaskDependency> links, DateOnly today, bool hideClosed, GanttOverlay? overlay = null)
+    /// <param name="calendar">The organisation working calendar (§6.17), for shading non-working days; Monday-Friday when null.</param>
+    public static GanttChart Build(IEnumerable<TaskItem> tasks, IEnumerable<TaskDependency> links, DateOnly today, bool hideClosed, GanttOverlay? overlay = null, WorkDayCalendar? calendar = null)
     {
+        var cal = calendar ?? WorkDayCalendar.Default;
         var all = tasks.Where(t => !hideClosed || t.IsOpen).ToList();
         var byId = all.ToDictionary(t => t.Id);
         var children = all.Where(t => t.ParentTaskId is Guid p && byId.ContainsKey(p)).ToLookup(t => t.ParentTaskId!.Value);
@@ -166,10 +169,10 @@ public sealed class GanttChart
             { Critical = critical });
         }
 
-        // The axis labels.
+        // The axis labels. Non-working days come from the working calendar: weekends, holidays, shutdown days.
         var days = new List<GanttDay>();
         for (var d = from; d <= to; d = d.AddDays(1))
-            days.Add(new GanttDay(d, X(d), d.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday, d.DayOfWeek == DayOfWeek.Monday));
+            days.Add(new GanttDay(d, X(d), !cal.IsWorking(d), d.DayOfWeek == DayOfWeek.Monday, cal.Exception(d)?.Name));
         var months = days.GroupBy(d => (d.Date.Year, d.Date.Month))
             .Select(g => new GanttMonth(
                 g.Count() * px >= 64 ? g.First().Date.ToString("MMM yyyy") : g.First().Date.ToString("MMM"),
@@ -217,4 +220,5 @@ public sealed record GanttArrow(TaskDependency Link, string Path, bool Conflict,
 
 public sealed record GanttMonth(string Label, int Left, int Width);
 
-public sealed record GanttDay(DateOnly Date, int Left, bool Weekend, bool WeekStart);
+/// <summary>One day column. <see cref="NonWorking"/> follows the working calendar; <see cref="ExceptionName"/> names a holiday, shutdown or exceptional working day.</summary>
+public sealed record GanttDay(DateOnly Date, int Left, bool NonWorking, bool WeekStart, string? ExceptionName);

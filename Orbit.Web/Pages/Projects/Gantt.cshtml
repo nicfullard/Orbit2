@@ -96,6 +96,8 @@
     <span><span class="gantt-swatch gantt-swatch-arrow-critical"></span> Driving link</span>
     <span><span class="gantt-swatch gantt-swatch-conflict"></span> Dates conflict</span>
     <span><span class="gantt-swatch gantt-swatch-today"></span> Today</span>
+    <span><span class="gantt-swatch gantt-swatch-nonworking"></span> Non-working day</span>
+    <span><span class="gantt-swatch gantt-swatch-holiday"></span> Holiday / shutdown</span>
     @if (g.Overlay is not null)
     {
         <span><span class="gantt-swatch gantt-swatch-line-completion"></span> Planned completion</span>
@@ -158,9 +160,14 @@ else
                 }
                 @foreach (var d in g.Days)
                 {
-                    if (d.Weekend)
+                    if (d.NonWorking)
                     {
-                        <div class="gantt-weekend" style="left:@(d.Left)px;width:@(g.PxPerDay)px"></div>
+                        var dayTitle = d.ExceptionName is null ? $"{d.Date:ddd d MMM yyyy} - non-working day" : $"{d.ExceptionName} - {d.Date:ddd d MMM yyyy}, non-working";
+                        <div class="gantt-nonworking @(d.ExceptionName is null ? "" : "gantt-holiday")" style="left:@(d.Left)px;width:@(g.PxPerDay)px" title="@dayTitle"></div>
+                    }
+                    else if (d.ExceptionName is not null)
+                    {
+                        <div class="gantt-workday-exception" style="left:@(d.Left)px;width:@(g.PxPerDay)px" title="@d.ExceptionName - @d.Date.ToString("ddd d MMM yyyy"), exceptional working day"></div>
                     }
                     if (g.ShowDayNumbers)
                     {

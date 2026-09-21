@@ -10,7 +10,7 @@ namespace Orbit.Pages.Projects;
 /// The Gantt view of one project (spec §6.16): what §6.15 records, drawn - with drag-to-reschedule - and the project's
 /// last critical path analysis (§6.17) drawn over it, with the button that runs a new one.
 /// </summary>
-public class GanttModel(ProjectService projects, TaskService tasks, TaskStructureService structure, CriticalPathService criticalPaths, IActorProvider actors) : OrbitPageModel
+public class GanttModel(ProjectService projects, TaskService tasks, TaskStructureService structure, CriticalPathService criticalPaths, WorkingCalendarService calendars, IActorProvider actors) : OrbitPageModel
 {
     [BindProperty(SupportsGet = true)] public bool HideClosed { get; set; }
 
@@ -36,7 +36,7 @@ public class GanttModel(ProjectService projects, TaskService tasks, TaskStructur
         var overlay = Analysis is null ? null : new GanttOverlay(
             Analysis.Result.CriticalIds, Analysis.Result.NearCriticalIds, Analysis.Result.DrivingLinkIds.ToHashSet(),
             Analysis.Result.Schedule.PlannedCompletion, Analysis.Result.Schedule.TargetDate, Analysis.Result.Schedule.InternalCompletion);
-        Chart = GanttChart.Build(Project.Tasks, links, DateOnly.FromDateTime(DateTime.UtcNow), HideClosed, overlay);
+        Chart = GanttChart.Build(Project.Tasks, links, DateOnly.FromDateTime(DateTime.UtcNow), HideClosed, overlay, await calendars.BuildAsync(ct));
         return Page();
     }
 
