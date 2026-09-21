@@ -14,6 +14,7 @@ Built on ASP.NET Core Razor Pages (.NET 10), EF Core + PostgreSQL, ASP.NET Core 
 | `Orbit.Web/` | The web app: Razor Pages UI, MCP server, background jobs, and the server side of the Orbit Agent. Builds `Orbit.Web.dll`. |
 | `Orbit.Agent/` | The **Orbit Agent** - a separate Worker Service that runs inside the corporate network. Published on its own; not part of the web app's output. |
 | `Orbit.Agents.Contracts/` | Messages and method names shared by the web app and the agent, so the two can't drift. No dependencies. |
+| `Orbit.Tests/` | xunit tests for the pure scheduling code: the working-day calendar, the critical path engine and the staleness fingerprint (spec §6.17). |
 
 Plus `deploy/` (systemd units for Orbit and the agent, env file template, least-privilege DB role script,
 deployment notes), `orbit-spec.md` and `dotnet-tools.json` (pins `dotnet-ef`).
@@ -37,6 +38,7 @@ Inside `Orbit.Web/`, folders stand in for the layers of spec §11, and namespace
 ```
 dotnet build Orbit.slnx                              # all three projects
 dotnet run --project Orbit.Web                       # the web app
+dotnet test Orbit.slnx                               # the unit tests
 dotnet ef migrations add <Name> --project Orbit.Web  # from the solution root (dotnet tool restore first)
 ```
 
@@ -61,6 +63,8 @@ Self-registration is disabled: accounts are created under **Admin > Users**.
 | Close tasks (Done/Cancelled) | no | own department | any |
 | File a task under another department's project (spec §6.2.1) | no | no | yes |
 | Set a task's parent; add/remove its dependencies (spec §6.15) | tasks they can edit | own department | any |
+| Run a project's critical path analysis (spec §6.17) | projects they own | own department | any |
+| Working calendar - working week and public holidays (spec §6.17) | no | no | yes |
 | Sprints (create/start/complete) | no | no | yes |
 | Users, departments, API keys, reports | no | no | yes |
 | Directory (LDAP) settings, Orbit Agents, users' sign-in method | no | no | yes |
@@ -111,7 +115,7 @@ dotnet run --project Orbit.Agent -- help
   department, and are shown once.
 - Tools: `create_task`, `get_task`, `list_tasks`, `update_task`, `add_comment`, `list_comments`,
   `add_dependency`, `remove_dependency`, `create_project`, `get_project`, `get_project_status`,
-  `list_projects`, `update_project`, `list_activity`, `list_users`, `list_departments`.
+  `list_projects`, `update_project`, `list_activity`, `list_users`, `list_departments`, `get_critical_path`, `run_critical_path_analysis`.
 - Tasks can be subtasks (`parentTaskId`) and can depend on each other (`add_dependency`: FS, SS, FF or SF
   plus a lag in days, spec §6.15). Links gate status changes - the successor can't start / finish until the
   predecessor has - and a parent can't close while a subtask is open; `get_task` reports what a task is
@@ -119,10 +123,15 @@ dotnet run --project Orbit.Agent -- help
 
 Every API write is stamped `Source = Api`, attributed to the `Claude` user and written to the audit log.
 `create_task` accepts an `idempotencyKey` so retries do not create duplicates.
+- `get_critical_path` returns the project's stored critical path analysis (spec §6.17) - planned completion against the target, project buffer status, the critical paths and every task's float - with `isStale` when the schedule has changed since; `run_critical_path_analysis` runs a fresh one. Claude should read these rather than work criticality out from raw tasks.
+
+## Critical path analysis
+
+A deliberate action, never automatic (spec §6.17): **Run critical path analysis** on a project page or its Gantt validates the plan, finds the critical and near-critical tasks and their float in *working days*, and compares the planned completion with the project's target date and its **required project buffer** (set on the project form). The Gantt then shows the critical path, the planned completion, the target and the buffer, and says when the schedule has changed since the analysis. The working week and public holidays live under **Admin > Working Calendar**; the thresholds (near-critical days, Amber/Red buffer percentages, hours per working day) are `CriticalPath:*` settings.
 
 ## Configuration
 
 See `Orbit.Web/appsettings.json` for defaults and `deploy/orbit.env.example` for the production environment
-variables (`Database:ApplyMigrations`, `DataProtection:KeyRingPath`, `Jobs:*`, `Security:*`, `Agents:*`, `Seed:Admin:*`, `App:BaseUrl`).
+variables (`Database:ApplyMigrations`, `DataProtection:KeyRingPath`, `Jobs:*`, `Security:*`, `Agents:*`, `CriticalPath:*`, `Seed:Admin:*`, `App:BaseUrl`).
 `App:BaseUrl` is also the address put into an agent's `configure` command, so it must be the public `https` URL.
 Notification emails go through Identity's `IEmailSender`; the shipped implementation only logs them.

@@ -9,4 +9,7 @@ public static class WellKnownIds
 
     /// <summary>The single row of directory sign-in settings.</summary>
     public static readonly Guid LdapSettingsId = new("1da90000-0000-4000-8000-000000000001");
+
+    /// <summary>The single row of organisation working-calendar settings (spec §6.17).</summary>
+    public static readonly Guid WorkingCalendarId = new("ca1e0000-0000-4000-8000-000000000001");
 }

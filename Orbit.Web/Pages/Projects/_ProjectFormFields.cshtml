@@ -18,7 +18,7 @@
 <div class="row g-3">
     @if (Model.Actor.IsSystemAdmin)
     {
-        <div class="col-md-4">
+        <div class="col-md-3">
             <label class="form-label" for="Form_DepartmentId">Department</label>
             <select class="form-select" id="Form_DepartmentId" name="Form.DepartmentId" asp-items="Model.Departments" required></select>
         </div>
@@ -27,7 +27,7 @@
     {
         <input type="hidden" name="Form.DepartmentId" value="@form.DepartmentId" />
     }
-    <div class="col-md-4">
+    <div class="col-md-3">
         <label class="form-label" for="Form_OwnerId">Owner</label>
         <select class="form-select" id="Form_OwnerId" name="Form.OwnerId" asp-items="Model.Owners"></select>
     </div>
@@ -38,5 +38,17 @@
     <div class="col-md-2">
         <label class="form-label" for="Form_TargetDate">Target date</label>
         <input type="date" class="form-control" id="Form_TargetDate" name="Form.TargetDate" value="@(form.TargetDate?.ToString("yyyy-MM-dd"))" />
+    </div>
+    <div class="col-md-2">
+        <label class="form-label" for="Form_RequiredBufferWorkingDays">Project buffer</label>
+        <div class="input-group">
+            <input type="number" class="form-control" id="Form_RequiredBufferWorkingDays" name="Form.RequiredBufferWorkingDays" value="@form.RequiredBufferWorkingDays" min="0" max="260" step="1" placeholder="e.g. 5" />
+            <span class="input-group-text">days</span>
+        </div>
+        @if (ViewData.ModelState.TryGetValue("Form.RequiredBufferWorkingDays", out var bufferState) && bufferState.Errors.Count > 0)
+        {
+            <span class="text-danger small">@bufferState.Errors[0].ErrorMessage</span>
+        }
+        <div class="form-text">Working days of schedule protection to keep before the target date; blank for none.</div>
     </div>
 </div>

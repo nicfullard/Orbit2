@@ -27,6 +27,10 @@ html {
   --orbit-gantt-arrow: #6c757d;
   --orbit-gantt-conflict: #b02a37;
   --orbit-gantt-critical: #e8590c;
+  --orbit-gantt-near-critical: #b8860b;
+  --orbit-gantt-completion: #0d6efd;
+  --orbit-gantt-target: #198754;
+  --orbit-gantt-buffer: rgba(25, 135, 84, .12);
 }
 
 [data-bs-theme="dark"] {
@@ -43,6 +47,10 @@ html {
   --orbit-gantt-arrow: #9aa1a8;
   --orbit-gantt-conflict: #f1707a;
   --orbit-gantt-critical: #ffa94d;
+  --orbit-gantt-near-critical: #ffd43b;
+  --orbit-gantt-completion: #74c0fc;
+  --orbit-gantt-target: #69db7c;
+  --orbit-gantt-buffer: rgba(105, 219, 124, .14);
   --bs-body-bg: var(--orbit-page-bg);
   --bs-card-bg: var(--orbit-surface-bg);
 }
@@ -153,6 +161,27 @@ html {
   color: var(--orbit-gantt-critical); border: 1px solid var(--orbit-gantt-critical); white-space: nowrap;
 }
 .gantt-swatch-critical { background: transparent; outline: 2px solid var(--orbit-gantt-critical); outline-offset: -1px; }
+
+/* Critical path analysis overlay (§6.17): near-critical marks, the planned-completion and target lines, the buffer region. */
+.gantt-near-critical { outline: 2px dashed var(--orbit-gantt-near-critical); outline-offset: 1px; }
+.gantt-milestone.gantt-near-critical { outline-offset: 0; }
+.gantt-nc {
+  font-size: .65rem; font-weight: 700; line-height: 1.2; padding: 0 3px; border-radius: 3px;
+  color: var(--orbit-gantt-near-critical); border: 1px dashed var(--orbit-gantt-near-critical); white-space: nowrap;
+}
+.gantt-swatch-near-critical { background: transparent; outline: 2px dashed var(--orbit-gantt-near-critical); outline-offset: -1px; }
+.gantt-line { position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px dashed; z-index: 2; }
+.gantt-line-completion { border-color: var(--orbit-gantt-completion); }
+.gantt-line-target { border-color: var(--orbit-gantt-target); }
+.gantt-line-label {
+  position: absolute; top: 46px; z-index: 2; margin-left: 4px; padding: 0 3px; border-radius: 2px;
+  font-size: .62rem; line-height: 1.3; white-space: nowrap; background: var(--orbit-surface-bg); color: var(--bs-secondary-color);
+}
+.gantt-line-label-left { transform: translateX(calc(-100% - 8px)); }
+.gantt-buffer { position: absolute; top: 44px; bottom: 0; background: var(--orbit-gantt-buffer); z-index: 1; }
+.gantt-swatch-line-completion { width: 0; height: 12px; border-left: 2px dashed var(--orbit-gantt-completion); border-radius: 0; }
+.gantt-swatch-line-target { width: 0; height: 12px; border-left: 2px dashed var(--orbit-gantt-target); border-radius: 0; }
+.gantt-swatch-buffer { background: var(--orbit-gantt-buffer); border: 1px solid var(--orbit-surface-border); }
 
 /* Drag-to-reschedule (§6.16): editable marks show a grab cursor (the ends an ew-resize one, set by gantt.js),
    the dragged mark lifts, and a label follows it with the dates it would get. */

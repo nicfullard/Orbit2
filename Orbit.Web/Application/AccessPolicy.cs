@@ -52,6 +52,12 @@ public static class AccessPolicy
 
     public static bool CanManageSprints(Actor a) => a.IsSystemAdmin;
 
+    /// <summary>Running a critical path analysis (§6.17) records a result on the project, so it follows edit rights; seeing one follows view rights.</summary>
+    public static bool CanRunCriticalPath(Actor a, Project p) => CanEditProject(a, p);
+
+    /// <summary>The working calendar is organisation-wide (§6.17).</summary>
+    public static bool CanManageWorkingCalendar(Actor a) => a.IsSystemAdmin;
+
     public static bool CanEditRecurring(Actor a, RecurringTaskDefinition d) =>
         a.IsSystemAdmin ||
         (a.DepartmentId == d.DepartmentId &&

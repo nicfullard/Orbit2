@@ -7,8 +7,11 @@ using ValidationException = Orbit.Application.ValidationException;
 
 namespace Orbit.Pages.Projects;
 
-public class DetailsModel(ProjectService projects, UserDirectoryService users, TaskStructureService structure, IActorProvider actors) : OrbitPageModel
+public class DetailsModel(ProjectService projects, UserDirectoryService users, TaskStructureService structure, CriticalPathService criticalPaths, IActorProvider actors) : OrbitPageModel
 {
+    /// <summary>The headline of the last critical path analysis (§6.17), or null when none has been run.</summary>
+    public CriticalPathSummary? CriticalPath { get; private set; }
+    public bool CanRunAnalysis { get; private set; }
     public IReadOnlyDictionary<Guid, WaitingSummary> Waiting { get; private set; } = new Dictionary<Guid, WaitingSummary>();
     [BindProperty(SupportsGet = true)] public TaskItemStatus? Status { get; set; }
     [BindProperty(SupportsGet = true)] public Guid? AssigneeId { get; set; }
@@ -56,7 +59,22 @@ public class DetailsModel(ProjectService projects, UserDirectoryService users, T
             .DistinctBy(x => x.Id).OrderBy(x => x.Name).ToList();
         QuickEditAssignees = await users.GetQuickEditCandidatesAsync(ct);
         Waiting = await structure.GetWaitingAsync(Tasks, ct);
+        CriticalPath = await criticalPaths.GetSummaryAsync(Project, ct);
+        CanRunAnalysis = AccessPolicy.CanRunCriticalPath(Actor, Project);
         return Page();
+    }
+
+    /// <summary>Run Critical Path Analysis (§6.17) from the project page; the result is shown on the Gantt.</summary>
+    public async Task<IActionResult> OnPostRunAnalysisAsync(Guid id, CancellationToken ct)
+    {
+        try
+        {
+            var result = await criticalPaths.RunAsync(id, ct);
+            if (result.Blocked) Error("Analysis not run. " + string.Join(" ", result.Errors.Select(e => e.Message)));
+            else Success(GanttModel.Describe(result));
+        }
+        catch (ValidationException ex) { Error(ex.Message); }
+        return RedirectToPage("/Projects/Gantt", new { id });
     }
 
     public async Task<IActionResult> OnPostArchiveAsync(Guid id, CancellationToken ct)

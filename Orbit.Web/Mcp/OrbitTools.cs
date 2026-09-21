@@ -23,7 +23,8 @@ public sealed class OrbitTools(
     AuditService audit,
     UserDirectoryService users,
     DepartmentService departments,
-    TaskStructureService structure)
+    TaskStructureService structure,
+    CriticalPathService criticalPaths)
 {
     private const string Clear = "none";
 
@@ -284,6 +285,7 @@ public sealed class OrbitTools(
         [Description("Owner user id (GUID). Must belong to the project's department.")] string? ownerId = null,
         [Description("Target completion date yyyy-MM-dd.")] string? targetDate = null,
         [Description("Active, OnHold, Completed or Archived. Default Active.")] string? status = null,
+        [Description("Required project buffer in working days - schedule protection kept before the target date (spec §6.17). Omit or 0 for none.")] int? requiredBufferWorkingDays = null,
         CancellationToken ct = default) => Run(async () =>
     {
         var input = new ProjectInput
@@ -293,7 +295,8 @@ public sealed class OrbitTools(
             DepartmentId = ParseGuid(departmentId, "departmentId"),
             OwnerId = ParseGuid(ownerId, "ownerId"),
             TargetDate = ParseDate(targetDate, "targetDate"),
-            Status = ParseEnum<ProjectStatus>(status, "status") ?? ProjectStatus.Active
+            Status = ParseEnum<ProjectStatus>(status, "status") ?? ProjectStatus.Active,
+            RequiredBufferWorkingDays = requiredBufferWorkingDays
         };
         var project = await projects.CreateAsync(input, ct);
         return ProjectDto(project, includeTasks: false);
@@ -312,16 +315,23 @@ public sealed class OrbitTools(
         return ProjectDto(project, includeTasks: true, links);
     });
 
-    [McpServerTool(Name = "get_project_status"), Description("Lightweight status summary of a project: task counts by status, overdue count, progress and time logged. No task list.")]
+    [McpServerTool(Name = "get_project_status"), Description("Lightweight status summary of a project: task counts by status, overdue count, progress, time logged, and the headline of its last critical path analysis (criticalPath, null if never run; see get_critical_path). No task list.")]
     public Task<string> GetProjectStatus(
         [Description("Project id (GUID).")] string projectId,
         CancellationToken ct = default) => Run(async () =>
     {
         var s = await projects.GetStatusAsync(RequireGuid(projectId, "projectId"), ct);
+        var cp = await criticalPaths.GetSummaryAsync(s.Id, ct);
         return new
         {
             id = s.Id, name = s.Name, status = s.Status, departmentId = s.DepartmentId, department = s.DepartmentName,
-            owner = s.OwnerName, targetDate = s.TargetDate,
+            owner = s.OwnerName, targetDate = s.TargetDate, requiredBufferWorkingDays = s.RequiredBufferWorkingDays,
+            criticalPath = cp is null ? null : new
+            {
+                analysisId = cp.AnalysisId, runAt = cp.RunAt, isStale = cp.IsStale, plannedCompletion = cp.PlannedCompletion, targetDate = cp.TargetDate,
+                bufferStatus = cp.BufferStatus, bufferRemainingDays = cp.BufferRemainingDays, bufferConsumptionPercent = cp.BufferConsumptionPercent,
+                criticalTasks = cp.CriticalTaskCount, nearCriticalTasks = cp.NearCriticalTaskCount, warnings = cp.WarningCount
+            },
             totalTasks = s.Total, openTasks = s.Open, todo = s.Todo, inProgress = s.InProgress, blocked = s.Blocked,
             done = s.Done, cancelled = s.Cancelled, overdue = s.Overdue, percentDone = s.PercentDone,
             totalMinutesLogged = s.TotalMinutesLogged,
@@ -368,7 +378,7 @@ public sealed class OrbitTools(
     });
 
     [McpServerTool(Name = "update_project"), Description(
-        "Edit a project: name, description, status, owner, target date. Only passed arguments change. " +
+        "Edit a project: name, description, status, owner, target date, required project buffer. Only passed arguments change. " +
         "Member keys can only edit projects owned by the Claude agent user; DepartmentAdmin keys any project in their department.")]
     public Task<string> UpdateProject(
         [Description("Project id (GUID).")] string projectId,
@@ -377,6 +387,7 @@ public sealed class OrbitTools(
         [Description("Active, OnHold, Completed or Archived.")] string? status = null,
         [Description("Owner user id (GUID).")] string? ownerId = null,
         [Description("Target date yyyy-MM-dd, or \"none\" to clear.")] string? targetDate = null,
+        [Description("Required project buffer in working days, or \"none\" to clear.")] string? requiredBufferWorkingDays = null,
         CancellationToken ct = default) => Run(async () =>
     {
         var id = RequireGuid(projectId, "projectId");
@@ -388,10 +399,45 @@ public sealed class OrbitTools(
             Status = ParseEnum<ProjectStatus>(status, "status") ?? current.Status,
             OwnerId = ParseGuid(ownerId, "ownerId") ?? current.OwnerId,
             TargetDate = IsClear(targetDate) ? null : ParseDate(targetDate, "targetDate") ?? current.TargetDate,
+            RequiredBufferWorkingDays = IsClear(requiredBufferWorkingDays) ? null : ParseInt(requiredBufferWorkingDays, "requiredBufferWorkingDays") ?? current.RequiredBufferWorkingDays,
             DepartmentId = current.DepartmentId
         };
         var project = await projects.UpdateAsync(id, input, ct);
         return ProjectDto(project, includeTasks: false);
+    });
+
+    // ------------------------------------------------------- critical path
+
+    [McpServerTool(Name = "get_critical_path"), Description(
+        "The project's most recent critical path analysis (spec §6.17), as Orbit calculated and stored it: planned completion against the target date, " +
+        "project buffer consumed/remaining with its Green/Amber/Red status, the critical paths, every analysed task with its early/late dates and " +
+        "total/free float in working days, plan-readiness warnings, and early-completion / recovery opportunities. isStale is true when the schedule " +
+        "has changed since the run. Use this rather than working criticality out from raw task data. When nothing has been run yet analysisId is null: " +
+        "call run_critical_path_analysis.")]
+    public Task<string> GetCriticalPath(
+        [Description("Project id (GUID).")] string projectId,
+        CancellationToken ct = default) => Run(async () =>
+    {
+        var view = await criticalPaths.GetLatestAsync(RequireGuid(projectId, "projectId"), ct);
+        if (view is null)
+            return (object)new { analysisId = (Guid?)null, isStale = true, message = "No critical path analysis has been run for this project yet. Call run_critical_path_analysis to run one." };
+        return AnalysisDto(view.Analysis.Id, view.IsStale, view.Result);
+    });
+
+    [McpServerTool(Name = "run_critical_path_analysis"), Description(
+        "Run a fresh critical path analysis on a project's current plan and store it as the project's current analysis - a deliberate " +
+        "project-management action, never automatic; needs edit rights on the project. Returns the same shape as get_critical_path. If plan " +
+        "readiness blocks the run (a circular dependency, nothing scheduled) it returns blocked = true with the errors and stores nothing. " +
+        "Nothing is rescheduled: Orbit identifies scheduling conditions, the project manager changes the plan.")]
+    public Task<string> RunCriticalPathAnalysis(
+        [Description("Project id (GUID).")] string projectId,
+        CancellationToken ct = default) => Run(async () =>
+    {
+        var result = await criticalPaths.RunAsync(RequireGuid(projectId, "projectId"), ct);
+        if (result.Blocked)
+            return (object)new { blocked = true, errors = result.Errors.Select(IssueDto).ToList(), warnings = result.Warnings.Select(IssueDto).ToList() };
+        var view = await criticalPaths.GetLatestAsync(result.ProjectId, ct);
+        return AnalysisDto(view?.Analysis.Id, view?.IsStale ?? false, result);
     });
 
     // ------------------------------------------------------------- lookups
@@ -537,6 +583,7 @@ public sealed class OrbitTools(
             ownerId = p.OwnerId,
             owner = p.Owner?.DisplayName,
             targetDate = p.TargetDate,
+            requiredBufferWorkingDays = p.RequiredBufferWorkingDays,
             createdAt = p.CreatedAt,
             updatedAt = p.UpdatedAt,
             totalTasks = all.Count,
@@ -562,6 +609,42 @@ public sealed class OrbitTools(
             }).ToList()
         };
     }
+
+    private static object IssueDto(PlanIssue i) => new { code = i.Code, message = i.Message, informational = i.Informational, taskIds = i.TaskIds, linkIds = i.LinkIds };
+
+    /// <summary>A stored (or just-run) critical path analysis (§6.17), headline first, then paths, tasks with float, warnings and opportunities.</summary>
+    private static object AnalysisDto(Guid? analysisId, bool isStale, CriticalPathResult r)
+    {
+        var s = r.Schedule;
+        return new
+        {
+            analysisId, runAt = r.RunAt, isStale, blocked = r.Blocked,
+            plannedCompletion = s.PlannedCompletion, networkCompletion = s.NetworkCompletion, targetDate = s.TargetDate, internalCompletion = s.InternalCompletion,
+            requiredBuffer = s.RequiredBufferDays, bufferConsumed = s.BufferConsumedDays, bufferRemaining = s.BufferRemainingDays,
+            bufferConsumptionPercent = s.BufferConsumptionPercent, headroomDays = s.HeadroomDays, daysBeyondTarget = s.DaysBeyondTarget,
+            bufferStatus = s.BufferStatus, note = s.Note,
+            criticalTaskCount = r.CriticalTaskCount, nearCriticalTaskCount = r.NearCriticalTaskCount,
+            criticalPathCount = r.CriticalPaths.Count, criticalPathsOmitted = r.CriticalPathsOmitted,
+            criticalPaths = r.CriticalPaths.Select(p => new { taskIds = p.TaskIds, titles = p.Titles, start = p.Start, end = p.End }).ToList(),
+            criticalTasks = r.Tasks.Where(t => t.IsCritical).Select(TaskAnalysisDto).ToList(),
+            nearCriticalTasks = r.Tasks.Where(t => t.IsNearCritical).Select(TaskAnalysisDto).ToList(),
+            tasks = r.Tasks.Select(TaskAnalysisDto).ToList(),
+            drivingLinkIds = r.DrivingLinkIds,
+            opportunities = r.Opportunities,
+            earlyCompletions = r.EarlyCompletions,
+            warnings = r.Warnings.Select(IssueDto).ToList(),
+            errors = r.Errors.Select(IssueDto).ToList(),
+            thresholds = r.Thresholds
+        };
+    }
+
+    private static object TaskAnalysisDto(TaskAnalysis t) => new
+    {
+        taskId = t.TaskId, title = t.Title, status = t.Status, assignee = t.Assignee, plannedStart = t.PlannedStart, plannedDue = t.PlannedDue,
+        earlyStart = t.EarlyStart, earlyFinish = t.EarlyFinish, lateStart = t.LateStart, lateFinish = t.LateFinish,
+        totalFloat = t.TotalFloat, freeFloat = t.FreeFloat, spanWorkingDays = t.SpanWorkingDays,
+        inNetwork = t.InNetwork, isCritical = t.IsCritical, isNearCritical = t.IsNearCritical
+    };
 
     private static bool IsClear(string? value) => string.Equals(value?.Trim(), Clear, StringComparison.OrdinalIgnoreCase);
 

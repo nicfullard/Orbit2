@@ -24,6 +24,8 @@ public sealed class ProjectInput
     /// <summary>Defaults to the caller.</summary>
     public Guid? OwnerId { get; set; }
     public DateOnly? TargetDate { get; set; }
+    /// <summary>Required project buffer in whole working days (§6.17); null or 0 = not set.</summary>
+    public int? RequiredBufferWorkingDays { get; set; }
 }
 
 /// <summary>Task counts for one department represented on a project (§6.2.1 cross-department project tasks).</summary>
@@ -50,6 +52,7 @@ public sealed record ProjectStatusSummary(
     Guid DepartmentId,
     string OwnerName,
     DateOnly? TargetDate,
+    int? RequiredBufferWorkingDays,
     int Total,
     int Todo,
     int InProgress,

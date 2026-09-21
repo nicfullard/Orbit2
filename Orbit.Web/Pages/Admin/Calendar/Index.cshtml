@@ -1,0 +1,117 @@
+@page
+@model Orbit.Pages.Admin.Calendar.IndexModel
+@{
+    ViewData["Title"] = "Working calendar";
+    var week = Model.Week;
+    var days = new[] { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday };
+}
+
+<div class="mb-3">
+    <h1 class="h3 mb-0">Working calendar</h1>
+    <div class="text-muted small">The organisation's working week and its exceptions - public holidays, shutdown days, exceptional working days. Critical path analysis counts float, lag and the project buffer in these working days. Nothing else moves a date because of it: a task planned across a non-working day stays where it is and the analysis points it out.</div>
+</div>
+
+<div asp-validation-summary="All" class="text-danger mb-2"></div>
+
+<div class="row g-3">
+    <div class="col-lg-7">
+        <form method="post" class="card mb-3">
+            <div class="card-header fw-semibold">Working week</div>
+            <div class="card-body">
+                <div class="row g-2">
+                    @foreach (var day in days)
+                    {
+                        var name = day.ToString();
+                        <div class="col-6 col-md-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" role="switch" id="Week_@name" name="Week.@name" value="true" checked="@week.IsWorking(day)" />
+                                <label class="form-check-label" for="Week_@name">@name</label>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="form-text mb-3">At least one day must be a working day.</div>
+                <button type="submit" class="btn btn-primary">Save working week</button>
+                @if (Model.UpdatedAt is DateTime updated)
+                {
+                    <span class="text-muted small ms-2">Last saved @Ui.When(updated)</span>
+                }
+            </div>
+        </form>
+
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Calendar exceptions</div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="table-light">
+                            <tr><th>Date</th><th>Day</th><th>Name</th><th>Type</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            @if (Model.Exceptions.Count == 0)
+                            {
+                                <tr><td colspan="5" class="text-muted">No exceptions yet. Add public holidays and shutdown days below.</td></tr>
+                            }
+                            @foreach (var e in Model.Exceptions)
+                            {
+                                <tr>
+                                    <td>@Ui.Day(e.Date)</td>
+                                    <td class="text-muted">@e.Date.DayOfWeek</td>
+                                    <td>@e.Name</td>
+                                    <td>
+                                        @if (e.IsWorking)
+                                        {
+                                            <span class="badge text-bg-success">Working day</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge text-bg-secondary">Non-working</span>
+                                        }
+                                    </td>
+                                    <td class="text-end">
+                                        <form method="post" asp-page-handler="RemoveException" asp-route-id="@e.Id" data-confirm="Remove @e.Name (@Ui.Day(e.Date))?">
+                                            <button type="submit" class="btn btn-outline-danger btn-sm">Remove</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card-footer">
+                <form method="post" asp-page-handler="AddException" class="row g-2 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label small mb-0" for="NewException_Date">Date</label>
+                        <input type="date" class="form-control form-control-sm" id="NewException_Date" name="NewException.Date" value="@(Model.NewException.Date?.ToString("yyyy-MM-dd"))" required />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small mb-0" for="NewException_Name">Name</label>
+                        <input class="form-control form-control-sm" id="NewException_Name" name="NewException.Name" value="@Model.NewException.Name" maxlength="100" placeholder="e.g. Heritage Day" required />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small mb-0" for="NewException_IsWorking">Type</label>
+                        <select class="form-select form-select-sm" id="NewException_IsWorking" name="NewException.IsWorking">
+                            <option value="false" selected="@(!Model.NewException.IsWorking)">Non-working day</option>
+                            <option value="true" selected="@Model.NewException.IsWorking">Working day</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-outline-primary btn-sm w-100">Add</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card">
+            <div class="card-header fw-semibold">How it is used</div>
+            <div class="card-body small text-muted">
+                <p>When someone runs a <strong>critical path analysis</strong> on a project (from its Gantt), every task's planned window is measured in working days, a dependency's lag is rolled forward over non-working days, and the project's required buffer is counted back from the target date in working days.</p>
+                <p>A task planned to start or finish on a non-working day, or whose window includes one of these exceptions, is listed in the analysis's plan-readiness warnings. Orbit never moves it.</p>
+                <p class="mb-0">Changing the working week or an exception near a project's dates marks that project's analysis as out of date until it is run again.</p>
+            </div>
+        </div>
+    </div>
+</div>

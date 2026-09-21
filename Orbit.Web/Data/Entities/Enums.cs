@@ -99,6 +99,16 @@ public enum ActorType
     System
 }
 
+/// <summary>The project-buffer attention signal of a critical path analysis (spec §6.17): how much of the required buffer the plan has consumed.</summary>
+public enum BufferStatus
+{
+    /// <summary>No target date, so no buffer can be measured.</summary>
+    NotAvailable,
+    Green,
+    Amber,
+    Red
+}
+
 public static class Roles
 {
     public const string SystemAdmin = nameof(OrbitRole.SystemAdmin);
@@ -145,6 +155,12 @@ public static class TaskStatusExtensions
         DependencyType.FinishToFinish => "Finish-to-Finish",
         DependencyType.StartToFinish => "Start-to-Finish",
         _ => type.ToString()
+    };
+
+    public static string Label(this BufferStatus status) => status switch
+    {
+        BufferStatus.NotAvailable => "Not available",
+        _ => status.ToString()
     };
 
     /// <summary>The conventional two-letter code: FS, SS, FF, SF.</summary>

@@ -1,11 +1,18 @@
 @page "{id:guid}"
+@using Orbit.Application.Models
 @model Orbit.Pages.Projects.GanttModel
 @{
     var p = Model.Project;
     var g = Model.Chart;
+    var analysis = Model.Analysis;
+    var result = analysis?.Result;
+    var sched = result?.Schedule;
     ViewData["Title"] = $"{p.Name} - Gantt";
     string When(DateOnly d) => d.ToString("d MMM");
+    string WhenY(DateOnly? d) => d?.ToString("d MMM yyyy") ?? "-";
     string Iso(DateOnly? d) => d?.ToString("yyyy-MM-dd") ?? string.Empty;
+    string Title(Guid id) => Model.TasksById.TryGetValue(id, out var t) ? t.Title : "(task)";
+    string Days(int? n) => n is int v ? $"{v} d" : "-";
 }
 
 <nav aria-label="breadcrumb">
@@ -20,18 +27,59 @@
     <div>
         <h1 class="h3 mb-1">@p.Name <span class="text-muted fs-6 fw-normal">Gantt</span></h1>
         <div class="text-muted small">
-            @g.Rows.Count task(s), @g.DatedCount on the chart · @When(g.From) to @When(g.To)@if (g.CriticalIds.Count > 0 && g.CriticalEnd is DateOnly cpEnd) { <text> · <span class="gantt-cp">CP</span> critical path: @g.CriticalIds.Count task(s), ends @When(cpEnd)</text> }.
-            Drag a bar to move it, or drag its end to change one date; the change saves at once. Links are edited on each task's page.
+            @g.Rows.Count task(s), @g.DatedCount on the chart · @When(g.From) to @When(g.To)
+            @if (result is not null && sched is not null && analysis is not null)
+            {
+                <text> · <span class="gantt-cp">CP</span> @result.CriticalTaskCount critical, @result.NearCriticalTaskCount near-critical · planned completion @WhenY(sched.PlannedCompletion)</text>
+                if (sched.BufferStatus != BufferStatus.NotAvailable)
+                {
+                    <text> · buffer <span class="badge @Ui.BufferStatusBadge(sched.BufferStatus)">@sched.BufferStatus.Label()</span></text>
+                }
+                <text> · analysed @Ui.Ago(analysis.Analysis.RunAt)</text>
+                if (analysis.IsStale)
+                {
+                    <span class="badge text-bg-warning ms-1">out of date</span>
+                }
+            }
+            else
+            {
+                <text> · no critical path analysis yet</text>
+            }
+            <br />Drag a bar to move it, or drag its end to change one date; the change saves at once. Links are edited on each task's page.
         </div>
     </div>
-    <form method="get" class="d-flex flex-wrap gap-3 align-items-center">
-        <div class="form-check mb-0">
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+        <form method="get" class="form-check mb-0">
             <input class="form-check-input js-autosubmit" type="checkbox" name="HideClosed" value="true" id="hideClosed" checked="@Model.HideClosed" />
             <label class="form-check-label small" for="hideClosed">Hide done and cancelled</label>
-        </div>
+        </form>
+        @if (Model.CanRunAnalysis)
+        {
+            <form method="post" asp-page-handler="RunAnalysis" asp-route-id="@p.Id">
+                <input type="hidden" name="HideClosed" value="@(Model.HideClosed ? "true" : "false")" />
+                <button class="btn btn-primary btn-sm" type="submit" title="Validate the plan, find the critical and near-critical tasks and measure the project buffer. Nothing is rescheduled.">Run critical path analysis</button>
+            </form>
+        }
         <a class="btn btn-outline-secondary btn-sm" asp-page="/Projects/Details" asp-route-id="@p.Id">Back to project</a>
-    </form>
+    </div>
 </div>
+
+@if (analysis is not null && analysis.IsStale)
+{
+    <div class="alert alert-warning py-2 d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+            <span class="fw-semibold">Critical path analysis out of date.</span>
+            The project schedule - dates, dependencies, target date, buffer or the working calendar - has changed since it was analysed on @Ui.When(analysis.Analysis.RunAt). The chart still shows that analysis.
+        </div>
+        @if (Model.CanRunAnalysis)
+        {
+            <form method="post" asp-page-handler="RunAnalysis" asp-route-id="@p.Id">
+                <input type="hidden" name="HideClosed" value="@(Model.HideClosed ? "true" : "false")" />
+                <button class="btn btn-warning btn-sm" type="submit">Run analysis again</button>
+            </form>
+        }
+    </div>
+}
 
 <div class="gantt-legend small text-muted mb-2 d-flex flex-wrap gap-3">
     <span><span class="gantt-swatch status-todo"></span> To do</span>
@@ -43,10 +91,17 @@
     <span><span class="gantt-swatch gantt-swatch-summary"></span> Span of subtasks</span>
     <span><span class="gantt-swatch gantt-swatch-overdue"></span> Overdue edge</span>
     <span><span class="gantt-swatch gantt-swatch-critical"></span> Critical path</span>
+    <span><span class="gantt-swatch gantt-swatch-near-critical"></span> Near-critical</span>
     <span><span class="gantt-swatch gantt-swatch-arrow"></span> Dependency</span>
     <span><span class="gantt-swatch gantt-swatch-arrow-critical"></span> Driving link</span>
     <span><span class="gantt-swatch gantt-swatch-conflict"></span> Dates conflict</span>
     <span><span class="gantt-swatch gantt-swatch-today"></span> Today</span>
+    @if (g.Overlay is not null)
+    {
+        <span><span class="gantt-swatch gantt-swatch-line-completion"></span> Planned completion</span>
+        <span><span class="gantt-swatch gantt-swatch-line-target"></span> Target date</span>
+        <span><span class="gantt-swatch gantt-swatch-buffer"></span> Project buffer</span>
+    }
 </div>
 
 @if (g.Rows.Count == 0)
@@ -87,6 +142,10 @@ else
                     {
                         <span class="gantt-cp" title="On the critical path">CP</span>
                     }
+                    else if (r.NearCritical)
+                    {
+                        <span class="gantt-nc" title="Near-critical: within the near-critical threshold of float">NC</span>
+                    }
                     <span class="badge @Ui.StatusBadge(t.Status)">@t.Status.Label()</span>
                 </div>
             }
@@ -120,6 +179,23 @@ else
                 {
                     <div class="gantt-row" style="top:@(r.Y)px"></div>
                 }
+                @if (g.Overlay is { } ov)
+                {
+                    if (ov.InternalCompletion is DateOnly ic && ov.TargetDate is DateOnly tg && tg > ic && tg >= g.From && ic <= g.To)
+                    {
+                        <div class="gantt-buffer" style="left:@(g.EndX(ic))px;width:@(g.EndX(tg) - g.EndX(ic))px" title="Project buffer: after @When(ic) up to the target, @When(tg)"></div>
+                    }
+                    if (ov.PlannedCompletion is DateOnly pc && pc >= g.From && pc <= g.To)
+                    {
+                        <div class="gantt-line gantt-line-completion" style="left:@(g.EndX(pc))px" title="Planned completion @WhenY(pc)"></div>
+                        <div class="gantt-line-label gantt-line-label-left" style="left:@(g.EndX(pc))px">Planned completion @When(pc)</div>
+                    }
+                    if (ov.TargetDate is DateOnly td && td >= g.From && td <= g.To)
+                    {
+                        <div class="gantt-line gantt-line-target" style="left:@(g.EndX(td))px" title="Target date @WhenY(td)"></div>
+                        <div class="gantt-line-label" style="left:@(g.EndX(td))px">Target @When(td)</div>
+                    }
+                }
                 @if (g.TodayVisible)
                 {
                     <div class="gantt-today" style="left:@(g.TodayX)px" title="Today, @When(g.Today)"></div>
@@ -128,7 +204,8 @@ else
                 {
                     var t = r.Task;
                     var overdue = r.Overdue ? ", overdue" : "";
-                    var critical = r.Critical ? ", on the critical path" : "";
+                    var critical = r.Critical ? ", on the critical path" : r.NearCritical ? ", near-critical" : "";
+                    var cpClass = r.Critical ? "gantt-critical" : r.NearCritical ? "gantt-near-critical" : "";
                     var canEdit = AccessPolicy.CanEditTask(Model.Actor, t);
                     var editable = canEdit ? "true" : null;
                     var hint = canEdit ? " - drag to reschedule" : "";
@@ -139,14 +216,14 @@ else
                     }
                     if (r.Bar is not null)
                     {
-                        <div class="gantt-bar @r.StatusClass @(r.Overdue ? "gantt-overdue" : "") @(r.Critical ? "gantt-critical" : "") @(canEdit ? "gantt-editable" : "")"
+                        <div class="gantt-bar @r.StatusClass @(r.Overdue ? "gantt-overdue" : "") @cpClass @(canEdit ? "gantt-editable" : "")"
                              style="left:@(r.Bar.Left)px;top:@(r.Y + GanttChart.BarTop)px;width:@(r.Bar.Width)px"
                              data-task="@t.Id" data-start="@Iso(t.StartDate)" data-end="@Iso(t.DueDate)" data-editable="@editable"
                              title="@t.Title: @When(r.Bar.Start) to @When(r.Bar.End) (@t.Status.Label()@overdue@critical)@hint"></div>
                     }
                     else if (r.Milestone is not null)
                     {
-                        <div class="gantt-milestone @r.StatusClass @(r.Overdue ? "gantt-overdue" : "") @(r.Critical ? "gantt-critical" : "") @(canEdit ? "gantt-editable" : "")"
+                        <div class="gantt-milestone @r.StatusClass @(r.Overdue ? "gantt-overdue" : "") @cpClass @(canEdit ? "gantt-editable" : "")"
                              style="left:@(r.Milestone.Left + g.PxPerDay / 2 - GanttChart.MilestoneSize / 2)px;top:@(r.Y + GanttChart.BarTop + 1)px"
                              data-task="@t.Id" data-start="@Iso(t.StartDate)" data-end="@Iso(t.DueDate)" data-editable="@editable"
                              title="@t.Title: due @When(r.Milestone.Start) (@t.Status.Label()@overdue@critical)@hint"></div>
@@ -195,6 +272,229 @@ else
         {
             <span class="me-2">"@l.Successor.Title" waits on "@l.Predecessor.Title" (@l.Type.Code())</span>
         }
+    </div>
+}
+
+@if (result is null || sched is null || analysis is null)
+{
+    <div class="card mt-3">
+        <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <div>
+                <span class="fw-semibold">No critical path analysis yet.</span>
+                <span class="text-muted">Run one once the plan is in place to see the critical and near-critical tasks, each task's float, the planned completion against the target date, and how much of the project buffer remains. It is a deliberate step: Orbit never recalculates it on its own.</span>
+            </div>
+            @if (Model.CanRunAnalysis)
+            {
+                <form method="post" asp-page-handler="RunAnalysis" asp-route-id="@p.Id">
+                    <input type="hidden" name="HideClosed" value="@(Model.HideClosed ? "true" : "false")" />
+                    <button class="btn btn-primary btn-sm" type="submit">Run critical path analysis</button>
+                </form>
+            }
+        </div>
+    </div>
+}
+else
+{
+    var a = analysis.Analysis;
+    var warnings = result.Warnings.Where(w => !w.Informational).ToList();
+    var notes = result.Warnings.Where(w => w.Informational).ToList();
+    var nearCritical = result.Tasks.Where(t => t.IsNearCritical).OrderBy(t => t.TotalFloat).ThenBy(t => t.EarlyStart).ToList();
+    var criticalOpportunities = result.Opportunities.Where(o => o.IsCritical).ToList();
+    var otherOpportunities = result.Opportunities.Count - criticalOpportunities.Count;
+    var top = criticalOpportunities.FirstOrDefault(o => o.IsRecoveryOpportunity);
+    var thresholds = result.Thresholds;
+    <div class="card mt-3">
+        <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <span class="fw-semibold">Critical path analysis</span>
+            <span class="small text-muted">
+                Analysed @Ui.When(a.RunAt)
+                @if (analysis.IsStale)
+                {
+                    <span class="badge text-bg-warning ms-1">out of date</span>
+                }
+            </span>
+        </div>
+        <div class="card-body">
+            <div class="row g-2 mb-3">
+                <div class="col-6 col-md-4 col-xl-2"><div class="stat-tile"><div class="stat-value fs-5">@WhenY(sched.PlannedCompletion)</div><div class="stat-label">Planned completion</div></div></div>
+                <div class="col-6 col-md-4 col-xl-2"><div class="stat-tile"><div class="stat-value fs-5">@WhenY(sched.InternalCompletion)</div><div class="stat-label">Internal completion</div></div></div>
+                <div class="col-6 col-md-4 col-xl-2"><div class="stat-tile"><div class="stat-value fs-5">@WhenY(sched.TargetDate)</div><div class="stat-label">Project target</div></div></div>
+                <div class="col-6 col-md-4 col-xl-2">
+                    <div class="stat-tile">
+                        <div class="stat-value fs-5"><span class="badge @Ui.BufferStatusBadge(sched.BufferStatus)">@sched.BufferStatus.Label()</span></div>
+                        <div class="stat-label">Buffer status@(sched.DaysBeyondTarget > 0 ? $" · {sched.DaysBeyondTarget} d beyond target" : "")</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-4 col-xl-2">
+                    <div class="stat-tile">
+                        <div class="stat-value fs-5">@(sched.BufferConsumptionPercent is int pct ? $"{pct}%" : "-")</div>
+                        <div class="stat-label">Buffer consumed · @Days(sched.RequiredBufferDays) required, @Days(sched.BufferConsumedDays) used, @Days(sched.BufferRemainingDays) left</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-4 col-xl-2">
+                    <div class="stat-tile">
+                        <div class="stat-value fs-5">@result.CriticalTaskCount <span class="text-muted fs-6">/ @result.NearCriticalTaskCount</span></div>
+                        <div class="stat-label">Critical / near-critical tasks · @result.CriticalPaths.Count path(s), @warnings.Count warning(s)</div>
+                    </div>
+                </div>
+            </div>
+            @if (sched.Note is not null)
+            {
+                <p class="small text-muted">@sched.Note</p>
+            }
+
+            <div class="row g-3">
+                <div class="col-lg-6">
+                    <h2 class="h6">Plan readiness <span class="text-muted fw-normal">· @warnings.Count warning(s)</span></h2>
+                    @if (warnings.Count == 0)
+                    {
+                        <div class="small text-success mb-2">✓ Dependency network valid, no circular dependencies, every link and scheduled task in order.</div>
+                    }
+                    <ul class="list-unstyled small mb-2">
+                        @foreach (var w in warnings)
+                        {
+                            <li class="mb-1">
+                                <span class="text-warning" aria-hidden="true">⚠</span> @w.Message
+                                @if (w.TaskIds.Count > 0)
+                                {
+                                    <span class="text-muted">Open:</span>
+                                    @foreach (var (id, i) in w.TaskIds.Take(8).Select((x, i) => (x, i)))
+                                    {
+                                        <a asp-page="/Tasks/Details" asp-route-id="@id">@Ui.Truncate(Title(id), 30)</a>@(i < Math.Min(w.TaskIds.Count, 8) - 1 ? "," : "")
+                                    }
+                                }
+                            </li>
+                        }
+                        @foreach (var n in notes)
+                        {
+                            <li class="text-muted mb-1"><span aria-hidden="true">ℹ</span> @n.Message</li>
+                        }
+                    </ul>
+                </div>
+                <div class="col-lg-6">
+                    <h2 class="h6">Critical path@(result.CriticalPaths.Count == 1 ? "" : "s") <span class="text-muted fw-normal">· @result.CriticalPaths.Count</span></h2>
+                    @if (result.CriticalPaths.Count == 0)
+                    {
+                        <p class="small text-muted">No connected driving sequence: no two scheduled tasks are linked.</p>
+                    }
+                    @foreach (var (path, i) in result.CriticalPaths.Select((x, i) => (x, i)))
+                    {
+                        <div class="small mb-2">
+                            <span class="fw-semibold">Path @(i + 1)</span> <span class="text-muted">@When(path.Start) → @WhenY(path.End)</span><br />
+                            @for (var j = 0; j < path.TaskIds.Count; j++)
+                            {
+                                <a asp-page="/Tasks/Details" asp-route-id="@path.TaskIds[j]">@path.Titles[j]</a>@(j < path.TaskIds.Count - 1 ? " → " : "")
+                            }
+                        </div>
+                    }
+                    @if (result.CriticalPathsOmitted > 0)
+                    {
+                        <div class="small text-muted">and @result.CriticalPathsOmitted more path(s) not listed.</div>
+                    }
+                    @if (nearCritical.Count > 0)
+                    {
+                        <h2 class="h6 mt-3">Near-critical <span class="text-muted fw-normal">· within @thresholds.NearCriticalThresholdWorkingDays working day(s) of float</span></h2>
+                        <ul class="list-unstyled small mb-0">
+                            @foreach (var t in nearCritical)
+                            {
+                                <li><span class="gantt-nc me-1">NC</span> <a asp-page="/Tasks/Details" asp-route-id="@t.TaskId">@t.Title</a> <span class="text-muted">· float @Days(t.TotalFloat)</span></li>
+                            }
+                        </ul>
+                    }
+                </div>
+            </div>
+
+            <h2 class="h6 mt-3">Recovery opportunities</h2>
+            @if (criticalOpportunities.Count == 0)
+            {
+                <p class="small text-muted mb-2">No critical task has an estimate materially smaller than its planning window (at @thresholds.HoursPerWorkingDay h per working day), so there is no early-completion opportunity on the critical path.@(otherOpportunities > 0 ? $" {otherOpportunities} task(s) off the critical path could finish early, which would not change the planned completion." : "")</p>
+            }
+            else
+            {
+                <p class="small mb-2">
+                    @criticalOpportunities.Count critical task(s) have potential early-completion opportunity; @criticalOpportunities.Count(o => o.IsRecoveryOpportunity) could release downstream work.
+                    An opportunity is not an instruction to expedite: the question is whether the downstream chain can use the released time.
+                </p>
+                @if (top is not null)
+                {
+                    var driving = top.Successors.FirstOrDefault(s => s.CanPropagate);
+                    <div class="border rounded p-2 small mb-2" style="max-width: 42rem">
+                        <div class="fw-semibold mb-1">Highest current opportunity</div>
+                        <dl class="row mb-0">
+                            <dt class="col-sm-4 fw-normal text-muted">Task</dt><dd class="col-sm-8 mb-1"><a asp-page="/Tasks/Details" asp-route-id="@top.TaskId">@top.Title</a>@(top.Assignee is null ? "" : $" · {top.Assignee}")</dd>
+                            <dt class="col-sm-4 fw-normal text-muted">Estimate / planned window</dt><dd class="col-sm-8 mb-1">@TimeFormat.Minutes(top.EstimateMinutes) (@top.EstimateWorkingDays working day(s)) in a @top.SpanWorkingDays working-day window</dd>
+                            <dt class="col-sm-4 fw-normal text-muted">Potential</dt><dd class="col-sm-8 mb-1">May complete about @top.PotentialDays working day(s) before its planned due date.</dd>
+                            <dt class="col-sm-4 fw-normal text-muted">Driving successor</dt><dd class="col-sm-8 mb-1">@if (driving?.TaskId is Guid sid) { <a asp-page="/Tasks/Details" asp-route-id="@sid">@driving.Title</a> } else { <text>None - the planned completion itself would move earlier</text> }</dd>
+                            <dt class="col-sm-4 fw-normal text-muted">Dependency readiness</dt><dd class="col-sm-8 mb-1">@(driving?.DependencyReadiness ?? "-")</dd>
+                            <dt class="col-sm-4 fw-normal text-muted">Assigned resource</dt><dd class="col-sm-8 mb-1">@(driving?.Assignee ?? (driving?.TaskId is null ? "-" : "Unassigned"))</dd>
+                            <dt class="col-sm-4 fw-normal text-muted">Earlier resource availability</dt><dd class="col-sm-8 mb-1">@(driving?.ResourceReadiness ?? "-")</dd>
+                            <dt class="col-sm-4 fw-normal text-muted">Management action</dt><dd class="col-sm-8 mb-0">@top.ManagementAction</dd>
+                        </dl>
+                    </div>
+                }
+                <div class="table-responsive">
+                    <table class="table table-sm small align-middle">
+                        <thead class="table-light"><tr><th>Critical task</th><th class="text-end">Estimate</th><th class="text-end">Window</th><th class="text-end">Potential</th><th>Driving successor</th><th>Readiness</th><th>Recovery</th></tr></thead>
+                        <tbody>
+                            @foreach (var o in criticalOpportunities)
+                            {
+                                <tr>
+                                    <td><a asp-page="/Tasks/Details" asp-route-id="@o.TaskId">@o.Title</a></td>
+                                    <td class="text-end">@TimeFormat.Minutes(o.EstimateMinutes)</td>
+                                    <td class="text-end">@o.SpanWorkingDays d</td>
+                                    <td class="text-end">@o.PotentialDays d</td>
+                                    <td>@string.Join(", ", o.Successors.Select(s => s.Title ?? "(project completion)"))</td>
+                                    <td>@string.Join(" ", o.Successors.Select(s => s.DependencyReadiness))</td>
+                                    <td>@if (o.IsRecoveryOpportunity) { <span class="badge text-bg-success">Possible</span> } else { <span class="badge text-bg-secondary">Held</span> }</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            @if (result.EarlyCompletions.Count > 0)
+            {
+                <ul class="list-unstyled small mb-2">
+                    @foreach (var n in result.EarlyCompletions)
+                    {
+                        <li><span aria-hidden="true">ℹ</span> <a asp-page="/Tasks/Details" asp-route-id="@n.TaskId">@n.Title</a> finished on @WhenY(n.CompletedOn), before its planned due @WhenY(n.PlannedDue): <a asp-page="/Tasks/Details" asp-route-id="@n.SuccessorId">@n.SuccessorTitle</a> is dependency-ready earlier than planned. Confirm the assignee can bring it forward before moving its dates.</li>
+                    }
+                </ul>
+            }
+
+            <details class="mt-2">
+                <summary class="small fw-semibold">Float by task</summary>
+                <div class="table-responsive mt-2">
+                    <table class="table table-sm small align-middle mb-0">
+                        <thead class="table-light">
+                            <tr><th>Task</th><th>Status</th><th>Early start</th><th>Early finish</th><th>Late start</th><th>Late finish</th><th class="text-end">Total float</th><th class="text-end">Free float</th><th class="text-end">Span</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var t in result.Tasks)
+                            {
+                                <tr>
+                                    <td><a asp-page="/Tasks/Details" asp-route-id="@t.TaskId">@t.Title</a></td>
+                                    <td><span class="badge @Ui.StatusBadge(t.Status)">@t.Status.Label()</span></td>
+                                    <td>@WhenY(t.EarlyStart)</td>
+                                    <td>@WhenY(t.EarlyFinish)</td>
+                                    <td>@WhenY(t.LateStart)</td>
+                                    <td>@WhenY(t.LateFinish)</td>
+                                    <td class="text-end @(t.TotalFloat < 0 ? "text-danger fw-semibold" : "")">@Days(t.TotalFloat)</td>
+                                    <td class="text-end">@Days(t.FreeFloat)</td>
+                                    <td class="text-end">@t.SpanWorkingDays d</td>
+                                    <td>
+                                        @if (t.IsCritical) { <span class="gantt-cp">CP</span> }
+                                        else if (t.IsNearCritical) { <span class="gantt-nc">NC</span> }
+                                        else if (!t.InNetwork) { <span class="text-muted">standalone</span> }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="form-text">Working days. Total float: how far the task can move before the planned completion moves. Free float: how far before the next task is affected. Negative float means the plan already breaks a link. Standalone tasks have no links to other scheduled tasks and sit outside the critical path.</div>
+            </details>
+        </div>
     </div>
 }
 

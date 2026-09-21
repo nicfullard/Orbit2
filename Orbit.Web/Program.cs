@@ -31,6 +31,7 @@ builder.Services.Configure<SeedOptions>(config.GetSection(SeedOptions.Section));
 builder.Services.Configure<DatabaseOptions>(config.GetSection(DatabaseOptions.Section));
 builder.Services.Configure<AgentOptions>(config.GetSection(AgentOptions.Section));
 builder.Services.Configure<SecurityOptions>(config.GetSection(SecurityOptions.Section));
+builder.Services.Configure<CriticalPathOptions>(config.GetSection(CriticalPathOptions.Section));
 var security = config.GetSection(SecurityOptions.Section).Get<SecurityOptions>() ?? new SecurityOptions();
 
 // Behind nginx/Caddy on the same host (deploy/README.md) the app only ever sees 127.0.0.1 over plain http.
@@ -126,6 +127,8 @@ builder.Services.AddScoped<LdapSettingsService>();
 builder.Services.AddScoped<DirectoryAuthService>();
 builder.Services.AddScoped<ReportingService>();
 builder.Services.AddScoped<DashboardService>();
+builder.Services.AddScoped<WorkingCalendarService>();
+builder.Services.AddScoped<CriticalPathService>();
 builder.Services.AddTransient<IEmailSender, LoggingEmailSender>();
 
 // --- MCP server (Streamable HTTP, stateless) ----------------------------------------------
@@ -133,7 +136,9 @@ builder.Services.AddMcpServer(o =>
     {
         o.ServerInfo = new() { Name = "Orbit", Version = "1.0.0" };
         o.ServerInstructions = "Orbit is the company's task and project tracker. Use list_departments / list_users / list_projects " +
-            "to resolve ids before creating or updating tasks. Every write you make is tagged as API-created and audited.";
+            "to resolve ids before creating or updating tasks. Every write you make is tagged as API-created and audited. " +
+            "For a project's critical path, task float and project-buffer status use get_critical_path - Orbit's stored, deterministic analysis - " +
+            "rather than deriving criticality from raw tasks; run_critical_path_analysis runs and stores a fresh one.";
     })
     .WithHttpTransport(o => o.SessionMode = HttpServerSessionMode.Stateless)
     .WithTools<OrbitTools>();

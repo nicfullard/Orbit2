@@ -11,6 +11,7 @@ public static class AuditEntity
     public const string ApiKey = "ApiKey";
     public const string Agent = "Agent";
     public const string LdapSettings = "LdapSettings";
+    public const string WorkingCalendar = "WorkingCalendar";
 }
 
 public static class AuditAction
@@ -46,6 +47,11 @@ public static class AuditAction
     public const string Unlocked = "Unlocked";
     public const string Registered = "Registered";
     public const string Deleted = "Deleted";
+    /// <summary>Recorded on the project each time a critical path analysis is run (§6.17).</summary>
+    public const string CriticalPathAnalysed = "CriticalPathAnalysed";
+    /// <summary>Working-calendar exceptions (§6.17), recorded against the calendar.</summary>
+    public const string ExceptionAdded = "ExceptionAdded";
+    public const string ExceptionRemoved = "ExceptionRemoved";
 }
 
 public sealed class AuditFilter

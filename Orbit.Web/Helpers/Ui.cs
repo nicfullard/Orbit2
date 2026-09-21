@@ -66,6 +66,14 @@ public static class Ui
         _ => "text-bg-light"
     };
 
+    public static string BufferStatusBadge(BufferStatus s) => s switch
+    {
+        BufferStatus.Green => "text-bg-success",
+        BufferStatus.Amber => "text-bg-warning",
+        BufferStatus.Red => "text-bg-danger",
+        _ => "text-bg-secondary"
+    };
+
     public static string RoleBadge(OrbitRole r) => r switch
     {
         OrbitRole.SystemAdmin => "text-bg-danger",
@@ -127,6 +135,9 @@ public static class Ui
         "Unlocked" => "unlocked",
         "Registered" => "registered",
         "Deleted" => "deleted",
+        "CriticalPathAnalysed" => "ran a critical path analysis on",
+        "ExceptionAdded" => "added a calendar exception to the",
+        "ExceptionRemoved" => "removed a calendar exception from the",
         _ => action.ToLowerInvariant()
     };
 

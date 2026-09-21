@@ -104,3 +104,17 @@ public sealed class DataProtectionOptions
     /// <summary>Directory for the key ring. Leave empty to use the platform default.</summary>
     public string? KeyRingPath { get; set; }
 }
+
+/// <summary>Critical path analysis thresholds (spec §6.17). The working week and calendar exceptions are data, edited under Admin &gt; Working Calendar.</summary>
+public sealed class CriticalPathOptions
+{
+    public const string Section = "CriticalPath";
+    /// <summary>A task whose total float is between 1 and this many working days is near-critical.</summary>
+    public int NearCriticalThresholdWorkingDays { get; set; } = 5;
+    /// <summary>Buffer consumption up to this percentage is Green.</summary>
+    public int BufferAmberPercent { get; set; } = 33;
+    /// <summary>Buffer consumption above the amber limit and up to this percentage is Amber; beyond it, Red.</summary>
+    public int BufferRedPercent { get; set; } = 66;
+    /// <summary>Hands-on hours a working day is taken to hold when an estimate is compared with its planning window.</summary>
+    public int HoursPerWorkingDay { get; set; } = 8;
+}

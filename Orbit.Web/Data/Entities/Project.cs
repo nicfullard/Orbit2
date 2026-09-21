@@ -13,6 +13,11 @@ public class Project
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public DateOnly? TargetDate { get; set; }
+    /// <summary>
+    /// Required project buffer (spec §6.17): whole working days of schedule protection to keep immediately before
+    /// <see cref="TargetDate"/>. Not allocated to tasks; null = not set.
+    /// </summary>
+    public int? RequiredBufferWorkingDays { get; set; }
 
     public ICollection<TaskItem> Tasks { get; set; } = new List<TaskItem>();
     public ICollection<RecurringTaskDefinition> RecurringTaskDefinitions { get; set; } = new List<RecurringTaskDefinition>();

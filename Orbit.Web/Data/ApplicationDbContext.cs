@@ -21,6 +21,9 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
     public DbSet<Agent> Agents => Set<Agent>();
     public DbSet<LdapSettings> LdapSettings => Set<LdapSettings>();
+    public DbSet<WorkingCalendar> WorkingCalendars => Set<WorkingCalendar>();
+    public DbSet<WorkingCalendarException> WorkingCalendarExceptions => Set<WorkingCalendarException>();
+    public DbSet<CriticalPathAnalysis> CriticalPathAnalyses => Set<CriticalPathAnalysis>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -197,6 +200,26 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             b.Property(s => s.BindDn).HasMaxLength(500);
             b.Property(s => s.SearchBase).HasMaxLength(500);
             b.Property(s => s.UserFilter).HasMaxLength(500);
+        });
+
+        builder.Entity<WorkingCalendar>(b => b.Ignore(c => c.WorkingDays));
+
+        builder.Entity<WorkingCalendarException>(b =>
+        {
+            b.Property(e => e.Name).HasMaxLength(100).IsRequired();
+            b.HasIndex(e => e.Date).IsUnique();
+        });
+
+        builder.Entity<CriticalPathAnalysis>(b =>
+        {
+            // An analysis dies with its project; it outlives the user who ran it.
+            b.HasOne(a => a.Project).WithMany()
+                .HasForeignKey(a => a.ProjectId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(a => a.RunBy).WithMany()
+                .HasForeignKey(a => a.RunById).OnDelete(DeleteBehavior.SetNull);
+            b.Property(a => a.InputFingerprint).HasMaxLength(64).IsRequired();
+            b.Property(a => a.ResultData).HasColumnType("jsonb");
+            b.HasIndex(a => new { a.ProjectId, a.RunAt });
         });
 
         // Store every enum as its name so the database is readable and filterable in SQL.

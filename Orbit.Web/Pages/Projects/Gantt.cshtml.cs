@@ -1,12 +1,16 @@
 using Microsoft.AspNetCore.Mvc;
 using Orbit.Application;
+using Orbit.Application.Models;
 using Orbit.Application.Services;
 using Orbit.Data.Entities;
 
 namespace Orbit.Pages.Projects;
 
-/// <summary>The Gantt view of one project (spec §6.16): what §6.15 records, drawn - with drag-to-reschedule and the critical path.</summary>
-public class GanttModel(ProjectService projects, TaskService tasks, TaskStructureService structure, IActorProvider actors) : OrbitPageModel
+/// <summary>
+/// The Gantt view of one project (spec §6.16): what §6.15 records, drawn - with drag-to-reschedule - and the project's
+/// last critical path analysis (§6.17) drawn over it, with the button that runs a new one.
+/// </summary>
+public class GanttModel(ProjectService projects, TaskService tasks, TaskStructureService structure, CriticalPathService criticalPaths, IActorProvider actors) : OrbitPageModel
 {
     [BindProperty(SupportsGet = true)] public bool HideClosed { get; set; }
 
@@ -15,6 +19,10 @@ public class GanttModel(ProjectService projects, TaskService tasks, TaskStructur
     public GanttChart Chart { get; private set; } = null!;
     /// <summary>Show each row's department when tasks from more than one department are filed under the project (§6.2.1).</summary>
     public bool IsCrossDepartment { get; private set; }
+    /// <summary>The last stored analysis, or null when none has been run yet.</summary>
+    public CriticalPathView? Analysis { get; private set; }
+    public bool CanRunAnalysis { get; private set; }
+    public IReadOnlyDictionary<Guid, TaskItem> TasksById { get; private set; } = new Dictionary<Guid, TaskItem>();
 
     public async Task<IActionResult> OnGetAsync(Guid id, CancellationToken ct)
     {
@@ -22,7 +30,13 @@ public class GanttModel(ProjectService projects, TaskService tasks, TaskStructur
         Project = await projects.GetAsync(id, ct); // enforces who may see the project
         var links = await structure.ListForProjectAsync(id, ct);
         IsCrossDepartment = Project.Tasks.Any(t => t.DepartmentId != Project.DepartmentId);
-        Chart = GanttChart.Build(Project.Tasks, links, DateOnly.FromDateTime(DateTime.UtcNow), HideClosed);
+        TasksById = Project.Tasks.ToDictionary(t => t.Id);
+        CanRunAnalysis = AccessPolicy.CanRunCriticalPath(Actor, Project);
+        Analysis = await criticalPaths.GetLatestAsync(id, ct);
+        var overlay = Analysis is null ? null : new GanttOverlay(
+            Analysis.Result.CriticalIds, Analysis.Result.NearCriticalIds, Analysis.Result.DrivingLinkIds.ToHashSet(),
+            Analysis.Result.Schedule.PlannedCompletion, Analysis.Result.Schedule.TargetDate, Analysis.Result.Schedule.InternalCompletion);
+        Chart = GanttChart.Build(Project.Tasks, links, DateOnly.FromDateTime(DateTime.UtcNow), HideClosed, overlay);
         return Page();
     }
 
@@ -43,5 +57,30 @@ public class GanttModel(ProjectService projects, TaskService tasks, TaskStructur
         }
         catch (ValidationException ex) { Error(ex.Message); }
         return RedirectToPage(new { id, HideClosed });
+    }
+
+    /// <summary>Run Critical Path Analysis (§6.17): a deliberate action, never automatic. A blocked run stores nothing and says why.</summary>
+    public async Task<IActionResult> OnPostRunAnalysisAsync(Guid id, CancellationToken ct)
+    {
+        try
+        {
+            var result = await criticalPaths.RunAsync(id, ct);
+            if (result.Blocked)
+                Error("Analysis not run. " + string.Join(" ", result.Errors.Select(e => e.Message)));
+            else
+                Success(Describe(result));
+        }
+        catch (ValidationException ex) { Error(ex.Message); }
+        return RedirectToPage(new { id, HideClosed });
+    }
+
+    public static string Describe(CriticalPathResult r)
+    {
+        var s = r.Schedule;
+        var buffer = s.BufferStatus == BufferStatus.NotAvailable ? "project buffer not available (no target date)"
+            : s.BufferConsumptionPercent is int pct ? $"buffer {s.BufferStatus.Label().ToUpperInvariant()} ({pct}% consumed, {s.BufferRemainingDays} working day(s) remaining)"
+            : $"buffer {s.BufferStatus.Label().ToUpperInvariant()}";
+        return $"Critical path analysis complete: {r.CriticalTaskCount} critical task(s) on {r.CriticalPaths.Count} path(s), " +
+               $"planned completion {s.PlannedCompletion:d MMM yyyy}, {buffer}, {r.WarningCount} warning(s).";
     }
 }

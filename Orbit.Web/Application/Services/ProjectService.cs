@@ -131,7 +131,7 @@ public sealed class ProjectService(ApplicationDbContext db, IActorProvider actor
             .ToList();
 
         return new ProjectStatusSummary(project.Id, project.Name, project.Status, project.Department.Name, project.DepartmentId,
-            project.Owner.DisplayName, project.TargetDate, byDepartment.Sum(d => d.Total),
+            project.Owner.DisplayName, project.TargetDate, project.RequiredBufferWorkingDays, byDepartment.Sum(d => d.Total),
             byDepartment.Sum(d => d.Todo), byDepartment.Sum(d => d.InProgress), byDepartment.Sum(d => d.Blocked),
             byDepartment.Sum(d => d.Done), byDepartment.Sum(d => d.Cancelled), byDepartment.Sum(d => d.Overdue), minutes, estimated,
             byDepartment);
@@ -161,12 +161,13 @@ public sealed class ProjectService(ApplicationDbContext db, IActorProvider actor
             Status = input.Status,
             OwnerId = ownerId,
             TargetDate = input.TargetDate,
+            RequiredBufferWorkingDays = CleanBuffer(input.RequiredBufferWorkingDays),
             CreatedAt = now,
             UpdatedAt = now
         };
         db.Projects.Add(project);
         audit.Add(actor, AuditEntity.Project, project.Id, AuditAction.Created, departmentId, project.Name,
-            new { project.Name, project.Status, project.OwnerId, project.TargetDate });
+            new { project.Name, project.Status, project.OwnerId, project.TargetDate, project.RequiredBufferWorkingDays });
         await db.SaveChangesAsync(ct);
         return await GetAsync(project.Id, ct);
     }
@@ -192,13 +193,15 @@ public sealed class ProjectService(ApplicationDbContext db, IActorProvider actor
         var ownerId = input.OwnerId ?? project.OwnerId;
         await ValidateOwnerAsync(ownerId, departmentId, ct);
 
+        var buffer = CleanBuffer(input.RequiredBufferWorkingDays);
         var changes = new ChangeSet()
             .TrackText("name", project.Name, name)
             .TrackText("description", project.Description, input.Description)
             .Track("departmentId", project.DepartmentId, departmentId)
             .Track("status", project.Status, input.Status)
             .Track("ownerId", project.OwnerId, ownerId)
-            .Track("targetDate", project.TargetDate, input.TargetDate);
+            .Track("targetDate", project.TargetDate, input.TargetDate)
+            .Track("requiredBufferWorkingDays", project.RequiredBufferWorkingDays, buffer);
         if (!changes.HasChanges) return project;
 
         project.Name = name;
@@ -206,6 +209,7 @@ public sealed class ProjectService(ApplicationDbContext db, IActorProvider actor
         project.Status = input.Status;
         project.OwnerId = ownerId;
         project.TargetDate = input.TargetDate;
+        project.RequiredBufferWorkingDays = buffer;
         project.UpdatedAt = DateTime.UtcNow;
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -260,6 +264,15 @@ public sealed class ProjectService(ApplicationDbContext db, IActorProvider actor
     }
 
     private static string? Clean(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    /// <summary>The required project buffer (§6.17) is whole working days: null or 0 clears it; at most a year of working days.</summary>
+    private static int? CleanBuffer(int? days)
+    {
+        if (days is null or 0) return null;
+        if (days < 0) throw new ValidationException("The required project buffer can't be negative.");
+        if (days > 260) throw new ValidationException("The required project buffer must be at most 260 working days.");
+        return days;
+    }
 
     private async Task ValidateOwnerAsync(Guid ownerId, Guid departmentId, CancellationToken ct)
     {

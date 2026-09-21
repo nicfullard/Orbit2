@@ -16,15 +16,19 @@ public sealed class ProjectForm
     public ProjectStatus Status { get; set; } = ProjectStatus.Active;
     public Guid? OwnerId { get; set; }
     [DataType(DataType.Date)] public DateOnly? TargetDate { get; set; }
+    /// <summary>Required project buffer in whole working days (§6.17); blank or 0 = none.</summary>
+    [Display(Name = "Required project buffer"), Range(0, 260)] public int? RequiredBufferWorkingDays { get; set; }
 
     public ProjectInput ToInput() => new()
     {
-        Name = Name, Description = Description, DepartmentId = DepartmentId, Status = Status, OwnerId = OwnerId, TargetDate = TargetDate
+        Name = Name, Description = Description, DepartmentId = DepartmentId, Status = Status, OwnerId = OwnerId, TargetDate = TargetDate,
+        RequiredBufferWorkingDays = RequiredBufferWorkingDays
     };
 
     public static ProjectForm From(Project p) => new()
     {
-        Name = p.Name, Description = p.Description, DepartmentId = p.DepartmentId, Status = p.Status, OwnerId = p.OwnerId, TargetDate = p.TargetDate
+        Name = p.Name, Description = p.Description, DepartmentId = p.DepartmentId, Status = p.Status, OwnerId = p.OwnerId, TargetDate = p.TargetDate,
+        RequiredBufferWorkingDays = p.RequiredBufferWorkingDays
     };
 }
 
