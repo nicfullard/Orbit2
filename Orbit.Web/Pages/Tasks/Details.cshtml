@@ -185,6 +185,9 @@
             }
         </div>
 
+        @* Dependencies exist only between tasks on the same project (§6.15); a standalone task has no such section. *@
+        @if (t.ProjectId is not null)
+        {
         <div class="card mb-3">
             <div class="card-header fw-semibold">Dependencies</div>
             <div class="card-body">
@@ -338,6 +341,7 @@
                 }
             </div>
         </div>
+        }
 
         <div class="card mb-3">
             <div class="card-header fw-semibold">Attachments <span class="text-muted fw-normal">(@Model.Attachments.Count)</span></div>

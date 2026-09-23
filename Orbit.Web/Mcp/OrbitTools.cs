@@ -239,7 +239,7 @@ public sealed class OrbitTools(
         "Link two tasks: the successor waits on the predecessor. type: FS (default - the successor can't start until the predecessor finishes), " +
         "SS (can't start until it starts), FF (can't finish until it finishes), SF (can't finish until it starts). Start = leaving Todo, finish = Done; " +
         "a Cancelled predecessor releases its successors. lagDays is calendar days between the two ends (negative = lead) and only affects the " +
-        "planned-date check, never the workflow gate. Both tasks must be on the same project (or both standalone in one department); the key needs " +
+        "planned-date check, never the workflow gate. Both tasks must be on the same project - a standalone task can't be linked; the key needs " +
         "edit rights on the successor. Self-links, duplicates, links between a task and its own parent/subtask, and cycles are rejected with the reason.")]
     public Task<string> AddDependency(
         [Description("The task that must start/finish first (GUID).")] string predecessorTaskId,

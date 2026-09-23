@@ -243,7 +243,7 @@ public class DetailsModel(
         if (CanLogForOthers) TimeUsers = await users.GetAssignableAsync(Task.DepartmentId, ct);
 
         Structure = await structure.GetStructureAsync(Task, ct);
-        CanLink = CanEdit;
+        CanLink = CanEdit && Task.ProjectId is not null; // dependencies need a project (§6.15)
         CanAddSubtask = Task.IsOpen && (Task.Project is null
             ? Actor.CanAccessDepartment(Task.DepartmentId)
             : Task.Project.Status != ProjectStatus.Archived && AccessPolicy.CanAddTaskToProject(Actor, Task.Project));

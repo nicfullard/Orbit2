@@ -110,11 +110,13 @@ public sealed class TaskStructureService(ApplicationDbContext db, IActorProvider
             (viaParent is null ? string.Empty : $" (via parent \"{viaParent}\")");
     }
 
-    /// <summary>Tasks this one could be linked to: the same project (any department), or the same department's standalone tasks.</summary>
+    /// <summary>Tasks this one could be linked to: the rest of its project (any department). A standalone task has no candidates - dependencies need a project (§6.15).</summary>
     public async Task<IReadOnlyList<TaskItem>> ListLinkCandidatesAsync(TaskItem task, CancellationToken ct = default) =>
-        await ScopeQuery(task.ProjectId, task.DepartmentId).AsNoTracking().Include(t => t.Department)
-            .Where(t => t.Id != task.Id && t.Status != TaskItemStatus.Cancelled)
-            .OrderBy(t => t.Title).Take(500).ToListAsync(ct);
+        task.ProjectId is null
+            ? []
+            : await ScopeQuery(task.ProjectId, task.DepartmentId).AsNoTracking().Include(t => t.Department)
+                .Where(t => t.Id != task.Id && t.Status != TaskItemStatus.Cancelled)
+                .OrderBy(t => t.Title).Take(500).ToListAsync(ct);
 
     /// <summary>
     /// Options for the Parent task picker: open tasks the actor can see - everything for a System Admin, otherwise the
@@ -339,12 +341,18 @@ public sealed class TaskStructureService(ApplicationDbContext db, IActorProvider
         }
 
         var moving = descendants.Select(d => d.Id).Append(task.Id).ToList();
+        // Leaving a project: a standalone task can't have dependencies at all, so every link on the moving tasks - not only
+        // the ones that would cross - has to go first (§6.15).
         var crossing = await db.TaskDependencies.AsNoTracking().Include(l => l.Predecessor).Include(l => l.Successor)
-            .Where(l => (moving.Contains(l.PredecessorTaskId) && !moving.Contains(l.SuccessorTaskId))
-                     || (!moving.Contains(l.PredecessorTaskId) && moving.Contains(l.SuccessorTaskId)))
+            .Where(l => newProjectId == null
+                ? moving.Contains(l.PredecessorTaskId) || moving.Contains(l.SuccessorTaskId)
+                : (moving.Contains(l.PredecessorTaskId) && !moving.Contains(l.SuccessorTaskId))
+                  || (!moving.Contains(l.PredecessorTaskId) && moving.Contains(l.SuccessorTaskId)))
             .ToListAsync(ct);
         if (crossing.Count > 0)
-            throw new ValidationException("Remove the dependencies that would then cross projects first: " +
+            throw new ValidationException((newProjectId is null
+                    ? "A standalone task can't have dependencies. Remove these first: "
+                    : "Remove the dependencies that would then cross projects first: ") +
                 string.Join(", ", crossing.Select(l => $"\"{l.Successor.Title}\" waits on \"{l.Predecessor.Title}\"")) + ".");
         return descendants;
     }
@@ -356,12 +364,13 @@ public sealed class TaskStructureService(ApplicationDbContext db, IActorProvider
             ? db.Tasks.Where(t => t.ProjectId == pid)
             : db.Tasks.Where(t => t.ProjectId == null && t.DepartmentId == departmentId);
 
+    /// <summary>Dependencies exist only between tasks on the same project (§6.15); a standalone task has none.</summary>
     private static void RequireSameScope(TaskItem a, TaskItem b)
     {
+        if (a.ProjectId is null || b.ProjectId is null)
+            throw new ValidationException("Dependencies are only available between tasks on a project; a standalone task can't be linked.");
         if (a.ProjectId != b.ProjectId)
-            throw new ValidationException("Both tasks must be on the same project (a standalone task can only link to standalone tasks in its department).");
-        if (a.ProjectId is null && a.DepartmentId != b.DepartmentId)
-            throw new ValidationException("Standalone tasks can only depend on standalone tasks in the same department.");
+            throw new ValidationException("Both tasks must be on the same project.");
     }
 
     /// <summary>All tasks below a root, tracked (they are what a move updates).</summary>
