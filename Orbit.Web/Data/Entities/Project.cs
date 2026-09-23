@@ -5,6 +5,8 @@ public class Project
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid DepartmentId { get; set; }
     public Department Department { get; set; } = null!;
+    /// <summary>The human-readable id, P-26-00003 (spec §5.1): assigned once at creation, unique, shown wherever the project is named.</summary>
+    public string Number { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public ProjectStatus Status { get; set; } = ProjectStatus.Active;

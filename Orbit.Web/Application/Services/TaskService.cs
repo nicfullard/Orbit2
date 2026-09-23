@@ -11,6 +11,7 @@ namespace Orbit.Application.Services;
 /// </summary>
 public sealed class TaskService(
     ApplicationDbContext db,
+    NumberingService numbering,
     IActorProvider actors,
     AuditService audit,
     NotificationService notifications,
@@ -50,7 +51,7 @@ public sealed class TaskService(
         if (!string.IsNullOrWhiteSpace(f.Search))
         {
             var pattern = $"%{f.Search.Trim()}%";
-            q = q.Where(t => EF.Functions.ILike(t.Title, pattern) || EF.Functions.ILike(t.Description ?? "", pattern));
+            q = q.Where(t => EF.Functions.ILike(t.Title, pattern) || EF.Functions.ILike(t.Description ?? "", pattern) || EF.Functions.ILike(t.Number, pattern));
         }
 
         var page = Math.Max(1, f.Page);
@@ -128,6 +129,7 @@ public sealed class TaskService(
         var now = DateTime.UtcNow;
         var task = new TaskItem
         {
+            Number = await numbering.NextAsync(NumberingService.TaskPrefix, now, ct),
             Title = title,
             Description = Clean(input.Description),
             DepartmentId = departmentId,
@@ -151,7 +153,7 @@ public sealed class TaskService(
         db.Tasks.Add(task);
         audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.Created, departmentId, task.Title, new
         {
-            task.Title, task.Status, task.Priority, task.Type, task.EstimateMinutes, task.ProjectId, task.DepartmentId, task.AssigneeId,
+            task.Number, task.Title, task.Status, task.Priority, task.Type, task.EstimateMinutes, task.ProjectId, task.DepartmentId, task.AssigneeId,
             task.ParentTaskId, task.StartDate, task.DueDate, task.Source, task.SprintId
         });
         await db.SaveChangesAsync(ct);

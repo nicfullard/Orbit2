@@ -15,6 +15,8 @@ public class TaskItem
     public Guid? ParentTaskId { get; set; }
     public TaskItem? ParentTask { get; set; }
     public ICollection<TaskItem> Children { get; set; } = new List<TaskItem>();
+    /// <summary>The human-readable id, T-26-00012 (spec §5.1): assigned once at creation, unique, shown wherever the task is named.</summary>
+    public string Number { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
     public TaskItemStatus Status { get; set; } = TaskItemStatus.Todo;

@@ -76,7 +76,7 @@
                         {
                             var shared = !actor.IsSystemAdmin && p.Project.DepartmentId != actor.DepartmentId;
                             <tr>
-                                <td><a asp-page="/Projects/Details" asp-route-id="@p.Project.Id" class="fw-semibold text-decoration-none">@p.Project.Name</a></td>
+                                <td><span class="font-monospace small text-muted me-1" title="Project number">@p.Project.Number</span><a asp-page="/Projects/Details" asp-route-id="@p.Project.Id" class="fw-semibold text-decoration-none">@p.Project.Name</a></td>
                                 @if (showDepartment)
                                 {
                                     <td>

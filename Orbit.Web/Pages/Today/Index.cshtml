@@ -7,7 +7,7 @@
     TaskRowsVm Rows(IReadOnlyList<TaskItem> list, string? selectionFormId = null) => new()
     {
         Tasks = list, Actor = Model.Actor, ReturnUrl = returnUrl, Today = Model.Today,
-        ShowDepartment = Model.Actor.IsSystemAdmin, ShowSprint = true, ShowPlanToday = true,
+        ShowDepartment = Model.Actor.IsSystemAdmin, ShowSprint = true, ShowPlanToday = true, ShowEstimate = true,
         QuickEditAssignees = Model.QuickEditAssignees, SelectionFormId = selectionFormId, Waiting = Model.Waiting
     };
     var unfinishedRows = Rows(plan.Unfinished, "carryForm");
@@ -75,9 +75,21 @@ else
     foreach (var g in Model.Groups)
     {
         var groupRows = Rows(g.Tasks);
-        <div class="card mb-3">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <span class="fw-semibold">@g.Name</span>
+        var overloaded = g.OpenEstimatedMinutes > Model.WorkingDayMinutes;
+        var load = g.EstimatedMinutes == g.OpenEstimatedMinutes
+            ? $"{TimeFormat.Minutes(g.OpenEstimatedMinutes)} estimated"
+            : $"{TimeFormat.Minutes(g.OpenEstimatedMinutes)} still open of {TimeFormat.Minutes(g.EstimatedMinutes)} estimated";
+        <div class="card mb-3 @(overloaded ? "border-danger" : "")">
+            <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <span class="d-flex flex-wrap align-items-center gap-2">
+                    <span class="fw-semibold">@g.Name</span>
+                    <span class="badge @(overloaded ? "text-bg-danger" : "text-bg-light border") fw-normal"
+                          title="Sum of the estimates of the tasks on this person's plan. More than a working day (@TimeFormat.Minutes(Model.WorkingDayMinutes)) still open is flagged as overloaded.">@load@(overloaded ? " - overloaded" : "")</span>
+                    @if (g.OpenUnestimated > 0)
+                    {
+                        <span class="text-muted small" title="Open tasks with no estimate - not counted in the sum">+ @g.OpenUnestimated without an estimate</span>
+                    }
+                </span>
                 <span class="text-muted small">@g.Done / @g.Tasks.Count done</span>
             </div>
             <div class="card-body p-0 p-sm-2">

@@ -25,6 +25,7 @@ else
                     <th>Priority</th>
                     @if (Model.ShowAssignee) { <th>Assignee</th> }
                     <th>Due</th>
+                    @if (Model.ShowEstimate) { <th class="text-end" title="Estimated effort">Est.</th> }
                     @if (Model.ShowSprint) { <th>Sprint</th> }
                     <th>Status</th>
                 </tr>
@@ -66,6 +67,7 @@ else
                             </td>
                         }
                         <td>
+                            <span class="font-monospace small text-muted me-1" title="Task number">@t.Number</span>
                             @if (canView)
                             {
                                 <a asp-page="/Tasks/Details" asp-route-id="@t.Id" class="fw-semibold text-decoration-none @(overdue ? "task-title-overdue" : "")">@t.Title</a>
@@ -149,6 +151,12 @@ else
                                 @Ui.Day(t.DueDate)@(overdue ? " (overdue)" : "")
                             }
                         </td>
+                        @if (Model.ShowEstimate)
+                        {
+                            <td class="text-end text-nowrap">
+                                @if (t.EstimateMinutes is int estimate) { @TimeFormat.Minutes(estimate) } else { <span class="text-muted" title="No estimate">-</span> }
+                            </td>
+                        }
                         @if (Model.ShowSprint)
                         {
                             <td>

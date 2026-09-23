@@ -25,6 +25,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<WorkingCalendarException> WorkingCalendarExceptions => Set<WorkingCalendarException>();
     public DbSet<CriticalPathAnalysis> CriticalPathAnalyses => Set<CriticalPathAnalysis>();
     public DbSet<Attachment> Attachments => Set<Attachment>();
+    public DbSet<NumberCounter> NumberCounters => Set<NumberCounter>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -47,6 +48,8 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 
         builder.Entity<Project>(b =>
         {
+            b.Property(p => p.Number).HasMaxLength(16).IsRequired();
+            b.HasIndex(p => p.Number).IsUnique();
             b.Property(p => p.Name).HasMaxLength(200).IsRequired();
             b.HasOne(p => p.Department).WithMany(d => d.Projects)
                 .HasForeignKey(p => p.DepartmentId).OnDelete(DeleteBehavior.Restrict);
@@ -59,6 +62,8 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
         builder.Entity<TaskItem>(b =>
         {
             b.ToTable("Tasks");
+            b.Property(t => t.Number).HasMaxLength(16).IsRequired();
+            b.HasIndex(t => t.Number).IsUnique();
             b.Property(t => t.Title).HasMaxLength(300).IsRequired();
             b.Property(t => t.IdempotencyKey).HasMaxLength(200);
             b.HasOne(t => t.Department).WithMany(d => d.Tasks)
@@ -238,6 +243,12 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             b.HasIndex(a => a.TaskId);
             b.HasIndex(a => a.ProjectId);
             b.ToTable(t => t.HasCheckConstraint("CK_Attachments_OneParent", "(\"TaskId\" IS NULL) <> (\"ProjectId\" IS NULL)"));
+        });
+
+        builder.Entity<NumberCounter>(b =>
+        {
+            b.HasKey(c => new { c.Prefix, c.Year });
+            b.Property(c => c.Prefix).HasMaxLength(4);
         });
 
         // Store every enum as its name so the database is readable and filterable in SQL.

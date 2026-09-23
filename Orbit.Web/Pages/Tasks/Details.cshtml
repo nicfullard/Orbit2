@@ -34,7 +34,7 @@
 
 <div class="d-flex flex-wrap justify-content-between align-items-start mb-3 gap-2">
     <div>
-        <h1 class="h3 mb-1 @(overdue ? "task-title-overdue" : "")">@t.Title</h1>
+        <h1 class="h3 mb-1 @(overdue ? "task-title-overdue" : "")"><span class="font-monospace text-muted fs-5 me-2" title="Task number">@t.Number</span>@t.Title</h1>
         <div class="d-flex flex-wrap gap-1 align-items-center">
             <span class="badge @Ui.StatusBadge(t.Status)">@t.Status.Label()</span>
             <span class="badge @Ui.PriorityBadge(t.Priority)">@t.Priority</span>
@@ -539,6 +539,7 @@
                         <dt class="col-5">Recurring</dt>
                         <dd class="col-7"><a asp-page="/Recurring/Details" asp-route-id="@t.RecurringTaskDefinitionId">@t.RecurringTaskDefinition.Title</a></dd>
                     }
+                    <dt class="col-5">Number</dt><dd class="col-7 font-monospace">@t.Number</dd>
                     <dt class="col-5">Id</dt><dd class="col-7 text-muted key-box">@t.Id</dd>
                 </dl>
             </div>

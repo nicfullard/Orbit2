@@ -132,6 +132,7 @@ else
                             }
                             @if (canView)
                             {
+                                <span class="font-monospace small text-muted" title="Task number">@t.Number</span>
                                 <a asp-page="/Tasks/Details" asp-route-id="@t.Id" class="text-decoration-none fw-semibold">@t.Title</a>
                             }
                             else

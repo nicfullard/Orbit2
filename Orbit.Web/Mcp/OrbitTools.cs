@@ -17,6 +17,7 @@ namespace Orbit.Mcp;
 /// </summary>
 [McpServerToolType]
 public sealed class OrbitTools(
+    NumberingService numbering,
     TaskService tasks,
     ProjectService projects,
     CommentService comments,
@@ -77,10 +78,10 @@ public sealed class OrbitTools(
         "the unmet links (own or inherited from a parent) that currently block its next status move. Also its comments and attachments " +
         "(file name, size, uploader and a downloadPath relative to Orbit's base URL; files are uploaded in the web UI).")]
     public Task<string> GetTask(
-        [Description("Task id (GUID).")] string taskId,
+        [Description("Task id (GUID), or task number such as T-26-00012.")] string taskId,
         CancellationToken ct = default) => Run(async () =>
     {
-        var id = RequireGuid(taskId, "taskId");
+        var id = await TaskIdAsync(taskId, ct);
         var task = await tasks.GetAsync(id, ct);
         var taskComments = await comments.ListAsync(id, ct);
         var taskFiles = await attachments.ListForTaskAsync(id, ct);
@@ -167,7 +168,7 @@ public sealed class OrbitTools(
         "departmentId moves the task to another department (SystemAdmin keys only); if that differs from the project's department the task " +
         "becomes a cross-department project task. Changing projectId without departmentId moves the task into the new project's department.")]
     public Task<string> UpdateTask(
-        [Description("Task id (GUID).")] string taskId,
+        [Description("Task id (GUID), or task number such as T-26-00012.")] string taskId,
         [Description("New title.")] string? title = null,
         [Description("New description.")] string? description = null,
         [Description("Todo, InProgress, Waiting, Blocked, Done or Cancelled.")] string? status = null,
@@ -184,7 +185,7 @@ public sealed class OrbitTools(
         [Description("Estimated effort in minutes (e.g. 90), or \"none\" to clear the estimate.")] string? estimateMinutes = null,
         CancellationToken ct = default) => Run(async () =>
     {
-        var id = RequireGuid(taskId, "taskId");
+        var id = await TaskIdAsync(taskId, ct);
         var current = await tasks.GetAsync(id, ct);
         var input = new TaskInput
         {
@@ -216,20 +217,20 @@ public sealed class OrbitTools(
 
     [McpServerTool(Name = "add_comment"), Description("Add a comment to a task, e.g. to explain why you created or changed it. Shown in the UI attributed to Claude.")]
     public Task<string> AddComment(
-        [Description("Task id (GUID).")] string taskId,
+        [Description("Task id (GUID), or task number such as T-26-00012.")] string taskId,
         [Description("Comment text (markdown is fine).")] string body,
         CancellationToken ct = default) => Run(async () =>
     {
-        var comment = await comments.AddAsync(RequireGuid(taskId, "taskId"), body, ct);
+        var comment = await comments.AddAsync(await TaskIdAsync(taskId, ct), body, ct);
         return CommentDto(comment);
     });
 
     [McpServerTool(Name = "list_comments"), Description("List a task's comments, oldest first.")]
     public Task<string> ListComments(
-        [Description("Task id (GUID).")] string taskId,
+        [Description("Task id (GUID), or task number such as T-26-00012.")] string taskId,
         CancellationToken ct = default) => Run(async () =>
     {
-        var list = await comments.ListAsync(RequireGuid(taskId, "taskId"), ct);
+        var list = await comments.ListAsync(await TaskIdAsync(taskId, ct), ct);
         return new { items = list.Select(CommentDto).ToList(), totalCount = list.Count };
     });
 
@@ -242,16 +243,16 @@ public sealed class OrbitTools(
         "planned-date check, never the workflow gate. Both tasks must be on the same project - a standalone task can't be linked; the key needs " +
         "edit rights on the successor. Self-links, duplicates, links between a task and its own parent/subtask, and cycles are rejected with the reason.")]
     public Task<string> AddDependency(
-        [Description("The task that must start/finish first (GUID).")] string predecessorTaskId,
-        [Description("The task that waits (GUID).")] string successorTaskId,
+        [Description("The task that must start/finish first (GUID, or task number).")] string predecessorTaskId,
+        [Description("The task that waits (GUID, or task number).")] string successorTaskId,
         [Description("FS, SS, FF or SF (FinishToStart etc. also accepted). Default FS.")] string? type = null,
         [Description("Lag in calendar days; negative is a lead. Default 0.")] int lagDays = 0,
         CancellationToken ct = default) => Run(async () =>
     {
         var link = await structure.AddAsync(new DependencyInput
         {
-            PredecessorTaskId = RequireGuid(predecessorTaskId, "predecessorTaskId"),
-            SuccessorTaskId = RequireGuid(successorTaskId, "successorTaskId"),
+            PredecessorTaskId = await TaskIdAsync(predecessorTaskId, ct, "predecessorTaskId"),
+            SuccessorTaskId = await TaskIdAsync(successorTaskId, ct, "successorTaskId"),
             Type = ParseDependencyType(type),
             LagDays = lagDays
         }, ct);
@@ -275,7 +276,7 @@ public sealed class OrbitTools(
         if (ParseGuid(dependencyId, "dependencyId") is Guid id)
             await structure.RemoveAsync(id, ct);
         else
-            await structure.RemoveAsync(RequireGuid(predecessorTaskId, "predecessorTaskId"), RequireGuid(successorTaskId, "successorTaskId"), ct);
+            await structure.RemoveAsync(await TaskIdAsync(predecessorTaskId, ct, "predecessorTaskId"), await TaskIdAsync(successorTaskId, ct, "successorTaskId"), ct);
         return new { removed = true };
     });
 
@@ -313,10 +314,10 @@ public sealed class OrbitTools(
         "(crossDepartment = true). Visible to the project's department, to SystemAdmin keys, and to any department that has tasks filed under it; " +
         "the key's department scoping still applies per task when you go on to get_task / update_task.")]
     public Task<string> GetProject(
-        [Description("Project id (GUID).")] string projectId,
+        [Description("Project id (GUID), or project number such as P-26-00003.")] string projectId,
         CancellationToken ct = default) => Run(async () =>
     {
-        var project = await projects.GetAsync(RequireGuid(projectId, "projectId"), ct);
+        var project = await projects.GetAsync(await ProjectIdAsync(projectId, ct), ct);
         var links = await structure.ListForProjectAsync(project.Id, ct);
         var files = await attachments.ListForProjectAsync(project.Id, ct);
         return ProjectDto(project, includeTasks: true, links, files);
@@ -324,10 +325,10 @@ public sealed class OrbitTools(
 
     [McpServerTool(Name = "get_project_status"), Description("Lightweight status summary of a project: task counts by status, overdue count, progress, time logged, and the headline of its last critical path analysis (criticalPath, null if never run; see get_critical_path). No task list.")]
     public Task<string> GetProjectStatus(
-        [Description("Project id (GUID).")] string projectId,
+        [Description("Project id (GUID), or project number such as P-26-00003.")] string projectId,
         CancellationToken ct = default) => Run(async () =>
     {
-        var s = await projects.GetStatusAsync(RequireGuid(projectId, "projectId"), ct);
+        var s = await projects.GetStatusAsync(await ProjectIdAsync(projectId, ct), ct);
         var cp = await criticalPaths.GetSummaryAsync(s.Id, ct);
         return new
         {
@@ -388,7 +389,7 @@ public sealed class OrbitTools(
         "Edit a project: name, description, status, owner, target date, required project buffer. Only passed arguments change. " +
         "Member keys can only edit projects owned by the Claude agent user; DepartmentAdmin keys any project in their department.")]
     public Task<string> UpdateProject(
-        [Description("Project id (GUID).")] string projectId,
+        [Description("Project id (GUID), or project number such as P-26-00003.")] string projectId,
         [Description("New name.")] string? name = null,
         [Description("New description.")] string? description = null,
         [Description("Active, OnHold, Completed or Archived.")] string? status = null,
@@ -397,7 +398,7 @@ public sealed class OrbitTools(
         [Description("Required project buffer in working days, or \"none\" to clear.")] string? requiredBufferWorkingDays = null,
         CancellationToken ct = default) => Run(async () =>
     {
-        var id = RequireGuid(projectId, "projectId");
+        var id = await ProjectIdAsync(projectId, ct);
         var current = await projects.GetAsync(id, ct);
         var input = new ProjectInput
         {
@@ -422,10 +423,10 @@ public sealed class OrbitTools(
         "has changed since the run. Use this rather than working criticality out from raw task data. When nothing has been run yet analysisId is null: " +
         "call run_critical_path_analysis.")]
     public Task<string> GetCriticalPath(
-        [Description("Project id (GUID).")] string projectId,
+        [Description("Project id (GUID), or project number such as P-26-00003.")] string projectId,
         CancellationToken ct = default) => Run(async () =>
     {
-        var view = await criticalPaths.GetLatestAsync(RequireGuid(projectId, "projectId"), ct);
+        var view = await criticalPaths.GetLatestAsync(await ProjectIdAsync(projectId, ct), ct);
         if (view is null)
             return (object)new { analysisId = (Guid?)null, isStale = true, message = "No critical path analysis has been run for this project yet. Call run_critical_path_analysis to run one." };
         return AnalysisDto(view.Analysis.Id, view.IsStale, view.Result);
@@ -437,10 +438,10 @@ public sealed class OrbitTools(
         "readiness blocks the run (a circular dependency, nothing scheduled) it returns blocked = true with the errors and stores nothing. " +
         "Nothing is rescheduled: Orbit identifies scheduling conditions, the project manager changes the plan.")]
     public Task<string> RunCriticalPathAnalysis(
-        [Description("Project id (GUID).")] string projectId,
+        [Description("Project id (GUID), or project number such as P-26-00003.")] string projectId,
         CancellationToken ct = default) => Run(async () =>
     {
-        var result = await criticalPaths.RunAsync(RequireGuid(projectId, "projectId"), ct);
+        var result = await criticalPaths.RunAsync(await ProjectIdAsync(projectId, ct), ct);
         if (result.Blocked)
             return (object)new { blocked = true, errors = result.Errors.Select(IssueDto).ToList(), warnings = result.Warnings.Select(IssueDto).ToList() };
         var view = await criticalPaths.GetLatestAsync(result.ProjectId, ct);
@@ -536,6 +537,7 @@ public sealed class OrbitTools(
     private static object TaskDto(TaskItem t) => new
     {
         id = t.Id,
+        number = t.Number,
         title = t.Title,
         description = t.Description,
         status = t.Status,
@@ -582,6 +584,7 @@ public sealed class OrbitTools(
         return new
         {
             id = p.Id,
+            number = p.Number,
             name = p.Name,
             description = p.Description,
             status = p.Status,
@@ -692,6 +695,18 @@ public sealed class OrbitTools(
 
     private static Guid RequireGuid(string? value, string name) =>
         ParseGuid(value, name) ?? throw new McpException($"{name} is required.");
+
+    /// <summary>A required task argument: its GUID, or its number (T-26-00012, §5.1).</summary>
+    private async Task<Guid> TaskIdAsync(string? value, CancellationToken ct, string name = "taskId") =>
+        NumberingService.IsNumber(value)
+            ? await numbering.FindTaskIdAsync(value!, ct) ?? throw new McpException($"No task is numbered {NumberingService.Normalise(value!)}.")
+            : RequireGuid(value, name);
+
+    /// <summary>A required project argument: its GUID, or its number (P-26-00003, §5.1).</summary>
+    private async Task<Guid> ProjectIdAsync(string? value, CancellationToken ct) =>
+        NumberingService.IsNumber(value)
+            ? await numbering.FindProjectIdAsync(value!, ct) ?? throw new McpException($"No project is numbered {NumberingService.Normalise(value!)}.")
+            : RequireGuid(value, "projectId");
 
     private static int? ParseInt(string? value, string name)
     {

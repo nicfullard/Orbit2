@@ -9,6 +9,7 @@ namespace Orbit.Application.Services;
 
 /// <summary>Recurring task definitions (RRULE-based) and the generation of their task instances.</summary>
 public sealed class RecurrenceService(
+    NumberingService numbering,
     ApplicationDbContext db,
     IActorProvider actors,
     AuditService audit,
@@ -298,6 +299,7 @@ public sealed class RecurrenceService(
         var now = DateTime.UtcNow;
         var task = new TaskItem
         {
+            Number = await numbering.NextAsync(NumberingService.TaskPrefix, now, ct),
             Title = def.Title,
             Description = def.Description,
             DepartmentId = def.DepartmentId,

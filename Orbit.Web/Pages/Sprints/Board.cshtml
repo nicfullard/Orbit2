@@ -45,6 +45,7 @@
                     <div class="mb-1">
                         @if (canView)
                         {
+                            <span class="font-monospace small text-muted" title="Task number">@t.Number</span>
                             <a asp-page="/Tasks/Details" asp-route-id="@t.Id" class="fw-semibold text-decoration-none @(overdue ? "task-title-overdue" : "")">@t.Title</a>
                         }
                         else

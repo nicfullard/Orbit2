@@ -5,7 +5,7 @@ using Orbit.Data.Entities;
 
 namespace Orbit.Application.Services;
 
-public sealed class ProjectService(ApplicationDbContext db, IActorProvider actors, AuditService audit)
+public sealed class ProjectService(NumberingService numbering, ApplicationDbContext db, IActorProvider actors, AuditService audit)
 {
     /// <summary>
     /// Projects the caller may see: every project for a System Admin; otherwise the caller's own department's
@@ -29,7 +29,7 @@ public sealed class ProjectService(ApplicationDbContext db, IActorProvider actor
         if (!string.IsNullOrWhiteSpace(f.Search))
         {
             var pattern = $"%{f.Search.Trim()}%";
-            q = q.Where(p => EF.Functions.ILike(p.Name, pattern));
+            q = q.Where(p => EF.Functions.ILike(p.Name, pattern) || EF.Functions.ILike(p.Number, pattern));
         }
 
         var rows = await q.OrderBy(p => p.Name).Select(p => new
@@ -156,6 +156,7 @@ public sealed class ProjectService(ApplicationDbContext db, IActorProvider actor
         var now = DateTime.UtcNow;
         var project = new Project
         {
+            Number = await numbering.NextAsync(NumberingService.ProjectPrefix, now, ct),
             Name = name,
             Description = Clean(input.Description),
             DepartmentId = departmentId,
@@ -168,7 +169,7 @@ public sealed class ProjectService(ApplicationDbContext db, IActorProvider actor
         };
         db.Projects.Add(project);
         audit.Add(actor, AuditEntity.Project, project.Id, AuditAction.Created, departmentId, project.Name,
-            new { project.Name, project.Status, project.OwnerId, project.TargetDate, project.RequiredBufferWorkingDays });
+            new { project.Number, project.Name, project.Status, project.OwnerId, project.TargetDate, project.RequiredBufferWorkingDays });
         await db.SaveChangesAsync(ct);
         return await GetAsync(project.Id, ct);
     }

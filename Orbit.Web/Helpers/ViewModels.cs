@@ -26,6 +26,8 @@ public sealed class TaskRowsVm
     public bool ShowDepartment { get; init; } = true;
     public bool ShowSprint { get; init; }
     public bool ShowAssignee { get; init; } = true;
+    /// <summary>Show each task's estimated effort (§6.10) as an "Est." column - the Today page's load view (§6.12).</summary>
+    public bool ShowEstimate { get; init; }
     /// <summary>When set, each plannable row gets a checkbox bound (via the HTML form attribute) to the form with this id.</summary>
     public string? SelectionFormId { get; init; }
     /// <summary>Tasks whose next move is gated by a dependency (§6.15), with the reason for the Gated badge. Null = badge not computed.</summary>
