@@ -34,6 +34,8 @@ public class DetailsModel(
     public IReadOnlyList<UserSummary> TimeUsers { get; private set; } = [];
     public int TotalMinutes => TimeEntries.Sum(e => e.DurationMinutes);
     public bool CanEdit { get; private set; }
+    /// <summary>An open, unassigned task in the actor's department: they may take it for themselves (§6.5).</summary>
+    public bool CanTake { get; private set; }
     public bool CanLogTime { get; private set; }
     public bool CanLogForOthers { get; private set; }
     /// <summary>The current user's clock, when it is running on this task.</summary>
@@ -185,6 +187,7 @@ public class DetailsModel(
         TimeEntries = await time.ListForTaskAsync(id, ct);
         Activity = (await audit.ListAsync(new AuditFilter { EntityId = id, From = Task.CreatedAt.AddSeconds(-1), To = DateTime.UtcNow.AddMinutes(1), PageSize = 30 }, ct)).Items;
         CanEdit = AccessPolicy.CanEditTask(Actor, Task);
+        CanTake = AccessPolicy.CanTakeTask(Actor, Task);
         CanLogForOthers = Actor.IsAdminFor(Task.DepartmentId);
         CanLogTime = Actor.UserId is Guid me && AccessPolicy.CanLogTimeFor(Actor, Task, me) || CanLogForOthers;
         Statuses = Ui.AllowedStatuses(Actor, Task);

@@ -26,6 +26,9 @@ public sealed class DashboardModel
     /// <summary>The caller's own open tasks (shown separately for admins whose main widget is scope-wide).</summary>
     public IReadOnlyList<TaskItem> MyOpenTasks { get; init; } = [];
 
+    /// <summary>Open, unassigned tasks in a Member's department - work they may take (§6.5). Empty for admins, whose main widget already covers the department.</summary>
+    public IReadOnlyList<TaskItem> UpForGrabs { get; init; } = [];
+
     public Sprint? ActiveSprint { get; init; }
     public IReadOnlyList<TaskItem> SprintTasks { get; init; } = [];
     public int SprintTotal { get; init; }

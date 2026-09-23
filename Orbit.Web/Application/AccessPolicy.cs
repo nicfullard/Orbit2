@@ -16,6 +16,14 @@ public static class AccessPolicy
         (a.DepartmentId == t.DepartmentId &&
          (a.IsDepartmentAdmin || t.AssigneeId == a.UserId || t.CreatedById == a.UserId));
 
+    /// <summary>
+    /// Taking an unassigned task: anyone in the task's department may assign an open, unassigned task to themselves
+    /// (System Admin: anywhere). This is the one assignee change a Member may make on a task they can't otherwise edit;
+    /// once it is theirs, <see cref="CanEditTask"/> applies like any assigned task.
+    /// </summary>
+    public static bool CanTakeTask(Actor a, TaskItem t) =>
+        a.UserId is not null && t.IsOpen && t.AssigneeId is null && a.CanAccessDepartment(t.DepartmentId);
+
     /// <summary>Anyone in the department may move between Todo/InProgress/Blocked; closing or reopening needs an admin.</summary>
     public static bool CanChangeStatus(Actor a, TaskItem t, TaskItemStatus to)
     {

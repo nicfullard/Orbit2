@@ -33,7 +33,8 @@ public sealed class TaskService(
 
         if (f.ProjectId is Guid projectId) q = q.Where(t => t.ProjectId == projectId);
         if (f.Status is TaskItemStatus status) q = q.Where(t => t.Status == status);
-        if (f.AssigneeId is Guid assigneeId) q = q.Where(t => t.AssigneeId == assigneeId);
+        if (f.Unassigned) q = q.Where(t => t.AssigneeId == null);
+        else if (f.AssigneeId is Guid assigneeId) q = q.Where(t => t.AssigneeId == assigneeId);
         if (f.Priority is TaskPriority priority) q = q.Where(t => t.Priority == priority);
         if (f.Type is TaskType type) q = q.Where(t => t.Type == type);
         if (f.Source is TaskSource source) q = q.Where(t => t.Source == source);
@@ -291,7 +292,10 @@ public sealed class TaskService(
         var task = await db.Tasks.Include(t => t.Assignee).FirstOrDefaultAsync(t => t.Id == id, ct)
             ?? throw new NotFoundException("Task not found.");
         AccessPolicy.Require(AccessPolicy.CanViewTask(actor, task), "This task belongs to another department.");
-        AccessPolicy.Require(AccessPolicy.CanEditTask(actor, task), "Members can only edit tasks they created or are assigned to.");
+        // A Member may also take an unassigned task in their department for themselves (§6.5) without edit rights.
+        var taking = assigneeId is not null && assigneeId == actor.UserId && AccessPolicy.CanTakeTask(actor, task);
+        AccessPolicy.Require(taking || AccessPolicy.CanEditTask(actor, task),
+            "Members can only edit tasks they created or are assigned to.");
         if (task.AssigneeId == assigneeId) return task;
 
         var assignee = await ValidateAssigneeAsync(assigneeId, task.DepartmentId, ct);
@@ -305,6 +309,41 @@ public sealed class TaskService(
         if (assignee is not null && assignee.Id != actor.UserId)
             await notifications.TaskAssignedAsync(task, assignee, actor, ct);
         return task;
+    }
+
+    /// <summary>
+    /// Take an unassigned task (§6.5): assign an open, unassigned task in the actor's department to the actor - the one
+    /// assignee change a Member may make on a task they can't otherwise edit. First come, first served: the update only
+    /// lands while the task is still unassigned, so two people taking it at the same moment can't both win.
+    /// </summary>
+    public async Task<TaskItem> TakeAsync(Guid id, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        if (actor.UserId is not Guid me) throw new ForbiddenException("Only a signed-in user can take a task.");
+        var task = await db.Tasks.AsNoTracking().Include(t => t.Assignee).FirstOrDefaultAsync(t => t.Id == id, ct)
+            ?? throw new NotFoundException("Task not found.");
+        AccessPolicy.Require(AccessPolicy.CanViewTask(actor, task), "This task belongs to another department.");
+        if (task.AssigneeId == me) return await GetAsync(id, ct);
+        if (task.AssigneeId is not null)
+            throw new ValidationException($"\"{task.Title}\" is already assigned to {task.Assignee!.DisplayName}.");
+        if (!task.IsOpen) throw new ValidationException("A closed task can't be taken.");
+        AccessPolicy.Require(AccessPolicy.CanTakeTask(actor, task), "You can only take unassigned tasks in your own department.");
+        await ValidateAssigneeAsync(me, task.DepartmentId, ct);
+
+        var now = DateTime.UtcNow;
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var taken = await db.Tasks.Where(t => t.Id == id && t.AssigneeId == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.AssigneeId, me).SetProperty(t => t.UpdatedAt, now), ct);
+        if (taken == 0)
+        {
+            var by = await db.Tasks.AsNoTracking().Where(t => t.Id == id).Select(t => t.Assignee!.DisplayName).FirstOrDefaultAsync(ct);
+            throw new ValidationException($"\"{task.Title}\" was just taken by {by ?? "someone else"}.");
+        }
+        audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.Updated, task.DepartmentId, task.Title,
+            new ChangeSet().Track("assigneeId", (Guid?)null, me).Changes);
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+        return await GetAsync(id, ct);
     }
 
     /// <summary>Quick inline due-date change (the task list control). Same rights as a full edit.</summary>

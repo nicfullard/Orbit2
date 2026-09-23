@@ -51,6 +51,11 @@ public sealed class DashboardService(ApplicationDbContext db, IActorProvider act
             ? openTasks
             : await Detailed(open.Where(t => t.AssigneeId == actor.UserId)).Take(8).ToListAsync(ct);
 
+        // Work nobody has picked up yet, which a Member may take (§6.5). Admins already see the whole department above.
+        List<TaskItem> upForGrabs = [];
+        if (actor.IsMember)
+            upForGrabs = await Detailed(open.Where(t => t.DepartmentId == actor.DepartmentId && t.AssigneeId == null)).Take(8).ToListAsync(ct);
+
         // Active sprint
         var sprint = await db.Sprints.AsNoTracking().FirstOrDefaultAsync(s => s.Status == SprintStatus.Active, ct);
         List<TaskItem> sprintTasks = [];
@@ -148,6 +153,7 @@ public sealed class DashboardService(ApplicationDbContext db, IActorProvider act
             PlannedTodayDone = plannedTodayDone,
             OpenTasks = openTasks,
             MyOpenTasks = myOpen,
+            UpForGrabs = upForGrabs,
             ActiveSprint = sprint,
             SprintTasks = sprintTasks,
             SprintTotal = sprintTotal,

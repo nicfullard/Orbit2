@@ -8,6 +8,8 @@ public sealed class TaskFilter
     public Guid? DepartmentId { get; set; }
     public TaskItemStatus? Status { get; set; }
     public Guid? AssigneeId { get; set; }
+    /// <summary>Only tasks with no assignee - work nobody has picked up yet. Takes precedence over <see cref="AssigneeId"/>.</summary>
+    public bool Unassigned { get; set; }
     public TaskPriority? Priority { get; set; }
     public TaskType? Type { get; set; }
     public TaskSource? Source { get; set; }

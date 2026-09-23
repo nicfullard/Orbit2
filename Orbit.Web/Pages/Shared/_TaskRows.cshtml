@@ -122,6 +122,12 @@ else
                                         </select>
                                     </form>
                                 }
+                                else if (AccessPolicy.CanTakeTask(Model.Actor, t))
+                                {
+                                    <form method="post" asp-page="/Tasks/Quick" asp-page-handler="Take" asp-route-id="@t.Id" asp-route-returnUrl="@Model.ReturnUrl" class="d-inline">
+                                        <button type="submit" class="btn btn-sm btn-outline-primary py-0" title="Unassigned - assign this task to yourself">Take</button>
+                                    </form>
+                                }
                                 else
                                 {
                                     @(t.Assignee?.DisplayName ?? "-")

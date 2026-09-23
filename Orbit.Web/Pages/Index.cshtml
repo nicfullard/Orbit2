@@ -9,6 +9,7 @@
     var openVm = new TaskRowsVm { Tasks = d.OpenTasks, Actor = actor, ReturnUrl = returnUrl, ShowDepartment = actor.IsSystemAdmin, EmptyMessage = "Nothing open. Nice.", Today = d.Today };
     var myVm = new TaskRowsVm { Tasks = d.MyOpenTasks, Actor = actor, ReturnUrl = returnUrl, ShowDepartment = false, ShowAssignee = false, EmptyMessage = "No tasks assigned to you.", Today = d.Today };
     var sprintVm = new TaskRowsVm { Tasks = d.SprintTasks, Actor = actor, ReturnUrl = returnUrl, ShowDepartment = actor.IsSystemAdmin, EmptyMessage = actor.IsMember ? "None of your tasks are in this sprint." : "No tasks in this sprint yet.", Today = d.Today };
+    var grabsVm = new TaskRowsVm { Tasks = d.UpForGrabs, Actor = actor, ReturnUrl = returnUrl, ShowDepartment = false, EmptyMessage = "Nothing unassigned in your department right now.", Today = d.Today };
 }
 
 <div class="d-flex flex-wrap justify-content-between align-items-end mb-3 gap-2">
@@ -81,6 +82,19 @@
                 <partial name="_TaskRows" model="openVm" />
             </div>
         </div>
+
+        @if (actor.IsMember)
+        {
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span class="fw-semibold">Up for grabs <span class="text-muted fw-normal small">unassigned in @(d.DepartmentName ?? "your department") - take one to make it yours</span></span>
+                    <a class="small" asp-page="/Tasks/Index" asp-route-OpenOnly="true" asp-route-Unassigned="true">All unassigned</a>
+                </div>
+                <div class="card-body p-0 p-sm-2">
+                    <partial name="_TaskRows" model="grabsVm" />
+                </div>
+            </div>
+        }
 
         @if (!actor.IsMember)
         {

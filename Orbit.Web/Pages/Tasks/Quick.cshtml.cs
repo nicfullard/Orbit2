@@ -5,10 +5,25 @@ using Orbit.Helpers;
 
 namespace Orbit.Pages.Tasks;
 
-/// <summary>POST-only endpoints behind the inline assignee and due-date controls in task lists (see Status for status).</summary>
+/// <summary>POST-only endpoints behind the inline assignee, due-date and Take controls in task lists (see Status for status).</summary>
 public class QuickModel(TaskService tasks) : OrbitPageModel
 {
     public IActionResult OnGet() => RedirectToPage("/Tasks/Index");
+
+    /// <summary>The "Take" button on an unassigned task (§6.5): assigns it to the current user.</summary>
+    public async Task<IActionResult> OnPostTakeAsync(Guid id, string? returnUrl, CancellationToken ct)
+    {
+        try
+        {
+            var task = await tasks.TakeAsync(id, ct);
+            Success($"\"{Ui.Truncate(task.Title, 40)}\" is now yours.");
+        }
+        catch (ValidationException ex)
+        {
+            Error(ex.Message);
+        }
+        return LocalRedirect(SafeReturnUrl(returnUrl, "/Tasks"));
+    }
 
     public async Task<IActionResult> OnPostAssigneeAsync(Guid id, Guid? assigneeId, string? returnUrl, CancellationToken ct)
     {

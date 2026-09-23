@@ -72,6 +72,12 @@
         </div>
     </div>
     <div class="d-flex gap-2 align-items-center">
+        @if (Model.CanTake)
+        {
+            <form method="post" asp-page="/Tasks/Quick" asp-page-handler="Take" asp-route-id="@t.Id" asp-route-returnUrl="@returnUrl">
+                <button class="btn btn-primary btn-sm" type="submit" title="Nobody is assigned to this task yet - assign it to yourself">Take this task</button>
+            </form>
+        }
         @if (t.IsOpen && AccessPolicy.CanPlanTask(Model.Actor, t))
         {
             var onTodaysPlan = t.PlannedFor == today;
