@@ -11,7 +11,7 @@ public class DownloadModel(AttachmentService attachments) : OrbitPageModel
 {
     public async Task<IActionResult> OnGetAsync(Guid id, CancellationToken ct)
     {
-        var (attachment, content) = await attachments.OpenAsync(id, ct);
+        var (attachment, content) = await attachments.DownloadAsync(id, ct);
         Response.Headers.XContentTypeOptions = "nosniff";
         return File(content, attachment.ContentType, attachment.FileName);
     }

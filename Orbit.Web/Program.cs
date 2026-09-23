@@ -117,7 +117,6 @@ builder.Services.AddScoped<TaskStructureService>();
 builder.Services.AddScoped<ProjectService>();
 builder.Services.AddScoped<CommentService>();
 builder.Services.AddScoped<NumberingService>();
-builder.Services.AddSingleton<AttachmentStorage>();
 builder.Services.AddScoped<AttachmentService>();
 builder.Services.AddScoped<SprintService>();
 builder.Services.AddScoped<RecurrenceService>();

@@ -18,6 +18,3 @@ agent.json
 ## OS
 .DS_Store
 Thumbs.db
-
-# Uploaded attachments (Attachments:Path); the deployed path is outside the app directory
-App_Data/

@@ -145,7 +145,7 @@ A Sprint has no `ProjectId` **and no `DepartmentId`** — it's a company-wide pl
 - `TaskId` (FK → Task, nullable), `ProjectId` (FK → Project, nullable) — exactly one is set (database check constraint)
 - `FileName` — the uploaded name reduced to a plain file name (no path), for display and download
 - `ContentType`, `SizeBytes`
-- `StoragePath` — where the bytes are, relative to the attachments directory; named by the attachment's id, never by `FileName`
+- `Content` — the bytes, as a companion `AttachmentContent` row (`AttachmentId` PK/FK, `Data` bytea) in a table of its own, so listing attachments never reads file content; it is loaded only for a download
 - `UploadedById` (FK → User, nullable), `UploadedAt`
 
 **TimeEntry**
@@ -243,7 +243,7 @@ Rows are appended; the latest by `RunAt` is the project's current analysis. Not 
 - User 1—* Project (as owner)
 - Task 1—* Comment
 - Task 1—* TimeEntry, User 1—* TimeEntry (as logger)
-- Task 1—* Attachment, Project 1—* Attachment (each attachment belongs to exactly one of the two; User 1—* Attachment as uploader)
+- Task 1—* Attachment, Project 1—* Attachment (each attachment belongs to exactly one of the two; User 1—* Attachment as uploader); Attachment 1—0..1 AttachmentContent (the bytes; every upload creates one)
 - User 1—0..1 RunningClock, Task 1—* RunningClock (one per user currently timing that task)
 
 ## 6. Functional Requirements — Web UI (Razor Pages)
@@ -593,11 +593,11 @@ Files can be attached to a task or to a project — a screenshot of the fault, t
 - **Where:** an **Attachments** card on the task page and on the project page lists each file (name, size, who uploaded it and when) with a download link and, for those allowed, a *Delete* button, above a multi-file upload control. Downloads always come back as a file to save (`Content-Disposition: attachment`, no content sniffing) and are never rendered inside Orbit, so an uploaded HTML or SVG file can't run in a user's session.
 - **Who (§6.5):** attaching to a task follows the commenting rule — anyone who can see the task (its department; `SystemAdmin` anywhere). Attaching to a project takes the project's own department (or a `SystemAdmin`); a department that only shares the project through its own tasks (§6.2.1) sees the project's files read-only. Nothing can be attached to an archived project. Removing a file takes the person who uploaded it, or anyone who may edit what it is attached to. Seeing and downloading follow the parent's view rules.
 - **Limits:** `Attachments:MaxFileSizeMb` per file (default 25) and `Attachments:MaxFilesPerUpload` per upload (default 5). An over-size or empty file is refused by name and the rest of the upload still goes in. Any file type is accepted — the always-download rule above is the safeguard, not a type list.
-- **Storage:** the row (`Attachment`, §5.1) holds the metadata; the bytes are written under `Attachments:Path` (default `App_Data/attachments` beneath the content root; `/var/lib/orbit/attachments` in the deployment guide) in a file named by the attachment's id, grouped by upload month — the uploaded name is never used as a path. The directory is part of the backup set alongside the database (`deploy/README.md`). A row whose file has gone missing downloads as "not found" and is logged.
+- **Storage:** the row (`Attachment`, §5.1) holds the metadata; the bytes are its companion `AttachmentContent` row in the database, written when the file is uploaded and read only when it is downloaded — never when attachments are listed or a task or project is loaded with them. There is no attachments directory and nothing outside the database to back up. A row without a content row (one from before the bytes moved into the database) downloads as "not found" and is logged; it can only be deleted and the file uploaded again.
 - **Audit:** every upload and removal is an `AttachmentAdded` / `AttachmentRemoved` entry on the task or project, with the file name and size, so it shows in the task's history and the activity feed.
 - **MCP (§7.1):** `get_task` and `get_project` list attachments (`attachments`: id, file name, content type, size, uploader, when, and a `downloadPath` relative to the base URL). Uploading is web-UI only for now; an `add_attachment` / `download_attachment` tool pair is a possible follow-up once there is a case for Claude reading or producing files.
 
-> **Assumptions flagged:** (1) attaching is as open as commenting, deleting as strict as editing; (2) files live on disk, not in the database, so a deployment backs that directory up with the database; (3) no virus scanning and no type allow-list — the always-download rule is the browser-side protection, and an on-premises scanner can be pointed at the directory.
+> **Assumptions flagged:** (1) attaching is as open as commenting, deleting as strict as editing; (2) files live in the database beside their metadata, so one backup covers both and a file can't go missing independently of its row — the 25 MB per-file default keeps that manageable; (3) no virus scanning and no type allow-list — the always-download rule is the browser-side protection.
 
 ## 7. Functional Requirements — Claude Integration (MCP Server)
 

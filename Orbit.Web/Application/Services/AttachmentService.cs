@@ -7,15 +7,15 @@ using Orbit.Data.Entities;
 namespace Orbit.Application.Services;
 
 /// <summary>
-/// Files attached to tasks and projects (spec §6.18). Metadata is a row; the bytes go through <see cref="AttachmentStorage"/>.
-/// Attaching follows the commenting rule (anyone who can see the task, or the project's own department); removing takes the
-/// uploader or someone who may edit the parent. Every upload and removal is audited on the parent.
+/// Files attached to tasks and projects (spec §6.18). The metadata is an <see cref="Attachment"/> row; the bytes are its
+/// <see cref="AttachmentContent"/> row, written on upload and read only for a download. Attaching follows the commenting
+/// rule (anyone who can see the task, or the project's own department); removing takes the uploader or someone who may edit
+/// the parent. Every upload and removal is audited on the parent.
 /// </summary>
 public sealed class AttachmentService(
     ApplicationDbContext db,
     IActorProvider actors,
     AuditService audit,
-    AttachmentStorage storage,
     IOptions<AttachmentOptions> options,
     ILogger<AttachmentService> logger)
 {
@@ -67,19 +67,22 @@ public sealed class AttachmentService(
         return attachment;
     }
 
-    /// <summary>The attachment and a stream over its bytes, for download. The caller disposes the stream.</summary>
-    public async Task<(Attachment Attachment, Stream Content)> OpenAsync(Guid id, CancellationToken ct = default)
+    /// <summary>The attachment and its bytes, for download. The content row is read here and nowhere else.</summary>
+    public async Task<(Attachment Attachment, byte[] Content)> DownloadAsync(Guid id, CancellationToken ct = default)
     {
         var actor = await actors.GetAsync(ct);
         var attachment = await Load(db.Attachments.AsNoTracking()).FirstOrDefaultAsync(a => a.Id == id, ct)
             ?? throw new NotFoundException("Attachment not found.");
         await RequireCanViewParentAsync(actor, attachment, ct);
-        if (!storage.Exists(attachment.StoragePath))
+        var content = await db.AttachmentContents.AsNoTracking()
+            .Where(c => c.AttachmentId == id).Select(c => c.Data).FirstOrDefaultAsync(ct);
+        if (content is null)
         {
-            logger.LogError("Attachment {AttachmentId} ({FileName}) is missing from storage at {Path}", attachment.Id, attachment.FileName, attachment.StoragePath);
-            throw new NotFoundException("The attachment's file is missing from storage.");
+            // Only a row from before the bytes moved into the database can lack content; it can't be repaired, only re-uploaded.
+            logger.LogError("Attachment {AttachmentId} ({FileName}) has no content stored in the database", attachment.Id, attachment.FileName);
+            throw new NotFoundException("The attachment's content is missing; delete it and upload the file again.");
         }
-        return (attachment, storage.Open(attachment.StoragePath));
+        return (attachment, content);
     }
 
     public async Task DeleteAsync(Guid id, CancellationToken ct = default)
@@ -103,12 +106,9 @@ public sealed class AttachmentService(
             project.UpdatedAt = DateTime.UtcNow;
             audit.Add(actor, AuditEntity.Project, project.Id, AuditAction.AttachmentRemoved, project.DepartmentId, project.Name, Details(attachment));
         }
+        // The content row goes with the attachment (cascade), without ever being loaded.
         db.Attachments.Remove(attachment);
         await db.SaveChangesAsync(ct);
-
-        // The row is gone; a file left behind is only wasted space, so a failure here is logged, not surfaced.
-        try { storage.Delete(attachment.StoragePath); }
-        catch (Exception ex) { logger.LogWarning(ex, "Could not delete the file for attachment {AttachmentId} at {Path}", attachment.Id, attachment.StoragePath); }
     }
 
     /// <summary>
@@ -134,38 +134,45 @@ public sealed class AttachmentService(
     private async Task<Attachment> StoreAsync(Actor actor, AttachmentUpload upload, Action<Attachment> attach, CancellationToken ct)
     {
         var fileName = CleanFileName(upload.FileName);
-        if (upload.SizeBytes <= 0) throw new ValidationException($"\"{fileName}\" is empty.");
-        if (upload.SizeBytes > Limits.MaxFileSizeBytes)
-            throw new ValidationException($"\"{fileName}\" is larger than the {Limits.MaxFileSizeMb} MB limit.");
-
+        var data = await ReadAsync(upload, fileName, ct);
         var attachment = new Attachment
         {
             FileName = fileName,
             ContentType = string.IsNullOrWhiteSpace(upload.ContentType) || upload.ContentType.Length > 200
                 ? "application/octet-stream"
                 : upload.ContentType.Trim(),
-            SizeBytes = upload.SizeBytes,
+            SizeBytes = data.Length,
             UploadedById = actor.UserId,
             UploadedAt = DateTime.UtcNow
         };
+        attachment.Content = new AttachmentContent { AttachmentId = attachment.Id, Attachment = attachment, Data = data };
         attach(attachment);
-        attachment.StoragePath = await storage.SaveAsync(attachment.Id, upload.Content, ct);
         db.Attachments.Add(attachment);
         return attachment;
     }
 
-    /// <summary>Save the row; if that fails the file just written must not be left orphaned.</summary>
+    /// <summary>
+    /// The upload's bytes, within the limits. The declared size is checked first, so an over-size file is refused before any
+    /// of it is read; what actually arrived is checked again, since the declared size is only what the caller said.
+    /// </summary>
+    private async Task<byte[]> ReadAsync(AttachmentUpload upload, string fileName, CancellationToken ct)
+    {
+        if (upload.SizeBytes <= 0) throw new ValidationException($"\"{fileName}\" is empty.");
+        if (upload.SizeBytes > Limits.MaxFileSizeBytes) throw TooLarge(fileName);
+        using var buffer = new MemoryStream((int)upload.SizeBytes);
+        await upload.Content.CopyToAsync(buffer, ct);
+        if (buffer.Length == 0) throw new ValidationException($"\"{fileName}\" is empty.");
+        if (buffer.Length > Limits.MaxFileSizeBytes) throw TooLarge(fileName);
+        return buffer.ToArray();
+    }
+
+    private ValidationException TooLarge(string fileName) =>
+        new($"\"{fileName}\" is larger than the {Limits.MaxFileSizeMb} MB limit.");
+
+    /// <summary>Save the row and its content together, then fill in the uploader for display.</summary>
     private async Task CommitAsync(Attachment attachment, CancellationToken ct)
     {
-        try
-        {
-            await db.SaveChangesAsync(ct);
-        }
-        catch
-        {
-            try { storage.Delete(attachment.StoragePath); } catch { /* best effort */ }
-            throw;
-        }
+        await db.SaveChangesAsync(ct);
         await db.Entry(attachment).Reference(a => a.UploadedBy).LoadAsync(ct);
     }
 

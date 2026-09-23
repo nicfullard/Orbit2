@@ -25,6 +25,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<WorkingCalendarException> WorkingCalendarExceptions => Set<WorkingCalendarException>();
     public DbSet<CriticalPathAnalysis> CriticalPathAnalyses => Set<CriticalPathAnalysis>();
     public DbSet<Attachment> Attachments => Set<Attachment>();
+    public DbSet<AttachmentContent> AttachmentContents => Set<AttachmentContent>();
     public DbSet<NumberCounter> NumberCounters => Set<NumberCounter>();
 
     protected override void OnModelCreating(ModelBuilder builder)
@@ -233,7 +234,6 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             // Attached to exactly one task or one project (§6.18); the row dies with it, the uploader is only recorded.
             b.Property(a => a.FileName).HasMaxLength(255).IsRequired();
             b.Property(a => a.ContentType).HasMaxLength(200).IsRequired();
-            b.Property(a => a.StoragePath).HasMaxLength(300).IsRequired();
             b.HasOne(a => a.Task).WithMany(t => t.Attachments)
                 .HasForeignKey(a => a.TaskId).OnDelete(DeleteBehavior.Cascade);
             b.HasOne(a => a.Project).WithMany(p => p.Attachments)
@@ -243,6 +243,15 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             b.HasIndex(a => a.TaskId);
             b.HasIndex(a => a.ProjectId);
             b.ToTable(t => t.HasCheckConstraint("CK_Attachments_OneParent", "(\"TaskId\" IS NULL) <> (\"ProjectId\" IS NULL)"));
+        });
+
+        builder.Entity<AttachmentContent>(b =>
+        {
+            // The bytes, one row per attachment (§6.18), keyed by the attachment so the pair is one-to-one; gone when the attachment goes.
+            b.HasKey(c => c.AttachmentId);
+            b.Property(c => c.Data).IsRequired();
+            b.HasOne(c => c.Attachment).WithOne(a => a.Content)
+                .HasForeignKey<AttachmentContent>(c => c.AttachmentId).OnDelete(DeleteBehavior.Cascade);
         });
 
         builder.Entity<NumberCounter>(b =>

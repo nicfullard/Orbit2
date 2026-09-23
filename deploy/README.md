@@ -13,8 +13,11 @@ dotnet publish Orbit.Web -c Release -o /opt/orbit/app      # from the solution r
 sudo useradd --system --no-create-home --shell /usr/sbin/nologin orbit
 sudo chown -R orbit:orbit /opt/orbit
 sudo mkdir -p /var/lib/orbit/keys && sudo chown orbit:orbit /var/lib/orbit/keys && sudo chmod 700 /var/lib/orbit/keys
-sudo mkdir -p /var/lib/orbit/attachments && sudo chown orbit:orbit /var/lib/orbit/attachments && sudo chmod 700 /var/lib/orbit/attachments
 ```
+
+> **Upgrading a server that has `/var/lib/orbit/attachments`:** attachments are now stored in the database. Files already in that
+> directory are not imported - their rows stay listed but download as missing until they are deleted and uploaded again. Once
+> that is done, remove the directory and the `Attachments__Path` line from `/etc/orbit/orbit.env`.
 
 > **Upgrading a server installed before the project was renamed `Orbit` -> `Orbit.Web`:** the entry point is now
 > `Orbit.Web.dll`, not `Orbit.dll`. Do both of these, or the service will quietly keep running the **old** build:
@@ -211,8 +214,5 @@ any MFA or conditional access you have on AD/Microsoft 365. Users can turn on Or
 
 ## Backups
 
-Back up the `orbit` database, the Data Protection key ring directory (`/var/lib/orbit/keys`) **and** the attachments
-directory (`Attachments__Path`, `/var/lib/orbit/attachments` in this guide) - the files people attach to tasks and projects
-(spec §6.18) live there, with only their names and sizes in the database. Take the two together: a database restored without
-the directory lists attachments that can't be downloaded, and a directory without the database is a pile of files named by id.
-Losing the key ring signs every user out and invalidates outstanding password-reset links; it does not affect stored data.
+Back up the `orbit` database and the Data Protection key ring directory (`/var/lib/orbit/keys`). The files people attach to
+tasks and projects (spec §6.18) are stored in the database, so a database backup carries them. Losing the key ring signs every user out and invalidates outstanding password-reset links; it does not affect stored data.

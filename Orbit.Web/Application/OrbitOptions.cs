@@ -119,13 +119,11 @@ public sealed class CriticalPathOptions
     public int HoursPerWorkingDay { get; set; } = 8;
 }
 
-/// <summary>File attachments on tasks and projects (spec §6.18).</summary>
+/// <summary>File attachments on tasks and projects (spec §6.18). The bytes live in the database, so there is nothing to configure but the limits.</summary>
 public sealed class AttachmentOptions
 {
     public const string Section = "Attachments";
-    /// <summary>Directory the files are stored in. Relative paths are under the content root. Back it up with the database.</summary>
-    public string Path { get; set; } = "App_Data/attachments";
-    /// <summary>Largest single file accepted, in megabytes.</summary>
+    /// <summary>Largest single file accepted, in megabytes. A file is held in memory while it is saved and served, so keep this modest.</summary>
     public int MaxFileSizeMb { get; set; } = 25;
     /// <summary>How many files one upload may carry.</summary>
     public int MaxFilesPerUpload { get; set; } = 5;
