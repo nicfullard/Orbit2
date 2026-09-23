@@ -82,6 +82,20 @@ public static class AccessPolicy
         (a.IsDepartmentAdmin && a.DepartmentId == task.DepartmentId) ||
         e.UserId == a.UserId;
 
+    /// <summary>Attaching a file to a task (§6.18) follows the commenting rule: anyone who can see the task.</summary>
+    public static bool CanAttachToTask(Actor a, TaskItem t) => CanViewTask(a, t);
+
+    /// <summary>Attaching a file to a project: its own department, or a System Admin. A department that only shares the project (§6.2.1) sees its files read-only.</summary>
+    public static bool CanAttachToProject(Actor a, Project p) => a.CanAccessDepartment(p.DepartmentId);
+
+    /// <summary>Removing an attachment: whoever uploaded it, or anyone who may edit the task it is attached to.</summary>
+    public static bool CanDeleteAttachment(Actor a, Attachment at, TaskItem parent) =>
+        (a.UserId is not null && at.UploadedById == a.UserId) || CanEditTask(a, parent);
+
+    /// <summary>Removing an attachment: whoever uploaded it, or anyone who may edit the project it is attached to.</summary>
+    public static bool CanDeleteAttachment(Actor a, Attachment at, Project parent) =>
+        (a.UserId is not null && at.UploadedById == a.UserId) || CanEditProject(a, parent);
+
     public static bool CanManageUsers(Actor a) => a.IsSystemAdmin;
     public static bool CanManageDepartments(Actor a) => a.IsSystemAdmin;
     public static bool CanViewReports(Actor a) => a.IsSystemAdmin;

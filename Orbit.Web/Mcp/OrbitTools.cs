@@ -24,7 +24,8 @@ public sealed class OrbitTools(
     UserDirectoryService users,
     DepartmentService departments,
     TaskStructureService structure,
-    CriticalPathService criticalPaths)
+    CriticalPathService criticalPaths,
+    AttachmentService attachments)
 {
     private const string Clear = "none";
 
@@ -73,7 +74,8 @@ public sealed class OrbitTools(
     [McpServerTool(Name = "get_task"), Description(
         "Get a single task's full detail: its fields, parent chain (ancestors), subtasks, the dependencies it waits on (predecessors) and the ones " +
         "waiting on it (successors) - each with type FS/SS/FF/SF, lag, whether the gate is met and any planned-date conflict - plus waitingOn: " +
-        "the unmet links (own or inherited from a parent) that currently block its next status move. Also its comments.")]
+        "the unmet links (own or inherited from a parent) that currently block its next status move. Also its comments and attachments " +
+        "(file name, size, uploader and a downloadPath relative to Orbit's base URL; files are uploaded in the web UI).")]
     public Task<string> GetTask(
         [Description("Task id (GUID).")] string taskId,
         CancellationToken ct = default) => Run(async () =>
@@ -81,6 +83,7 @@ public sealed class OrbitTools(
         var id = RequireGuid(taskId, "taskId");
         var task = await tasks.GetAsync(id, ct);
         var taskComments = await comments.ListAsync(id, ct);
+        var taskFiles = await attachments.ListForTaskAsync(id, ct);
         var s = await structure.GetStructureAsync(task, ct);
         return new
         {
@@ -100,7 +103,8 @@ public sealed class OrbitTools(
                 dependencyId = w.Link.Id, taskId = w.Predecessor.Id, title = w.Predecessor.Title, status = w.Predecessor.Status,
                 type = w.Link.Type, code = w.Link.Type.Code(), viaParentId = w.ViaAncestor?.Id, viaParent = w.ViaAncestor?.Title, reason = w.Describe()
             }).ToList(),
-            comments = taskComments.Select(CommentDto).ToList()
+            comments = taskComments.Select(CommentDto).ToList(),
+            attachments = taskFiles.Select(AttachmentDto).ToList()
         };
     });
 
@@ -314,7 +318,8 @@ public sealed class OrbitTools(
     {
         var project = await projects.GetAsync(RequireGuid(projectId, "projectId"), ct);
         var links = await structure.ListForProjectAsync(project.Id, ct);
-        return ProjectDto(project, includeTasks: true, links);
+        var files = await attachments.ListForProjectAsync(project.Id, ct);
+        return ProjectDto(project, includeTasks: true, links, files);
     });
 
     [McpServerTool(Name = "get_project_status"), Description("Lightweight status summary of a project: task counts by status, overdue count, progress, time logged, and the headline of its last critical path analysis (criticalPath, null if never run; see get_critical_path). No task list.")]
@@ -571,7 +576,7 @@ public sealed class OrbitTools(
         createdAt = c.CreatedAt
     };
 
-    private static object ProjectDto(Project p, bool includeTasks, IReadOnlyList<TaskDependency>? dependencies = null)
+    private static object ProjectDto(Project p, bool includeTasks, IReadOnlyList<TaskDependency>? dependencies = null, IReadOnlyList<Attachment>? attachments = null)
     {
         var all = p.Tasks ?? [];
         return new
@@ -608,9 +613,19 @@ public sealed class OrbitTools(
                 id = l.Id, predecessorId = l.PredecessorTaskId, predecessor = l.Predecessor?.Title,
                 successorId = l.SuccessorTaskId, successor = l.Successor?.Title,
                 type = l.Type, code = l.Type.Code(), lagDays = l.LagDays
-            }).ToList()
+            }).ToList(),
+            // Files attached to the project itself (§6.18); each task's own files come with get_task.
+            attachments = attachments?.Select(AttachmentDto).ToList()
         };
     }
+
+    /// <summary>An attachment (§6.18). downloadPath is relative to Orbit's base URL; the bytes aren't returned over MCP.</summary>
+    private static object AttachmentDto(Attachment a) => new
+    {
+        id = a.Id, fileName = a.FileName, contentType = a.ContentType, sizeBytes = a.SizeBytes,
+        uploadedById = a.UploadedById, uploadedBy = a.UploadedBy?.DisplayName, uploadedAt = a.UploadedAt,
+        downloadPath = $"/Attachments/Download/{a.Id}"
+    };
 
     private static object IssueDto(PlanIssue i) => new { code = i.Code, message = i.Message, informational = i.Informational, taskIds = i.TaskIds, linkIds = i.LinkIds };
 

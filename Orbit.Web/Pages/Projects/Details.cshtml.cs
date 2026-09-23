@@ -1,14 +1,68 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.Extensions.Options;
 using Orbit.Application;
 using Orbit.Application.Models;
 using Orbit.Application.Services;
 using Orbit.Data.Entities;
+using Orbit.Helpers;
 using ValidationException = Orbit.Application.ValidationException;
 
 namespace Orbit.Pages.Projects;
 
-public class DetailsModel(ProjectService projects, UserDirectoryService users, TaskStructureService structure, CriticalPathService criticalPaths, IActorProvider actors) : OrbitPageModel
+public class DetailsModel(
+    ProjectService projects,
+    UserDirectoryService users,
+    TaskStructureService structure,
+    CriticalPathService criticalPaths,
+    AttachmentService attachments,
+    IOptions<AttachmentOptions> attachmentOptions,
+    IActorProvider actors) : OrbitPageModel
 {
+    /// <summary>Files attached to the project (§6.18).</summary>
+    public IReadOnlyList<Attachment> Attachments { get; private set; } = [];
+    public bool CanAttach { get; private set; }
+    public AttachmentOptions AttachmentLimits => attachmentOptions.Value;
+
+    /// <summary>An upload may exceed the default request body limit; raise it before the files are read (see Uploads).</summary>
+    public override void OnPageHandlerSelected(PageHandlerSelectedContext context)
+    {
+        if (context.HandlerMethod?.MethodInfo.Name == nameof(OnPostAttachAsync)) Uploads.AllowUploadBody(HttpContext, AttachmentLimits);
+    }
+
+    public async Task<IActionResult> OnPostAttachAsync(Guid id, List<IFormFile> files, CancellationToken ct)
+    {
+        if (files.Count == 0) Error("Choose at least one file.");
+        else if (files.Count > AttachmentLimits.MaxFilesPerUpload) Error($"At most {AttachmentLimits.MaxFilesPerUpload} files per upload.");
+        else
+        {
+            var added = new List<string>();
+            foreach (var file in files)
+            {
+                try
+                {
+                    await using var content = file.OpenReadStream();
+                    var a = await attachments.AddToProjectAsync(id, new AttachmentUpload(file.FileName, file.ContentType, file.Length, content), ct);
+                    added.Add(a.FileName);
+                }
+                catch (ValidationException ex) { Error(ex.Message); }
+            }
+            if (added.Count > 0) Success(added.Count == 1 ? $"Attached \"{added[0]}\"." : $"Attached {added.Count} files.");
+        }
+        return RedirectToPage(new { id });
+    }
+
+    public async Task<IActionResult> OnPostDeleteAttachmentAsync(Guid id, Guid attachmentId, CancellationToken ct)
+    {
+        try
+        {
+            await attachments.DeleteAsync(attachmentId, ct);
+            Success("Attachment deleted.");
+        }
+        catch (ValidationException ex) { Error(ex.Message); }
+        return RedirectToPage(new { id });
+    }
+
     /// <summary>The headline of the last critical path analysis (§6.17), or null when none has been run.</summary>
     public CriticalPathSummary? CriticalPath { get; private set; }
     public bool CanRunAnalysis { get; private set; }
@@ -61,6 +115,8 @@ public class DetailsModel(ProjectService projects, UserDirectoryService users, T
         Waiting = await structure.GetWaitingAsync(Tasks, ct);
         CriticalPath = await criticalPaths.GetSummaryAsync(Project, ct);
         CanRunAnalysis = AccessPolicy.CanRunCriticalPath(Actor, Project);
+        Attachments = await attachments.ListForProjectAsync(id, ct);
+        CanAttach = Project.Status != ProjectStatus.Archived && AccessPolicy.CanAttachToProject(Actor, Project);
         return Page();
     }
 

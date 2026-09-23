@@ -24,6 +24,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<WorkingCalendar> WorkingCalendars => Set<WorkingCalendar>();
     public DbSet<WorkingCalendarException> WorkingCalendarExceptions => Set<WorkingCalendarException>();
     public DbSet<CriticalPathAnalysis> CriticalPathAnalyses => Set<CriticalPathAnalysis>();
+    public DbSet<Attachment> Attachments => Set<Attachment>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -220,6 +221,23 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             b.Property(a => a.InputFingerprint).HasMaxLength(64).IsRequired();
             b.Property(a => a.ResultData).HasColumnType("jsonb");
             b.HasIndex(a => new { a.ProjectId, a.RunAt });
+        });
+
+        builder.Entity<Attachment>(b =>
+        {
+            // Attached to exactly one task or one project (§6.18); the row dies with it, the uploader is only recorded.
+            b.Property(a => a.FileName).HasMaxLength(255).IsRequired();
+            b.Property(a => a.ContentType).HasMaxLength(200).IsRequired();
+            b.Property(a => a.StoragePath).HasMaxLength(300).IsRequired();
+            b.HasOne(a => a.Task).WithMany(t => t.Attachments)
+                .HasForeignKey(a => a.TaskId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(a => a.Project).WithMany(p => p.Attachments)
+                .HasForeignKey(a => a.ProjectId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(a => a.UploadedBy).WithMany()
+                .HasForeignKey(a => a.UploadedById).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(a => a.TaskId);
+            b.HasIndex(a => a.ProjectId);
+            b.ToTable(t => t.HasCheckConstraint("CK_Attachments_OneParent", "(\"TaskId\" IS NULL) <> (\"ProjectId\" IS NULL)"));
         });
 
         // Store every enum as its name so the database is readable and filterable in SQL.

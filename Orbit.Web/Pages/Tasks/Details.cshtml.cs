@@ -1,5 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.Extensions.Options;
 using Orbit.Application;
 using Orbit.Application.Models;
 using Orbit.Application.Services;
@@ -16,6 +18,8 @@ public class DetailsModel(
     AuditService audit,
     UserDirectoryService users,
     TaskStructureService structure,
+    AttachmentService attachments,
+    IOptions<AttachmentOptions> attachmentOptions,
     IActorProvider actors) : OrbitPageModel
 {
     public sealed class TimeForm
@@ -49,6 +53,51 @@ public class DetailsModel(
     /// <summary>Whether the actor may add a link from this task's page (edit rights on it; the far end is checked server-side).</summary>
     public bool CanLink { get; private set; }
     public bool CanAddSubtask { get; private set; }
+    /// <summary>Files attached to the task (§6.18).</summary>
+    public IReadOnlyList<Attachment> Attachments { get; private set; } = [];
+    public bool CanAttach { get; private set; }
+    public AttachmentOptions AttachmentLimits => attachmentOptions.Value;
+
+    /// <summary>An upload may exceed the default request body limit; raise it before the files are read (see Uploads).</summary>
+    public override void OnPageHandlerSelected(PageHandlerSelectedContext context)
+    {
+        if (context.HandlerMethod?.MethodInfo.Name == nameof(OnPostAttachAsync)) Uploads.AllowUploadBody(HttpContext, AttachmentLimits);
+    }
+
+    public async Task<IActionResult> OnPostAttachAsync(Guid id, List<IFormFile> files, CancellationToken ct)
+    {
+        await AttachAsync(id, files, ct);
+        return RedirectToPage(new { id });
+    }
+
+    public async Task<IActionResult> OnPostDeleteAttachmentAsync(Guid id, Guid attachmentId, CancellationToken ct)
+    {
+        try
+        {
+            await attachments.DeleteAsync(attachmentId, ct);
+            Success("Attachment deleted.");
+        }
+        catch (ValidationException ex) { Error(ex.Message); }
+        return RedirectToPage(new { id });
+    }
+
+    private async Task AttachAsync(Guid id, List<IFormFile> files, CancellationToken ct)
+    {
+        if (files.Count == 0) { Error("Choose at least one file."); return; }
+        if (files.Count > AttachmentLimits.MaxFilesPerUpload) { Error($"At most {AttachmentLimits.MaxFilesPerUpload} files per upload."); return; }
+        var added = new List<string>();
+        foreach (var file in files)
+        {
+            try
+            {
+                await using var content = file.OpenReadStream();
+                var a = await attachments.AddToTaskAsync(id, new AttachmentUpload(file.FileName, file.ContentType, file.Length, content), ct);
+                added.Add(a.FileName);
+            }
+            catch (ValidationException ex) { Error(ex.Message); }
+        }
+        if (added.Count > 0) Success(added.Count == 1 ? $"Attached \"{added[0]}\"." : $"Attached {added.Count} files.");
+    }
 
     [BindProperty] public string? CommentBody { get; set; }
     [BindProperty] public TimeForm Time { get; set; } = new();
@@ -199,5 +248,8 @@ public class DetailsModel(
             ? Actor.CanAccessDepartment(Task.DepartmentId)
             : Task.Project.Status != ProjectStatus.Archived && AccessPolicy.CanAddTaskToProject(Actor, Task.Project));
         if (CanLink) LinkCandidates = await structure.ListLinkCandidatesAsync(Task, ct);
+
+        Attachments = await attachments.ListForTaskAsync(id, ct);
+        CanAttach = AccessPolicy.CanAttachToTask(Actor, Task);
     }
 }

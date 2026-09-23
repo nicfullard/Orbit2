@@ -303,3 +303,45 @@
         }
     </div>
 </div>
+
+<div class="card mb-3">
+    <div class="card-header fw-semibold">Attachments <span class="text-muted fw-normal">(@Model.Attachments.Count)</span></div>
+    <div class="card-body">
+        @if (Model.Attachments.Count == 0)
+        {
+            <p class="text-muted fst-italic mb-2">No attachments.</p>
+        }
+        else
+        {
+            <ul class="list-unstyled mb-2 attachment-list">
+                @foreach (var a in Model.Attachments)
+                {
+                    <li class="d-flex justify-content-between align-items-center gap-2 border-bottom py-1">
+                        <div class="text-truncate">
+                            <a asp-page="/Attachments/Download" asp-route-id="@a.Id" class="text-decoration-none fw-semibold" title="Download">@a.FileName</a>
+                            <div class="small text-muted">@Ui.Bytes(a.SizeBytes) · @Ui.AuthorName(a.UploadedBy) · @Ui.When(a.UploadedAt)</div>
+                        </div>
+                        @if (AccessPolicy.CanDeleteAttachment(Model.Actor, a, p))
+                        {
+                            <form method="post" asp-page-handler="DeleteAttachment" asp-route-id="@p.Id" asp-route-attachmentId="@a.Id" data-confirm="Delete the attachment &quot;@a.FileName&quot;?">
+                                <button class="btn btn-sm btn-outline-danger py-0" type="submit" title="Delete this attachment">Delete</button>
+                            </form>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+        @if (Model.CanAttach)
+        {
+            <form method="post" enctype="multipart/form-data" asp-page-handler="Attach" asp-route-id="@p.Id" class="d-flex flex-wrap gap-2 align-items-center">
+                <input type="file" name="files" class="form-control form-control-sm w-auto" multiple required aria-label="Files to attach" />
+                <button class="btn btn-sm btn-primary" type="submit">Upload</button>
+                <span class="form-text mt-0">Up to @Model.AttachmentLimits.MaxFilesPerUpload files, @Model.AttachmentLimits.MaxFileSizeMb MB each.</span>
+            </form>
+        }
+        else if (Model.IsSharedView)
+        {
+            <p class="text-muted small mb-0">Only @p.Department.Name can attach files to this project.</p>
+        }
+    </div>
+</div>

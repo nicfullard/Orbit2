@@ -25,6 +25,8 @@ public static class AuditAction
     public const string SprintChanged = "SprintChanged";
     public const string Started = "Started";
     public const string CommentAdded = "CommentAdded";
+    public const string AttachmentAdded = "AttachmentAdded";
+    public const string AttachmentRemoved = "AttachmentRemoved";
     public const string TimeLogged = "TimeLogged";
     public const string TimeUpdated = "TimeUpdated";
     public const string TimeDeleted = "TimeDeleted";

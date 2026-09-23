@@ -118,3 +118,18 @@ public sealed class CriticalPathOptions
     /// <summary>Hands-on hours a working day is taken to hold when an estimate is compared with its planning window.</summary>
     public int HoursPerWorkingDay { get; set; } = 8;
 }
+
+/// <summary>File attachments on tasks and projects (spec §6.18).</summary>
+public sealed class AttachmentOptions
+{
+    public const string Section = "Attachments";
+    /// <summary>Directory the files are stored in. Relative paths are under the content root. Back it up with the database.</summary>
+    public string Path { get; set; } = "App_Data/attachments";
+    /// <summary>Largest single file accepted, in megabytes.</summary>
+    public int MaxFileSizeMb { get; set; } = 25;
+    /// <summary>How many files one upload may carry.</summary>
+    public int MaxFilesPerUpload { get; set; } = 5;
+    public long MaxFileSizeBytes => (long)MaxFileSizeMb * 1024 * 1024;
+    /// <summary>The request body an upload may need: every file at the limit, plus room for the form itself.</summary>
+    public long MaxUploadBodyBytes => MaxFilesPerUpload * MaxFileSizeBytes + 1024 * 1024;
+}

@@ -21,4 +21,6 @@ public class Project
 
     public ICollection<TaskItem> Tasks { get; set; } = new List<TaskItem>();
     public ICollection<RecurringTaskDefinition> RecurringTaskDefinitions { get; set; } = new List<RecurringTaskDefinition>();
+    /// <summary>Files attached to this project (spec §6.18).</summary>
+    public ICollection<Attachment> Attachments { get; set; } = new List<Attachment>();
 }

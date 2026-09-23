@@ -32,6 +32,7 @@ builder.Services.Configure<DatabaseOptions>(config.GetSection(DatabaseOptions.Se
 builder.Services.Configure<AgentOptions>(config.GetSection(AgentOptions.Section));
 builder.Services.Configure<SecurityOptions>(config.GetSection(SecurityOptions.Section));
 builder.Services.Configure<CriticalPathOptions>(config.GetSection(CriticalPathOptions.Section));
+builder.Services.Configure<AttachmentOptions>(config.GetSection(AttachmentOptions.Section));
 var security = config.GetSection(SecurityOptions.Section).Get<SecurityOptions>() ?? new SecurityOptions();
 
 // Behind nginx/Caddy on the same host (deploy/README.md) the app only ever sees 127.0.0.1 over plain http.
@@ -115,6 +116,8 @@ builder.Services.AddScoped<TaskService>();
 builder.Services.AddScoped<TaskStructureService>();
 builder.Services.AddScoped<ProjectService>();
 builder.Services.AddScoped<CommentService>();
+builder.Services.AddSingleton<AttachmentStorage>();
+builder.Services.AddScoped<AttachmentService>();
 builder.Services.AddScoped<SprintService>();
 builder.Services.AddScoped<RecurrenceService>();
 builder.Services.AddScoped<TimeEntryService>();

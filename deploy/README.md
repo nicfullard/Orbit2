@@ -13,6 +13,7 @@ dotnet publish Orbit.Web -c Release -o /opt/orbit/app      # from the solution r
 sudo useradd --system --no-create-home --shell /usr/sbin/nologin orbit
 sudo chown -R orbit:orbit /opt/orbit
 sudo mkdir -p /var/lib/orbit/keys && sudo chown orbit:orbit /var/lib/orbit/keys && sudo chmod 700 /var/lib/orbit/keys
+sudo mkdir -p /var/lib/orbit/attachments && sudo chown orbit:orbit /var/lib/orbit/attachments && sudo chmod 700 /var/lib/orbit/attachments
 ```
 
 > **Upgrading a server installed before the project was renamed `Orbit` -> `Orbit.Web`:** the entry point is now
@@ -210,5 +211,8 @@ any MFA or conditional access you have on AD/Microsoft 365. Users can turn on Or
 
 ## Backups
 
-Back up the `orbit` database **and** the Data Protection key ring directory (`/var/lib/orbit/keys`).
+Back up the `orbit` database, the Data Protection key ring directory (`/var/lib/orbit/keys`) **and** the attachments
+directory (`Attachments__Path`, `/var/lib/orbit/attachments` in this guide) - the files people attach to tasks and projects
+(spec §6.18) live there, with only their names and sizes in the database. Take the two together: a database restored without
+the directory lists attachments that can't be downloaded, and a directory without the database is a pile of files named by id.
 Losing the key ring signs every user out and invalidates outstanding password-reset links; it does not affect stored data.

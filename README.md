@@ -61,6 +61,8 @@ Self-registration is disabled: accounts are created under **Admin > Users**.
 | Create tasks/projects | own department | own department | any |
 | Edit tasks | own/assigned | any in department | any |
 | Take an unassigned task (assign it to yourself) | own department | own department | any |
+| Attach files to tasks / projects (spec §6.18) | own department's tasks / projects | own department | any |
+| Delete an attachment | own uploads, or on tasks/projects they can edit | any in department | any |
 | Close tasks (Done/Cancelled) | no | own department | any |
 | File a task under another department's project (spec §6.2.1) | no | no | yes |
 | Set a task's parent; add/remove its dependencies (spec §6.15) | tasks they can edit | own department | any |

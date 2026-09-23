@@ -52,6 +52,8 @@ public class TaskItem
 
     public ICollection<Comment> Comments { get; set; } = new List<Comment>();
     public ICollection<TimeEntry> TimeEntries { get; set; } = new List<TimeEntry>();
+    /// <summary>Files attached to this task (spec §6.18).</summary>
+    public ICollection<Attachment> Attachments { get; set; } = new List<Attachment>();
     /// <summary>Links where this task is the successor: the tasks this one waits on (spec §6.15).</summary>
     public ICollection<TaskDependency> PredecessorLinks { get; set; } = new List<TaskDependency>();
     /// <summary>Links where this task is the predecessor: the tasks waiting on this one.</summary>

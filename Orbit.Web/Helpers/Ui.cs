@@ -98,6 +98,15 @@ public static class Ui
         return When(utc);
     }
 
+    /// <summary>A file size for people: "812 B", "12.4 KB", "3.1 MB".</summary>
+    public static string Bytes(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:0.#} KB",
+        < 1024L * 1024 * 1024 => $"{bytes / (1024.0 * 1024):0.#} MB",
+        _ => $"{bytes / (1024.0 * 1024 * 1024):0.##} GB"
+    };
+
     public static string Truncate(string? s, int max) =>
         string.IsNullOrEmpty(s) ? string.Empty : s.Length <= max ? s : s[..max].TrimEnd() + "...";
 
@@ -115,6 +124,8 @@ public static class Ui
         "SprintChanged" => "re-planned",
         "Started" => "started",
         "CommentAdded" => "commented on",
+        "AttachmentAdded" => "attached a file to",
+        "AttachmentRemoved" => "removed an attachment from",
         "TimeLogged" => "logged time on",
         "TimeUpdated" => "edited a time entry on",
         "TimeDeleted" => "deleted a time entry on",
