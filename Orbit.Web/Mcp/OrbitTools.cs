@@ -1,7 +1,9 @@
 using System.ComponentModel;
 using System.Globalization;
 using System.Text.Json;
+using Microsoft.Extensions.Options;
 using ModelContextProtocol;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Orbit.Application;
 using Orbit.Application.Models;
@@ -26,7 +28,8 @@ public sealed class OrbitTools(
     DepartmentService departments,
     TaskStructureService structure,
     CriticalPathService criticalPaths,
-    AttachmentService attachments)
+    AttachmentService attachments,
+    IOptions<AttachmentOptions> attachmentOptions)
 {
     private const string Clear = "none";
 
@@ -76,7 +79,7 @@ public sealed class OrbitTools(
         "Get a single task's full detail: its fields, parent chain (ancestors), subtasks, the dependencies it waits on (predecessors) and the ones " +
         "waiting on it (successors) - each with type FS/SS/FF/SF, lag, whether the gate is met and any planned-date conflict - plus waitingOn: " +
         "the unmet links (own or inherited from a parent) that currently block its next status move. Also its comments and attachments " +
-        "(file name, size, uploader and a downloadPath relative to Orbit's base URL; files are uploaded in the web UI).")]
+        "(file name, size, uploader and a downloadPath relative to Orbit's base URL; get_attachment returns a file's content; files are uploaded in the web UI).")]
     public Task<string> GetTask(
         [Description("Task id (GUID), or task number such as T-26-00012.")] string taskId,
         CancellationToken ct = default) => Run(async () =>
@@ -232,6 +235,69 @@ public sealed class OrbitTools(
     {
         var list = await comments.ListAsync(await TaskIdAsync(taskId, ct), ct);
         return new { items = list.Select(CommentDto).ToList(), totalCount = list.Count };
+    });
+
+    // ---------------------------------------------------------------- attachments
+
+    [McpServerTool(Name = "get_attachment"), Description(
+        "Get the content of a file attached to a task or project - one of the attachments that get_task / get_project list. " +
+        "Returns two content blocks: JSON describing the file (its metadata, taskId or projectId, and what follows), then the file itself: " +
+        "text files (text/*, JSON, XML and the like, or an untyped file that is valid UTF-8) as text, PNG/JPEG/GIF/WebP as an image, " +
+        "anything else (PDF, Office documents, archives...) as an embedded resource carrying base64 data. A file over Orbit's size limit for " +
+        "this tool is described but not returned: the JSON says so, and downloadPath is the web UI download. Visible to whoever may see the task or project.")]
+    public Task<CallToolResult> GetAttachment(
+        [Description("Attachment id (GUID), from the attachments list of get_task or get_project.")] string attachmentId,
+        CancellationToken ct = default) => RunResult(async () =>
+    {
+        var (attachment, content) = await attachments.DownloadAsync(RequireGuid(attachmentId, "attachmentId"), ct);
+        var limits = attachmentOptions.Value;
+        if (content.Length > limits.MaxMcpFileSizeBytes)
+        {
+            return new CallToolResult
+            {
+                Content =
+                [
+                    Json(new
+                    {
+                        attachment = AttachmentDto(attachment), taskId = attachment.TaskId, projectId = attachment.ProjectId,
+                        content = "notReturned",
+                        reason = $"The file is {attachment.SizeBytes} bytes, over the {limits.MaxMcpFileSizeMb} MB limit for get_attachment; it can be downloaded from downloadPath in the web UI."
+                    })
+                ]
+            };
+        }
+
+        var kind = AttachmentClassifier.Classify(attachment.ContentType, content);
+        ContentBlock body = kind switch
+        {
+            AttachmentContentKind.Text => new TextContentBlock { Text = AttachmentClassifier.DecodeText(content) },
+            AttachmentContentKind.Image => new ImageContentBlock
+            {
+                Data = content,
+                MimeType = AttachmentClassifier.MediaType(attachment.ContentType)
+            },
+            _ => new EmbeddedResourceBlock
+            {
+                Resource = new BlobResourceContents
+                {
+                    Uri = $"orbit://attachments/{attachment.Id}",
+                    MimeType = attachment.ContentType,
+                    Blob = content
+                }
+            }
+        };
+        return new CallToolResult
+        {
+            Content =
+            [
+                Json(new
+                {
+                    attachment = AttachmentDto(attachment), taskId = attachment.TaskId, projectId = attachment.ProjectId,
+                    content = kind switch { AttachmentContentKind.Text => "text", AttachmentContentKind.Image => "image", _ => "binary" }
+                }),
+                body
+            ]
+        };
     });
 
     // --------------------------------------------------------- dependencies
@@ -524,6 +590,22 @@ public sealed class OrbitTools(
             throw new McpException(ex.Message);
         }
     }
+
+    /// <summary>For a tool that builds its own content blocks (get_attachment); errors surface the same way as in Run.</summary>
+    private static async Task<CallToolResult> RunResult(Func<Task<CallToolResult>> action)
+    {
+        try
+        {
+            return await action();
+        }
+        catch (OrbitException ex)
+        {
+            throw new McpException(ex.Message);
+        }
+    }
+
+    /// <summary>A JSON text block, serialized the same way as every other tool's result.</summary>
+    private static TextContentBlock Json(object value) => new() { Text = JsonSerializer.Serialize(value, OrbitJson.Options) };
 
     private static object Paged<T>(PagedResult<T> result, Func<T, object> map) => new
     {

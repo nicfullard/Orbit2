@@ -28,7 +28,7 @@ Inside `Orbit.Web/`, folders stand in for the layers of spec §11, and namespace
 | `Application/` | Services (`TaskService`, `ProjectService`, `SprintService`, ...), `Actor` + `AccessPolicy` (the §6.5 rules), models |
 | `Auth/` | API-key and Orbit Agent authentication schemes, `OrbitSignInManager` (directory sign-in), claims factory, actor resolution, page filters |
 | `Agents/` | Server side of the Orbit Agent: the SignalR hub agents connect to, the registry of connected agents, the register/de-register endpoints |
-| `Mcp/` | `OrbitTools` - the 14 MCP tools, mapped onto the same services the UI uses |
+| `Mcp/` | `OrbitTools` - the 19 MCP tools, mapped onto the same services the UI uses |
 | `Jobs/` | Quartz.NET jobs: recurring-task generation and due-date notifications, cron-scheduled from `Jobs:*` |
 | `Reporting/` | QuestPDF report rendering |
 | `Pages/` | Razor Pages UI (dashboard, tasks, projects, backlog, sprints, recurring, time, admin, reports) |
@@ -116,13 +116,16 @@ dotnet run --project Orbit.Agent -- help
 - Endpoint: `https://<host>/mcp` (Streamable HTTP, stateless)
 - Auth: `Authorization: Bearer <api key>` - keys are issued under **Admin > API Keys** with a role and
   department, and are shown once.
-- Tools: `create_task`, `get_task`, `list_tasks`, `update_task`, `add_comment`, `list_comments`,
+- Tools: `create_task`, `get_task`, `list_tasks`, `update_task`, `add_comment`, `list_comments`, `get_attachment`,
   `add_dependency`, `remove_dependency`, `create_project`, `get_project`, `get_project_status`,
   `list_projects`, `update_project`, `list_activity`, `list_users`, `list_departments`, `get_critical_path`, `run_critical_path_analysis`.
 - Tasks can be subtasks (`parentTaskId`) and can depend on each other (`add_dependency`: FS, SS, FF or SF
   plus a lag in days, spec §6.15). Links gate status changes - the successor can't start / finish until the
   predecessor has - and a parent can't close while a subtask is open; `get_task` reports what a task is
   waiting on, and `get_project` returns the whole dependency list.
+- Files attached to tasks and projects (spec §6.18) are listed by `get_task` / `get_project` and read with
+  `get_attachment` - text as text, images as images, anything else as base64 - up to `Attachments:MaxMcpFileSizeMb`
+  (default 5 MB); uploading is web-UI only.
 
 Every API write is stamped `Source = Api`, attributed to the `Claude` user and written to the audit log.
 `create_task` accepts an `idempotencyKey` so retries do not create duplicates.

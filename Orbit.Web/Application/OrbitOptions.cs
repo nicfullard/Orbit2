@@ -127,7 +127,13 @@ public sealed class AttachmentOptions
     public int MaxFileSizeMb { get; set; } = 25;
     /// <summary>How many files one upload may carry.</summary>
     public int MaxFilesPerUpload { get; set; } = 5;
+    /// <summary>
+    /// Largest attachment the get_attachment MCP tool returns, in megabytes; a bigger file is described but not returned.
+    /// The whole file lands in the model's context (a third larger again as base64), so keep this small.
+    /// </summary>
+    public int MaxMcpFileSizeMb { get; set; } = 5;
     public long MaxFileSizeBytes => (long)MaxFileSizeMb * 1024 * 1024;
+    public long MaxMcpFileSizeBytes => (long)MaxMcpFileSizeMb * 1024 * 1024;
     /// <summary>The request body an upload may need: every file at the limit, plus room for the form itself.</summary>
     public long MaxUploadBodyBytes => MaxFilesPerUpload * MaxFileSizeBytes + 1024 * 1024;
 }

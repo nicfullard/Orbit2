@@ -141,7 +141,8 @@ builder.Services.AddMcpServer(o =>
         o.ServerInstructions = "Orbit is the company's task and project tracker. Use list_departments / list_users / list_projects " +
             "to resolve ids before creating or updating tasks. Every write you make is tagged as API-created and audited. " +
             "For a project's critical path, task float and project-buffer status use get_critical_path - Orbit's stored, deterministic analysis - " +
-            "rather than deriving criticality from raw tasks; run_critical_path_analysis runs and stores a fresh one.";
+            "rather than deriving criticality from raw tasks; run_critical_path_analysis runs and stores a fresh one. " +
+            "Files attached to tasks and projects are listed by get_task / get_project and read with get_attachment.";
     })
     .WithHttpTransport(o => o.SessionMode = HttpServerSessionMode.Stateless)
     .WithTools<OrbitTools>();
