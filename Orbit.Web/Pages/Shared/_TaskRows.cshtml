@@ -35,7 +35,9 @@ else
                     var canView = AccessPolicy.CanViewTask(Model.Actor, t);
                     var overdue = t.IsOverdue(Model.Today);
                     var statuses = Ui.AllowedStatuses(Model.Actor, t);
-                    var quickEdit = Model.QuickEditAssignees is not null && canView && AccessPolicy.CanEditTask(Model.Actor, t);
+                    var canEdit = canView && AccessPolicy.CanEditTask(Model.Actor, t);
+                    var quickEdit = Model.QuickEditAssignees is not null && canEdit;
+                    var quickDue = quickEdit || (Model.QuickEditDueDate && canEdit);
                     <tr>
                         @if (selectable)
                         {
@@ -135,7 +137,7 @@ else
                             </td>
                         }
                         <td class="@(overdue ? "text-danger fw-semibold" : "")">
-                            @if (quickEdit)
+                            @if (quickDue)
                             {
                                 var due = t.DueDate?.ToString("yyyy-MM-dd") ?? string.Empty;
                                 <form method="post" asp-page="/Tasks/Quick" asp-page-handler="DueDate" asp-route-id="@t.Id" asp-route-returnUrl="@Model.ReturnUrl" class="d-inline">

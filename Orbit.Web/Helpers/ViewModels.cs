@@ -15,6 +15,11 @@ public sealed class TaskRowsVm
     /// Candidates are filtered per row to the task's department plus System Admins. Null = read-only cells.
     /// </summary>
     public IReadOnlyList<UserSummary>? QuickEditAssignees { get; init; }
+    /// <summary>
+    /// Inline due-date control on rows the actor may edit, without the assignee control (My Tasks, where every row is
+    /// the viewer's own). Implied when <see cref="QuickEditAssignees"/> is set.
+    /// </summary>
+    public bool QuickEditDueDate { get; init; }
     /// <summary>Show the "Today" day-plan checkbox column (§6.12) on open rows the actor may plan.</summary>
     public bool ShowPlanToday { get; init; }
     public bool ShowProject { get; init; } = true;
