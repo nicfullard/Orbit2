@@ -55,7 +55,7 @@
             }
             @if (Model.Structure.WaitingOn.Count > 0)
             {
-                <span class="badge text-bg-warning" title="@(t.Status == TaskItemStatus.Todo ? "Can't start until: " : "Can't finish until: ")@string.Join("; ", Model.Structure.WaitingOn.Select(w => w.Describe()))">Waiting</span>
+                <span class="badge text-bg-warning" title="@(t.Status == TaskItemStatus.Todo ? "Can't start until: " : "Can't finish until: ")@string.Join("; ", Model.Structure.WaitingOn.Select(w => w.Describe()))">Gated</span>
             }
             @if (Model.Structure.HasDateConflict)
             {

@@ -84,7 +84,7 @@ else
                             }
                             @if (Model.Waiting is not null && Model.Waiting.TryGetValue(t.Id, out var waiting))
                             {
-                                <span class="badge text-bg-warning ms-1" title="@waiting.Reason">Waiting</span>
+                                <span class="badge text-bg-warning ms-1" title="@waiting.Reason">Gated</span>
                             }
                             @if (t.ParentTask is not null)
                             {

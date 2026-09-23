@@ -119,6 +119,7 @@ public sealed class ProjectService(ApplicationDbContext db, IActorProvider actor
                 g.Key.Name,
                 Todo = g.Count(t => t.Status == TaskItemStatus.Todo),
                 InProgress = g.Count(t => t.Status == TaskItemStatus.InProgress),
+                Waiting = g.Count(t => t.Status == TaskItemStatus.Waiting),
                 Blocked = g.Count(t => t.Status == TaskItemStatus.Blocked),
                 Done = g.Count(t => t.Status == TaskItemStatus.Done),
                 Cancelled = g.Count(t => t.Status == TaskItemStatus.Cancelled),
@@ -127,12 +128,12 @@ public sealed class ProjectService(ApplicationDbContext db, IActorProvider actor
             })
             .OrderBy(d => d.Name)
             .ToListAsync(ct))
-            .Select(d => new DepartmentTaskCount(d.DepartmentId, d.Name, d.Todo, d.InProgress, d.Blocked, d.Done, d.Cancelled, d.Overdue))
+            .Select(d => new DepartmentTaskCount(d.DepartmentId, d.Name, d.Todo, d.InProgress, d.Waiting, d.Blocked, d.Done, d.Cancelled, d.Overdue))
             .ToList();
 
         return new ProjectStatusSummary(project.Id, project.Name, project.Status, project.Department.Name, project.DepartmentId,
             project.Owner.DisplayName, project.TargetDate, project.RequiredBufferWorkingDays, byDepartment.Sum(d => d.Total),
-            byDepartment.Sum(d => d.Todo), byDepartment.Sum(d => d.InProgress), byDepartment.Sum(d => d.Blocked),
+            byDepartment.Sum(d => d.Todo), byDepartment.Sum(d => d.InProgress), byDepartment.Sum(d => d.Waiting), byDepartment.Sum(d => d.Blocked),
             byDepartment.Sum(d => d.Done), byDepartment.Sum(d => d.Cancelled), byDepartment.Sum(d => d.Overdue), minutes, estimated,
             byDepartment);
     }

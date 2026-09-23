@@ -74,6 +74,7 @@ public sealed class SprintService(ApplicationDbContext db, IActorProvider actors
         {
             Column("To do", TaskItemStatus.Todo, t => t.Status == TaskItemStatus.Todo),
             Column("In progress", TaskItemStatus.InProgress, t => t.Status == TaskItemStatus.InProgress),
+            Column("Waiting", TaskItemStatus.Waiting, t => t.Status == TaskItemStatus.Waiting),
             Column("Blocked", TaskItemStatus.Blocked, t => t.Status == TaskItemStatus.Blocked),
             Column("Done", TaskItemStatus.Done, t => t.Status == TaskItemStatus.Done || t.Status == TaskItemStatus.Cancelled)
         };

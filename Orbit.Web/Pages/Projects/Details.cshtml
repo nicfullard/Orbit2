@@ -87,6 +87,7 @@
                 <div class="d-flex flex-wrap gap-1 small">
                     <span class="badge text-bg-secondary">Todo @s.Todo</span>
                     <span class="badge text-bg-primary">In progress @s.InProgress</span>
+                    <span class="badge text-bg-info">Waiting @s.Waiting</span>
                     <span class="badge text-bg-danger">Blocked @s.Blocked</span>
                     <span class="badge text-bg-success">Done @s.Done</span>
                     <span class="badge text-bg-dark">Cancelled @s.Cancelled</span>
@@ -172,6 +173,7 @@
                             <th>Department</th>
                             <th class="text-end">To do</th>
                             <th class="text-end">In progress</th>
+                            <th class="text-end">Waiting</th>
                             <th class="text-end">Blocked</th>
                             <th class="text-end">Done</th>
                             <th class="text-end">Overdue</th>
@@ -195,6 +197,7 @@
                                 </td>
                                 <td class="text-end"><a asp-page="/Projects/Details" asp-route-id="@p.Id" asp-route-DepartmentId="@d.DepartmentId" asp-route-Status="Todo" class="text-decoration-none">@d.Todo</a></td>
                                 <td class="text-end"><a asp-page="/Projects/Details" asp-route-id="@p.Id" asp-route-DepartmentId="@d.DepartmentId" asp-route-Status="InProgress" class="text-decoration-none text-primary">@d.InProgress</a></td>
+                                <td class="text-end"><a asp-page="/Projects/Details" asp-route-id="@p.Id" asp-route-DepartmentId="@d.DepartmentId" asp-route-Status="Waiting" class="text-decoration-none @(d.Waiting > 0 ? "text-info-emphasis" : "")">@d.Waiting</a></td>
                                 <td class="text-end"><a asp-page="/Projects/Details" asp-route-id="@p.Id" asp-route-DepartmentId="@d.DepartmentId" asp-route-Status="Blocked" class="text-decoration-none @(d.Blocked > 0 ? "text-danger fw-semibold" : "")">@d.Blocked</a></td>
                                 <td class="text-end"><a asp-page="/Projects/Details" asp-route-id="@p.Id" asp-route-DepartmentId="@d.DepartmentId" asp-route-Status="Done" class="text-decoration-none text-success">@d.Done</a></td>
                                 <td class="text-end @(d.Overdue > 0 ? "text-danger fw-semibold" : "text-muted")">@d.Overdue</td>
@@ -212,6 +215,7 @@
                                 <td>All departments</td>
                                 <td class="text-end">@s.Todo</td>
                                 <td class="text-end">@s.InProgress</td>
+                                <td class="text-end">@s.Waiting</td>
                                 <td class="text-end">@s.Blocked</td>
                                 <td class="text-end">@s.Done</td>
                                 <td class="text-end @(s.Overdue > 0 ? "text-danger" : "text-muted")">@s.Overdue</td>

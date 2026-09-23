@@ -28,7 +28,7 @@ public sealed class TaskRowsVm
     public bool ShowAssignee { get; init; } = true;
     /// <summary>When set, each plannable row gets a checkbox bound (via the HTML form attribute) to the form with this id.</summary>
     public string? SelectionFormId { get; init; }
-    /// <summary>Tasks whose next move is gated by a dependency (§6.15), with the reason for the Waiting badge. Null = badge not computed.</summary>
+    /// <summary>Tasks whose next move is gated by a dependency (§6.15), with the reason for the Gated badge. Null = badge not computed.</summary>
     public IReadOnlyDictionary<Guid, WaitingSummary>? Waiting { get; init; }
     public string? EmptyMessage { get; init; }
     public DateOnly Today { get; init; } = DateOnly.FromDateTime(DateTime.UtcNow);

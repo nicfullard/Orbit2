@@ -34,16 +34,19 @@
 </div>
 
 <div class="row g-3 mb-3">
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md-4 col-lg">
         <div class="stat-tile"><div class="stat-value">@d.TodoCount</div><div class="stat-label">To do</div></div>
     </div>
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md-4 col-lg">
         <div class="stat-tile"><div class="stat-value text-primary">@d.InProgressCount</div><div class="stat-label">In progress</div></div>
     </div>
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md-4 col-lg">
+        <div class="stat-tile"><div class="stat-value text-info">@d.WaitingCount</div><div class="stat-label">Waiting</div></div>
+    </div>
+    <div class="col-6 col-md-4 col-lg">
         <div class="stat-tile"><div class="stat-value text-danger">@d.BlockedCount</div><div class="stat-label">Blocked</div></div>
     </div>
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md-4 col-lg">
         <div class="stat-tile"><div class="stat-value @(d.OverdueCount > 0 ? "text-danger" : "")">@d.OverdueCount</div><div class="stat-label">Overdue</div></div>
     </div>
 </div>

@@ -24,7 +24,7 @@ public static class AccessPolicy
     public static bool CanTakeTask(Actor a, TaskItem t) =>
         a.UserId is not null && t.IsOpen && t.AssigneeId is null && a.CanAccessDepartment(t.DepartmentId);
 
-    /// <summary>Anyone in the department may move between Todo/InProgress/Blocked; closing or reopening needs an admin.</summary>
+    /// <summary>Anyone in the department may move between Todo/InProgress/Waiting/Blocked; closing or reopening needs an admin.</summary>
     public static bool CanChangeStatus(Actor a, TaskItem t, TaskItemStatus to)
     {
         if (!a.CanAccessDepartment(t.DepartmentId)) return false;

@@ -16,6 +16,7 @@ public sealed class DashboardModel
     public required string ScopeLabel { get; init; }
     public int TodoCount { get; init; }
     public int InProgressCount { get; init; }
+    public int WaitingCount { get; init; }
     public int BlockedCount { get; init; }
     public int OverdueCount { get; init; }
     /// <summary>Today's day plan (§6.12) within the same role scope, counting closed tasks too so "done today" shows.</summary>

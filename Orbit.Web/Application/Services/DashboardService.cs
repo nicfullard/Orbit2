@@ -147,6 +147,7 @@ public sealed class DashboardService(ApplicationDbContext db, IActorProvider act
             ScopeLabel = scopeLabel,
             TodoCount = Count(TaskItemStatus.Todo),
             InProgressCount = Count(TaskItemStatus.InProgress),
+            WaitingCount = Count(TaskItemStatus.Waiting),
             BlockedCount = Count(TaskItemStatus.Blocked),
             OverdueCount = overdue,
             PlannedTodayCount = plannedToday,

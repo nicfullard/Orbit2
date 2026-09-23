@@ -34,13 +34,14 @@ public sealed record DepartmentTaskCount(
     string Name,
     int Todo,
     int InProgress,
+    int Waiting,
     int Blocked,
     int Done,
     int Cancelled,
     int Overdue)
 {
-    public int Total => Todo + InProgress + Blocked + Done + Cancelled;
-    public int Open => Todo + InProgress + Blocked;
+    public int Total => Todo + InProgress + Waiting + Blocked + Done + Cancelled;
+    public int Open => Todo + InProgress + Waiting + Blocked;
     public int PercentDone => Total == 0 ? 0 : (int)Math.Round(Done * 100.0 / Total);
 }
 
@@ -56,6 +57,7 @@ public sealed record ProjectStatusSummary(
     int Total,
     int Todo,
     int InProgress,
+    int Waiting,
     int Blocked,
     int Done,
     int Cancelled,
@@ -65,7 +67,7 @@ public sealed record ProjectStatusSummary(
     int TotalMinutesEstimated,
     IReadOnlyList<DepartmentTaskCount> ByDepartment)
 {
-    public int Open => Todo + InProgress + Blocked;
+    public int Open => Todo + InProgress + Waiting + Blocked;
     public int PercentDone => Total == 0 ? 0 : (int)Math.Round(Done * 100.0 / Total);
     /// <summary>True when tasks from a department other than the project's own are filed under it.</summary>
     public bool IsCrossDepartment => ByDepartment.Any(d => d.DepartmentId != DepartmentId);

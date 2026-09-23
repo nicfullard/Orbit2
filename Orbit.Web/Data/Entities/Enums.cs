@@ -15,10 +15,16 @@ public enum ProjectStatus
     Archived
 }
 
+/// <summary>
+/// Open: <see cref="Todo"/>, <see cref="InProgress"/>, <see cref="Waiting"/>, <see cref="Blocked"/>. Closed: <see cref="Done"/>, <see cref="Cancelled"/>.
+/// <see cref="Waiting"/> is started but paused on something outside the team's control (a reply, a delivery, an approval);
+/// <see cref="Blocked"/> is held up by an impediment someone has to remove. Leaving <see cref="Todo"/> for either counts as starting (§6.15).
+/// </summary>
 public enum TaskItemStatus
 {
     Todo,
     InProgress,
+    Waiting,
     Blocked,
     Done,
     Cancelled

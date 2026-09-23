@@ -11,6 +11,7 @@ public static class Ui
     {
         TaskItemStatus.Todo => "text-bg-secondary",
         TaskItemStatus.InProgress => "text-bg-primary",
+        TaskItemStatus.Waiting => "text-bg-info",
         TaskItemStatus.Blocked => "text-bg-danger",
         TaskItemStatus.Done => "text-bg-success",
         TaskItemStatus.Cancelled => "text-bg-dark",

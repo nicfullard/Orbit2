@@ -115,7 +115,7 @@ public sealed class OrbitTools(
     public Task<string> ListTasks(
         [Description("Filter by project id (GUID).")] string? projectId = null,
         [Description("Filter by department id (GUID). SystemAdmin keys only.")] string? departmentId = null,
-        [Description("Todo, InProgress, Blocked, Done or Cancelled.")] string? status = null,
+        [Description("Todo, InProgress, Waiting, Blocked, Done or Cancelled.")] string? status = null,
         [Description("Filter by assignee user id (GUID).")] string? assigneeId = null,
         [Description("true = only tasks with no assignee - work nobody has picked up yet. Overrides assigneeId.")] bool? unassigned = null,
         [Description("Manual, Api or Recurring - where the task originated.")] string? source = null,
@@ -170,7 +170,7 @@ public sealed class OrbitTools(
         [Description("Task id (GUID).")] string taskId,
         [Description("New title.")] string? title = null,
         [Description("New description.")] string? description = null,
-        [Description("Todo, InProgress, Blocked, Done or Cancelled.")] string? status = null,
+        [Description("Todo, InProgress, Waiting, Blocked, Done or Cancelled.")] string? status = null,
         [Description("Low, Medium, High or Critical.")] string? priority = null,
         [Description("Meeting, Planning, Task, Training or Audit.")] string? type = null,
         [Description("Assignee user id (GUID), or \"none\" to unassign.")] string? assigneeId = null,
@@ -339,7 +339,7 @@ public sealed class OrbitTools(
                 bufferStatus = cp.BufferStatus, bufferRemainingDays = cp.BufferRemainingDays, bufferConsumptionPercent = cp.BufferConsumptionPercent,
                 criticalTasks = cp.CriticalTaskCount, nearCriticalTasks = cp.NearCriticalTaskCount, warnings = cp.WarningCount
             },
-            totalTasks = s.Total, openTasks = s.Open, todo = s.Todo, inProgress = s.InProgress, blocked = s.Blocked,
+            totalTasks = s.Total, openTasks = s.Open, todo = s.Todo, inProgress = s.InProgress, waiting = s.Waiting, blocked = s.Blocked,
             done = s.Done, cancelled = s.Cancelled, overdue = s.Overdue, percentDone = s.PercentDone,
             totalMinutesLogged = s.TotalMinutesLogged,
             totalMinutesEstimated = s.TotalMinutesEstimated,
@@ -347,7 +347,7 @@ public sealed class OrbitTools(
             departments = s.ByDepartment.Select(d => new
             {
                 departmentId = d.DepartmentId, department = d.Name, totalTasks = d.Total, openTasks = d.Open,
-                todo = d.Todo, inProgress = d.InProgress, blocked = d.Blocked, done = d.Done, cancelled = d.Cancelled,
+                todo = d.Todo, inProgress = d.InProgress, waiting = d.Waiting, blocked = d.Blocked, done = d.Done, cancelled = d.Cancelled,
                 overdue = d.Overdue, percentDone = d.PercentDone
             }).ToList()
         };

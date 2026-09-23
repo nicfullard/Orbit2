@@ -130,6 +130,9 @@ html {
 .gantt-swatch-milestone { width: 10px; height: 10px; transform: rotate(45deg); }
 .gantt .status-todo, .gantt-legend .status-todo { background: var(--bs-secondary); }
 .gantt .status-inprogress, .gantt-legend .status-inprogress { background: var(--bs-primary); }
+.gantt .status-waiting, .gantt-legend .status-waiting {
+  background: repeating-linear-gradient(90deg, var(--bs-info) 0 5px, color-mix(in srgb, var(--bs-info) 35%, var(--orbit-surface-bg)) 5px 8px);
+}
 .gantt .status-blocked, .gantt-legend .status-blocked {
   background: repeating-linear-gradient(45deg, var(--bs-danger) 0 4px, color-mix(in srgb, var(--bs-danger) 45%, var(--orbit-surface-bg)) 4px 8px);
 }
