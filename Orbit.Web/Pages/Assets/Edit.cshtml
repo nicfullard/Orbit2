@@ -1,0 +1,41 @@
+@page "{id:guid}"
+@model Orbit.Pages.Assets.EditModel
+@{
+    var a = Model.Asset;
+    ViewData["Title"] = $"Edit {a.Name}";
+    ViewData["Form"] = Model.Form;
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Assets/Index">Assets</a></li>
+        <li class="breadcrumb-item"><a asp-page="/Assets/Details" asp-route-id="@a.Id">@a.Name</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Edit</li>
+    </ol>
+</nav>
+<h1 class="h3 mb-3">Edit asset <span class="text-muted fs-5">@a.Name</span></h1>
+<div class="card mb-3">
+    <div class="card-body">
+        <form method="post" asp-route-id="@a.Id" class="js-asset-form"
+              data-properties-url="@Url.Page("/Assets/Edit", "Properties", new { id = a.Id })"
+              data-choices-url="@Url.Page("/Assets/Edit", "Choices", new { id = a.Id })">
+            <partial name="_AssetFormFields" model="Model.Lookups" view-data="ViewData" />
+            <div class="mt-4 d-flex gap-2">
+                <button type="submit" class="btn btn-primary">Save</button>
+                <a class="btn btn-outline-secondary" asp-page="/Assets/Details" asp-route-id="@a.Id">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+@if (Model.CanDelete)
+{
+    <div class="card border-danger-subtle" style="max-width:40rem">
+        <div class="card-body">
+            <form method="post" asp-page-handler="Delete" asp-route-id="@a.Id" data-confirm="Delete the asset &quot;@a.Name&quot;? Its comments and files go with it. This can't be undone.">
+                <button class="btn btn-outline-danger btn-sm" type="submit">Delete asset</button>
+                <span class="small text-muted ms-2">For an asset registered by mistake. An asset that has been checked is disposed of instead.</span>
+            </form>
+        </div>
+    </div>
+}

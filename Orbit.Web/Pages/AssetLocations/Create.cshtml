@@ -1,0 +1,47 @@
+@page
+@model Orbit.Pages.AssetLocations.CreateModel
+@{
+    ViewData["Title"] = "New location";
+    var f = Model.Form;
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Assets/Index">Assets</a></li>
+        <li class="breadcrumb-item"><a asp-page="/AssetLocations/Index">Locations</a></li>
+        <li class="breadcrumb-item active" aria-current="page">New</li>
+    </ol>
+</nav>
+<h1 class="h3 mb-3">New location</h1>
+<div class="card" style="max-width:40rem">
+    <div class="card-body">
+        <form method="post">
+            <div asp-validation-summary="ModelOnly" class="text-danger mb-2"></div>
+            <div class="mb-3">
+                <label class="form-label" for="Form_DepartmentId">Department</label>
+                @if (Model.CanChooseDepartment)
+                {
+                    <select class="form-select" id="Form_DepartmentId" name="Form.DepartmentId" asp-items="Model.DepartmentItems" required></select>
+                }
+                else
+                {
+                    <input type="hidden" name="Form.DepartmentId" value="@f.DepartmentId" />
+                    <input class="form-control" value="@Model.DepartmentName" disabled />
+                }
+                <div class="form-text">The department that keeps its assets here. It can't be changed later.</div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="Form_Name">Name</label>
+                <input class="form-control" id="Form_Name" name="Form.Name" value="@f.Name" maxlength="200" required placeholder="e.g. Head office - Server room" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="Form_Description">Description</label>
+                <textarea class="form-control" id="Form_Description" name="Form.Description" rows="2" maxlength="1000">@f.Description</textarea>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">Create location</button>
+                <a class="btn btn-outline-secondary" asp-page="/AssetLocations/Index">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>

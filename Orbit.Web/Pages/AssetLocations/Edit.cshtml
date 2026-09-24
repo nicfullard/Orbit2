@@ -1,0 +1,56 @@
+@page "{id:guid}"
+@model Orbit.Pages.AssetLocations.EditModel
+@{
+    var l = Model.Location;
+    ViewData["Title"] = $"Edit {l.Name}";
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Assets/Index">Assets</a></li>
+        <li class="breadcrumb-item"><a asp-page="/AssetLocations/Index">Locations</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@l.Name</li>
+    </ol>
+</nav>
+<h1 class="h3 mb-1">
+    @l.Name
+    @if (l.IsArchived) { <span class="badge text-bg-secondary fs-6 align-middle">Archived</span> }
+</h1>
+<div class="text-muted small mb-3">A location of <strong>@l.Department.Name</strong>.</div>
+<div class="card" style="max-width:40rem">
+    <div class="card-body">
+        <form method="post" asp-route-id="@l.Id">
+            <div asp-validation-summary="ModelOnly" class="text-danger mb-2"></div>
+            <div class="mb-3">
+                <label class="form-label" for="Form_Name">Name</label>
+                <input class="form-control" id="Form_Name" name="Form.Name" value="@Model.Form.Name" maxlength="200" required />
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="Form_Description">Description</label>
+                <textarea class="form-control" id="Form_Description" name="Form.Description" rows="2" maxlength="1000">@Model.Form.Description</textarea>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">Save</button>
+                <a class="btn btn-outline-secondary" asp-page="/AssetLocations/Index">Cancel</a>
+            </div>
+        </form>
+        <hr />
+        <div class="d-flex flex-wrap gap-2">
+            @if (l.IsArchived)
+            {
+                <form method="post" asp-page-handler="Archive" asp-route-id="@l.Id" asp-route-archived="false">
+                    <button class="btn btn-outline-success btn-sm" type="submit">Restore location</button>
+                </form>
+            }
+            else
+            {
+                <form method="post" asp-page-handler="Archive" asp-route-id="@l.Id" asp-route-archived="true" data-confirm="Archive this location? It stops being offered for assets; assets there keep it.">
+                    <button class="btn btn-outline-secondary btn-sm" type="submit">Archive location</button>
+                </form>
+            }
+            <form method="post" asp-page-handler="Delete" asp-route-id="@l.Id" data-confirm="Delete the location &quot;@l.Name&quot;? Only possible while no asset refers to it.">
+                <button class="btn btn-outline-danger btn-sm" type="submit">Delete location</button>
+            </form>
+        </div>
+    </div>
+</div>

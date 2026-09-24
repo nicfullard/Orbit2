@@ -359,3 +359,25 @@ body {
   min-width: 9.5rem;
   max-width: 11rem;
 }
+
+/* People picker (spec §6.19): chips for the people chosen, over a type-ahead result list. */
+.person-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: .8rem;
+  padding: .3rem .4rem .3rem .6rem;
+}
+.person-chip .btn-close {
+  font-size: .55rem;
+}
+[data-bs-theme="dark"] .person-chip .btn-close {
+  filter: invert(1) grayscale(100%) brightness(200%);
+}
+.person-picker-results {
+  z-index: 1050;
+  max-height: 18rem;
+  overflow-y: auto;
+}
+.person-picker-results .list-group-item {
+  cursor: pointer;
+}

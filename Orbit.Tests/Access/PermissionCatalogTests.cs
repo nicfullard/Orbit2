@@ -17,7 +17,7 @@ public class PermissionCatalogTests
     {
         var keys = PermissionCatalog.All.Select(p => p.Key).ToList();
         Assert.Equal(Constants.OrderBy(k => k), keys.OrderBy(k => k));
-        Assert.Equal(19, keys.Count);
+        Assert.Equal(24, keys.Count);
     }
 
     [Fact]
@@ -61,6 +61,26 @@ public class PermissionCatalogTests
         Assert.False(PermissionCatalog.ByKey[Permission.TasksView].AllOnly);
         Assert.False(PermissionCatalog.ByKey[Permission.TasksCreate].Allows(PermissionScope.Own));
         Assert.True(PermissionCatalog.ByKey[Permission.TasksEdit].Allows(PermissionScope.Own));
+    }
+
+    /// <summary>AST-015: the five asset permissions and the scopes each allows (spec §6.19).</summary>
+    [Fact]
+    public void Asset_permissions_allow_the_scopes_the_spec_gives_them()
+    {
+        var own = new[] { PermissionScope.Own, PermissionScope.Department, PermissionScope.All };
+        var dept = new[] { PermissionScope.Department, PermissionScope.All };
+        Assert.Equal(own, PermissionCatalog.ByKey[Permission.AssetsView].AllowedScopes);
+        Assert.Equal(dept, PermissionCatalog.ByKey[Permission.AssetsCreate].AllowedScopes);
+        Assert.Equal(dept, PermissionCatalog.ByKey[Permission.AssetsEdit].AllowedScopes);
+        Assert.Equal(own, PermissionCatalog.ByKey[Permission.AssetsCheck].AllowedScopes);
+        Assert.Equal(dept, PermissionCatalog.ByKey[Permission.AssetsConfigure].AllowedScopes);
+        Assert.All(PermissionCatalog.All.Where(p => p.Key.StartsWith("assets.")), p =>
+        {
+            Assert.Equal(PermissionCatalog.AssetsGroup, p.Group);
+            Assert.False(p.SystemAdministratorOnly, p.Key);
+        });
+        // Types and locations belong to departments, so nothing about assets opens the Admin menu.
+        Assert.DoesNotContain(PermissionCatalog.AdminPermissions, k => k.StartsWith("assets."));
     }
 
     [Fact]

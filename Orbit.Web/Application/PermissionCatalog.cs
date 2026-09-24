@@ -30,6 +30,7 @@ public static class PermissionCatalog
     public const string TimeGroup = "Time tracking";
     public const string PlanningGroup = "Planning";
     public const string InsightGroup = "Reports and audit";
+    public const string AssetsGroup = "Assets";
     public const string AdministrationGroup = "Administration";
 
     private static readonly PermissionScope[] OwnDeptAll = [PermissionScope.Own, PermissionScope.Department, PermissionScope.All];
@@ -74,6 +75,21 @@ public static class PermissionCatalog
         new(Permission.AuditView, "View the activity log",
             "Admin > Activity Log, and the list_activity tool. At Department only your department's entries.",
             InsightGroup, DeptAll),
+        new(Permission.AssetsView, "View assets",
+            "See assets and their checks, comments, files and activity, and comment on them and attach files to them. Own = assets assigned to you; Department = the assets your department manages, plus the ones you hold.",
+            AssetsGroup, OwnDeptAll),
+        new(Permission.AssetsCreate, "Register assets",
+            "Register new assets in the department, or in any department at All departments.",
+            AssetsGroup, DeptAll),
+        new(Permission.AssetsEdit, "Edit assets",
+            "Edit any field of an asset - status and disposal, type and properties, location, purchase and warranty details, who holds it - remove anyone's checks and files, and delete an asset registered in error. Moving an asset to another department needs All departments.",
+            AssetsGroup, DeptAll),
+        new(Permission.AssetsCheck, "Record asset checks",
+            "Record a check on an asset, and remove checks you recorded. Own = the assets assigned to you (confirming you still have them).",
+            AssetsGroup, OwnDeptAll),
+        new(Permission.AssetsConfigure, "Configure assets",
+            "Manage the department's asset types (with their properties and check intervals) and asset locations; every department's at All departments.",
+            AssetsGroup, DeptAll),
         new(Permission.UsersManage, "Manage users",
             "Create users, change their role, department and sign-in method, deactivate, unlock and reset passwords.",
             AdministrationGroup, AllOnlyScopes, SystemAdministratorOnly: true),

@@ -1,0 +1,27 @@
+@page
+@model Orbit.Pages.Assets.CreateModel
+@{
+    ViewData["Title"] = "Register asset";
+    ViewData["Form"] = Model.Form;
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Assets/Index">Assets</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Register</li>
+    </ol>
+</nav>
+<h1 class="h3 mb-3">Register asset</h1>
+<div class="card">
+    <div class="card-body">
+        <form method="post" class="js-asset-form"
+              data-properties-url="@Url.Page("/Assets/Create", "Properties")"
+              data-choices-url="@Url.Page("/Assets/Create", "Choices")">
+            <partial name="_AssetFormFields" model="Model.Lookups" view-data="ViewData" />
+            <div class="mt-4 d-flex gap-2">
+                <button type="submit" class="btn btn-primary">Register asset</button>
+                <a class="btn btn-outline-secondary" asp-page="/Assets/Index">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>

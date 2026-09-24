@@ -60,11 +60,13 @@ public sealed class AuditService(ApplicationDbContext db, IActorProvider actors)
         return new PagedResult<AuditLog>(items, page, pageSize, total);
     }
 
-    /// <summary>A task or project the actor may see: its activity comes with it, whatever their audit.view scope.</summary>
+    /// <summary>A task, project or asset the actor may see: its activity comes with it, whatever their audit.view scope.</summary>
     private async Task<bool> CanViewEntityAsync(Actor actor, Guid entityId, CancellationToken ct)
     {
         var task = await db.Tasks.AsNoTracking().FirstOrDefaultAsync(t => t.Id == entityId, ct);
         if (task is not null) return AccessPolicy.CanViewTask(actor, task);
+        var asset = await db.Assets.AsNoTracking().Include(a => a.Assignments).FirstOrDefaultAsync(a => a.Id == entityId, ct);
+        if (asset is not null) return AccessPolicy.CanViewAsset(actor, asset, AccessPolicy.IsAssigned(actor, asset));
         var project = await db.Projects.AsNoTracking().FirstOrDefaultAsync(p => p.Id == entityId, ct);
         if (project is null) return false;
         var shared = actor.DepartmentId is Guid d && await db.Tasks.AnyAsync(t => t.ProjectId == project.Id && t.DepartmentId == d, ct);

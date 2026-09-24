@@ -222,3 +222,252 @@ document.addEventListener('DOMContentLoaded', function () {
     if (e.key === 'Enter' && isDelayed(e.target)) { e.preventDefault(); submit(e.target); }
   });
 })();
+
+// Asset form (spec §6.19): the type and location lists follow the managing department, the property fields follow the
+// type (re-rendered by the page's Properties handler, which also says what a change of type carries over), and "Disposed on"
+// shows only for a disposed asset. Holders are chosen with the people picker below.
+(function () {
+  function assetForm(el) { return el && el.closest ? el.closest('form.js-asset-form') : null; }
+  function withParam(url, name, value) {
+    return url + (url.indexOf('?') < 0 ? '?' : '&') + name + '=' + encodeURIComponent(value || '');
+  }
+  function option(value, text, selected) {
+    var o = document.createElement('option');
+    o.value = value;
+    o.textContent = text;
+    if (selected) o.selected = true;
+    return o;
+  }
+  function loadProperties(form) {
+    var type = form.querySelector('.js-asset-type');
+    var target = form.querySelector('.js-asset-properties');
+    if (!type || !target || !form.dataset.propertiesUrl) return;
+    fetch(withParam(form.dataset.propertiesUrl, 'typeId', type.value), { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.text() : null; })
+      .then(function (html) { if (html !== null) target.innerHTML = html; });
+  }
+  function fillTypes(select, types) {
+    var current = select.value;
+    select.innerHTML = '';
+    select.appendChild(option('', '- choose -', false));
+    var groups = {};
+    types.forEach(function (t) {
+      var parent = select;
+      if (t.category) {
+        if (!groups[t.category]) {
+          groups[t.category] = document.createElement('optgroup');
+          groups[t.category].label = t.category;
+          select.appendChild(groups[t.category]);
+        }
+        parent = groups[t.category];
+      }
+      parent.appendChild(option(t.id, t.name, t.id === current));
+    });
+  }
+  function fillLocations(select, locations) {
+    var current = select.value;
+    select.innerHTML = '';
+    select.appendChild(option('', '- none -', false));
+    locations.forEach(function (l) { select.appendChild(option(l.id, l.name, l.id === current)); });
+  }
+  function loadChoices(form) {
+    var dept = form.querySelector('.js-asset-department');
+    var types = form.querySelector('.js-asset-type');
+    var locations = form.querySelector('.js-asset-location');
+    if (!dept || !types || !form.dataset.choicesUrl) return;
+    if (!dept.value) {
+      fillTypes(types, []);
+      if (locations) fillLocations(locations, []);
+      loadProperties(form);
+      return;
+    }
+    fetch(withParam(form.dataset.choicesUrl, 'departmentId', dept.value), { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data) return;
+        fillTypes(types, data.types || []);
+        if (locations) fillLocations(locations, data.locations || []);
+        loadProperties(form);
+      });
+  }
+  function toggleDisposed(form) {
+    var status = form.querySelector('.js-asset-status');
+    var box = form.querySelector('.js-disposed-on');
+    if (status && box) box.classList.toggle('d-none', status.value !== 'Disposed');
+  }
+  document.addEventListener('change', function (e) {
+    var el = e.target;
+    var form = assetForm(el);
+    if (form) {
+      if (el.classList.contains('js-asset-type')) loadProperties(form);
+      else if (el.classList.contains('js-asset-department')) loadChoices(form);
+      else if (el.classList.contains('js-asset-status')) toggleDisposed(form);
+    }
+    // Asset type properties: the options box is for a Choice property only.
+    if (el.classList && el.classList.contains('js-property-type')) {
+      var box = el.closest('form') && el.closest('form').querySelector('.js-property-options');
+      if (box) box.classList.toggle('d-none', el.value !== 'Choice');
+    }
+  });
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('form.js-asset-form').forEach(toggleDisposed);
+  });
+})();
+
+// People picker (spec §6.19): the people chosen as chips, and a type-ahead search against the server (data-search-url?q=,
+// at most 20 people, so it works however many people Orbit has). In "multi" mode each chip carries a hidden input the form
+// posts; in "submit" mode picking someone fills the picker's hidden field and posts its form at once (the asset page's
+// "Assign someone"). Keyboard: Up/Down move through the results, Enter picks, Escape closes. Adds and removes are announced.
+(function () {
+  function withParam(url, name, value) {
+    return url + (url.indexOf('?') < 0 ? '?' : '&') + name + '=' + encodeURIComponent(value || '');
+  }
+  function text(tag, className, value) {
+    var el = document.createElement(tag);
+    if (className) el.className = className;
+    if (value) el.textContent = value;
+    return el;
+  }
+  function setup(root) {
+    if (root.dataset.pickerReady) return;
+    root.dataset.pickerReady = '1';
+    var input = root.querySelector('.js-picker-input');
+    var list = root.querySelector('.js-picker-results');
+    var chips = root.querySelector('.js-picker-chips');
+    var status = root.querySelector('.js-picker-status');
+    var submitMode = root.dataset.mode === 'submit';
+    var timer = null, items = [], active = -1, seq = 0;
+
+    function say(message) { if (status) status.textContent = message; }
+    function chosenIds() {
+      return Array.prototype.map.call(root.querySelectorAll('.person-chip'), function (c) { return c.dataset.id; });
+    }
+    function updateEmpty() {
+      var empty = root.querySelector('.js-picker-empty');
+      if (empty) empty.classList.toggle('d-none', root.querySelectorAll('.person-chip').length > 0);
+    }
+    function close() {
+      list.classList.add('d-none');
+      list.innerHTML = '';
+      input.setAttribute('aria-expanded', 'false');
+      input.removeAttribute('aria-activedescendant');
+      items = [];
+      active = -1;
+    }
+    function highlight(index) {
+      var options = list.querySelectorAll('[role="option"]');
+      if (!options.length) return;
+      active = (index + options.length) % options.length;
+      Array.prototype.forEach.call(options, function (o, i) {
+        o.classList.toggle('active', i === active);
+        o.setAttribute('aria-selected', i === active ? 'true' : 'false');
+      });
+      input.setAttribute('aria-activedescendant', options[active].id);
+      options[active].scrollIntoView({ block: 'nearest' });
+    }
+    function render(people, query) {
+      list.innerHTML = '';
+      items = people;
+      active = -1;
+      if (!people.length) {
+        list.appendChild(text('li', 'list-group-item small text-muted', 'No one matches "' + query + '".'));
+      }
+      people.forEach(function (p, i) {
+        var li = text('li', 'list-group-item list-group-item-action py-1 small');
+        li.id = root.id + '-option-' + i;
+        li.setAttribute('role', 'option');
+        li.setAttribute('aria-selected', 'false');
+        li.dataset.index = i;
+        li.appendChild(text('span', 'fw-semibold', p.name));
+        var detail = [p.email, p.department].filter(Boolean).join(' · ');
+        if (detail) li.appendChild(text('span', 'text-muted ms-2', detail));
+        list.appendChild(li);
+      });
+      list.classList.remove('d-none');
+      input.setAttribute('aria-expanded', 'true');
+      if (people.length) highlight(0);
+    }
+    function addChip(p) {
+      var chip = text('span', 'badge rounded-pill text-bg-light border person-chip');
+      chip.dataset.id = p.id;
+      chip.dataset.name = p.name;
+      chip.appendChild(text('span', 'fw-semibold', p.name));
+      if (p.department) chip.appendChild(text('span', 'text-muted fw-normal ms-1', p.department));
+      var hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.name = root.dataset.fieldName;
+      hidden.value = p.id;
+      chip.appendChild(hidden);
+      var remove = text('button', 'btn-close ms-1 js-picker-remove');
+      remove.type = 'button';
+      remove.setAttribute('aria-label', 'Remove ' + p.name);
+      chip.appendChild(remove);
+      chips.insertBefore(chip, root.querySelector('.js-picker-empty'));
+      updateEmpty();
+    }
+    function choose(p) {
+      if (!p) return;
+      if (submitMode) {
+        var field = root.querySelector('input[type="hidden"][name="' + root.dataset.fieldName + '"]');
+        var form = root.closest('form');
+        if (!field || !form) return;
+        field.value = p.id;
+        input.disabled = true;
+        say('Assigning to ' + p.name);
+        if (form.requestSubmit) form.requestSubmit(); else form.submit();
+        return;
+      }
+      addChip(p);
+      input.value = '';
+      close();
+      say(p.name + ' added.');
+      input.focus();
+    }
+    function search() {
+      var query = input.value.trim();
+      if (!query) { close(); return; }
+      var mine = ++seq;
+      fetch(withParam(root.dataset.searchUrl, 'q', query), { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+        .then(function (r) { return r.ok ? r.json() : []; })
+        .then(function (people) {
+          if (mine !== seq || input.value.trim() !== query) return; // a newer search is on its way
+          var taken = chosenIds();
+          render(people.filter(function (p) { return taken.indexOf(p.id) < 0; }), query);
+        })
+        .catch(function () { close(); });
+    }
+
+    input.addEventListener('input', function () {
+      clearTimeout(timer);
+      timer = setTimeout(search, 200);
+    });
+    input.addEventListener('keydown', function (e) {
+      var open = !list.classList.contains('d-none');
+      if (e.key === 'ArrowDown') { e.preventDefault(); if (open) highlight(active + 1); else search(); }
+      else if (e.key === 'ArrowUp') { if (open) { e.preventDefault(); highlight(active - 1); } }
+      else if (e.key === 'Enter') { e.preventDefault(); if (open && active >= 0) choose(items[active]); }
+      else if (e.key === 'Escape') { if (open) { e.preventDefault(); close(); } }
+    });
+    input.addEventListener('blur', function () { setTimeout(close, 150); });
+    list.addEventListener('mousedown', function (e) {
+      var option = e.target.closest('[role="option"]');
+      if (!option) return;
+      e.preventDefault(); // keep focus in the box, so blur doesn't close the list first
+      choose(items[+option.dataset.index]);
+    });
+    if (chips) {
+      chips.addEventListener('click', function (e) {
+        var button = e.target.closest('.js-picker-remove');
+        if (!button) return;
+        var chip = button.closest('.person-chip');
+        say(chip.dataset.name + ' removed.');
+        chip.remove();
+        updateEmpty();
+        input.focus();
+      });
+    }
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.js-person-picker').forEach(setup);
+  });
+})();

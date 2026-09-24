@@ -27,6 +27,13 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<Attachment> Attachments => Set<Attachment>();
     public DbSet<AttachmentContent> AttachmentContents => Set<AttachmentContent>();
     public DbSet<NumberCounter> NumberCounters => Set<NumberCounter>();
+    public DbSet<Asset> Assets => Set<Asset>();
+    public DbSet<AssetAssignment> AssetAssignments => Set<AssetAssignment>();
+    public DbSet<AssetCheck> AssetChecks => Set<AssetCheck>();
+    public DbSet<AssetLocation> AssetLocations => Set<AssetLocation>();
+    public DbSet<AssetType> AssetTypes => Set<AssetType>();
+    public DbSet<AssetTypeProperty> AssetTypeProperties => Set<AssetTypeProperty>();
+    public DbSet<AssetPropertyValue> AssetPropertyValues => Set<AssetPropertyValue>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -151,12 +158,17 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 
         builder.Entity<Comment>(b =>
         {
+            // On exactly one task or one asset (§6.19); the comment dies with it.
             b.Property(c => c.Body).IsRequired();
             b.HasOne(c => c.Task).WithMany(t => t.Comments)
                 .HasForeignKey(c => c.TaskId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(c => c.Asset).WithMany(a => a.Comments)
+                .HasForeignKey(c => c.AssetId).OnDelete(DeleteBehavior.Cascade);
             b.HasOne(c => c.Author).WithMany(u => u.Comments)
                 .HasForeignKey(c => c.AuthorId).OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(c => c.TaskId);
+            b.HasIndex(c => c.AssetId);
+            b.ToTable(t => t.HasCheckConstraint("CK_Comments_OneParent", "(\"TaskId\" IS NULL) <> (\"AssetId\" IS NULL)"));
         });
 
         builder.Entity<TimeEntry>(b =>
@@ -252,18 +264,21 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 
         builder.Entity<Attachment>(b =>
         {
-            // Attached to exactly one task or one project (§6.18); the row dies with it, the uploader is only recorded.
+            // Attached to exactly one task, project or asset (§6.18, §6.19); the row dies with it, the uploader is only recorded.
             b.Property(a => a.FileName).HasMaxLength(255).IsRequired();
             b.Property(a => a.ContentType).HasMaxLength(200).IsRequired();
             b.HasOne(a => a.Task).WithMany(t => t.Attachments)
                 .HasForeignKey(a => a.TaskId).OnDelete(DeleteBehavior.Cascade);
             b.HasOne(a => a.Project).WithMany(p => p.Attachments)
                 .HasForeignKey(a => a.ProjectId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(a => a.Asset).WithMany(x => x.Attachments)
+                .HasForeignKey(a => a.AssetId).OnDelete(DeleteBehavior.Cascade);
             b.HasOne(a => a.UploadedBy).WithMany()
                 .HasForeignKey(a => a.UploadedById).OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(a => a.TaskId);
             b.HasIndex(a => a.ProjectId);
-            b.ToTable(t => t.HasCheckConstraint("CK_Attachments_OneParent", "(\"TaskId\" IS NULL) <> (\"ProjectId\" IS NULL)"));
+            b.HasIndex(a => a.AssetId);
+            b.ToTable(t => t.HasCheckConstraint("CK_Attachments_OneParent", "num_nonnulls(\"TaskId\", \"ProjectId\", \"AssetId\") = 1"));
         });
 
         builder.Entity<AttachmentContent>(b =>
@@ -279,6 +294,101 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
         {
             b.HasKey(c => new { c.Prefix, c.Year });
             b.Property(c => c.Prefix).HasMaxLength(4);
+        });
+
+        // --- Assets (§6.19). The case-insensitive unique indexes - lower("AssetNumber") (the optional ERP number: unique when
+        // set, any number of assets without one), and (DepartmentId, lower("Name")) on types and locations - plus
+        // lower("SerialNumber") for the duplicate check are expression indexes created in SQL by the AddAssets migration,
+        // since EF can't express them; the services check the same rules first.
+        builder.Entity<Asset>(b =>
+        {
+            b.Property(a => a.AssetNumber).HasMaxLength(50);
+            b.Property(a => a.IdempotencyKey).HasMaxLength(200);
+            b.HasIndex(a => a.IdempotencyKey).IsUnique().HasFilter("\"IdempotencyKey\" IS NOT NULL");
+            b.Property(a => a.Name).HasMaxLength(200).IsRequired();
+            b.Property(a => a.Description).HasMaxLength(4000);
+            b.Property(a => a.Manufacturer).HasMaxLength(200);
+            b.Property(a => a.Model).HasMaxLength(200);
+            b.Property(a => a.SerialNumber).HasMaxLength(100);
+            b.Property(a => a.PurchaseOrder).HasMaxLength(100);
+            b.Property(a => a.InvoiceNumber).HasMaxLength(100);
+            b.Property(a => a.Supplier).HasMaxLength(200);
+            b.Property(a => a.PurchaseValue).HasPrecision(18, 2);
+            b.HasOne(a => a.Department).WithMany()
+                .HasForeignKey(a => a.DepartmentId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(a => a.AssetType).WithMany(t => t.Assets)
+                .HasForeignKey(a => a.AssetTypeId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(a => a.AssetLocation).WithMany(l => l.Assets)
+                .HasForeignKey(a => a.AssetLocationId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(a => a.CreatedBy).WithMany()
+                .HasForeignKey(a => a.CreatedById).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(a => a.DepartmentId);
+            b.HasIndex(a => a.Status);
+            b.HasIndex(a => a.AssetTypeId);
+            b.HasIndex(a => a.AssetLocationId);
+            b.HasIndex(a => a.LastCheckedOn);
+            b.HasIndex(a => a.WarrantyExpiresOn);
+        });
+
+        builder.Entity<AssetAssignment>(b =>
+        {
+            // A person holds an asset at most once; the row dies with the asset, and users are deactivated rather than deleted.
+            b.HasKey(x => new { x.AssetId, x.UserId });
+            b.HasOne(x => x.Asset).WithMany(a => a.Assignments)
+                .HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.User).WithMany()
+                .HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(x => x.AssignedBy).WithMany()
+                .HasForeignKey(x => x.AssignedById).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(x => x.UserId);
+        });
+
+        builder.Entity<AssetCheck>(b =>
+        {
+            b.Property(c => c.Notes).HasMaxLength(2000);
+            b.HasOne(c => c.Asset).WithMany(a => a.Checks)
+                .HasForeignKey(c => c.AssetId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(c => c.CheckedBy).WithMany()
+                .HasForeignKey(c => c.CheckedById).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(c => new { c.AssetId, c.CheckDate });
+        });
+
+        builder.Entity<AssetLocation>(b =>
+        {
+            b.Property(l => l.Name).HasMaxLength(200).IsRequired();
+            b.Property(l => l.Description).HasMaxLength(1000);
+            b.HasOne(l => l.Department).WithMany()
+                .HasForeignKey(l => l.DepartmentId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(l => l.DepartmentId);
+        });
+
+        builder.Entity<AssetType>(b =>
+        {
+            b.Property(t => t.Name).HasMaxLength(100).IsRequired();
+            b.Property(t => t.Description).HasMaxLength(1000);
+            b.Property(t => t.Category).HasMaxLength(100);
+            b.HasOne(t => t.Department).WithMany()
+                .HasForeignKey(t => t.DepartmentId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(t => t.DepartmentId);
+        });
+
+        builder.Entity<AssetTypeProperty>(b =>
+        {
+            b.Property(p => p.Name).HasMaxLength(100).IsRequired();
+            b.HasOne(p => p.AssetType).WithMany(t => t.Properties)
+                .HasForeignKey(p => p.AssetTypeId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(p => p.AssetTypeId);
+        });
+
+        builder.Entity<AssetPropertyValue>(b =>
+        {
+            b.Property(v => v.Value).HasMaxLength(500).IsRequired();
+            b.HasOne(v => v.Asset).WithMany(a => a.PropertyValues)
+                .HasForeignKey(v => v.AssetId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(v => v.Property).WithMany(p => p.Values)
+                .HasForeignKey(v => v.AssetTypePropertyId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(v => new { v.AssetId, v.AssetTypePropertyId }).IsUnique();
+            b.HasIndex(v => v.AssetTypePropertyId);
         });
 
         // Store every enum as its name so the database is readable and filterable in SQL.

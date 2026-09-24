@@ -10,9 +10,11 @@ using ValidationException = Orbit.Application.ValidationException;
 
 namespace Orbit.Pages.Admin.Users;
 
-public class EditModel(UserAdminService users, DepartmentService departments, RoleService roles, IActorProvider actors, LdapSettingsService ldapSettings) : OrbitPageModel
+public class EditModel(UserAdminService users, DepartmentService departments, RoleService roles, IActorProvider actors, LdapSettingsService ldapSettings, AssetService assets) : OrbitPageModel
 {
     public bool DirectoryEnabled { get; private set; }
+    /// <summary>Assets (not disposed) this person still holds (§6.19) - what a leaver has to hand back.</summary>
+    public int AssetsHeld { get; private set; }
     [BindProperty] public UserForm Form { get; set; } = new();
     [BindProperty] public string? TemporaryPassword { get; set; }
     public UserSummary Account { get; private set; } = null!;
@@ -117,6 +119,7 @@ public class EditModel(UserAdminService users, DepartmentService departments, Ro
         Actor = await actors.GetAsync(ct);
         Account = await users.GetAsync(id, ct);
         DirectoryEnabled = await ldapSettings.IsEnabledAsync(ct);
+        AssetsHeld = await assets.CountHeldByAsync(id, ct);
     }
 
     private async Task LoadLookupsAsync(CancellationToken ct)

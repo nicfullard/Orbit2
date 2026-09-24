@@ -1,0 +1,62 @@
+@page
+@model Orbit.Pages.AssetTypes.CreateModel
+@{
+    ViewData["Title"] = "New asset type";
+    var f = Model.Form;
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Assets/Index">Assets</a></li>
+        <li class="breadcrumb-item"><a asp-page="/AssetTypes/Index">Asset types</a></li>
+        <li class="breadcrumb-item active" aria-current="page">New</li>
+    </ol>
+</nav>
+<h1 class="h3 mb-3">New asset type</h1>
+<div class="card" style="max-width:48rem">
+    <div class="card-body">
+        <form method="post">
+            <div asp-validation-summary="ModelOnly" class="text-danger mb-2"></div>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label" for="Form_DepartmentId">Department</label>
+                    @if (Model.CanChooseDepartment)
+                    {
+                        <select class="form-select" id="Form_DepartmentId" name="Form.DepartmentId" asp-items="Model.DepartmentItems" required></select>
+                    }
+                    else
+                    {
+                        <input type="hidden" name="Form.DepartmentId" value="@f.DepartmentId" />
+                        <input class="form-control" value="@Model.DepartmentName" disabled />
+                    }
+                    <div class="form-text">The department whose assets this type describes. It can't be changed later.</div>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="Form_Name">Name</label>
+                    <input class="form-control" id="Form_Name" name="Form.Name" value="@f.Name" maxlength="100" required placeholder="e.g. Laptop" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="Form_Category">Category</label>
+                    <input class="form-control" id="Form_Category" name="Form.Category" value="@f.Category" maxlength="100" list="type-categories" autocomplete="off" placeholder="e.g. IT equipment" />
+                    <datalist id="type-categories">@foreach (var c in Model.Categories) { <option value="@c"></option> }</datalist>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="Form_CheckIntervalDays">Check every</label>
+                    <div class="input-group">
+                        <input type="number" class="form-control" id="Form_CheckIntervalDays" name="Form.CheckIntervalDays" value="@f.CheckIntervalDays" min="0" max="3650" step="1" placeholder="e.g. 365" />
+                        <span class="input-group-text">days</span>
+                    </div>
+                    <div class="form-text">How often assets of this type should be checked; blank for no scheduled checks.</div>
+                </div>
+                <div class="col-12">
+                    <label class="form-label" for="Form_Description">Description</label>
+                    <textarea class="form-control" id="Form_Description" name="Form.Description" rows="2" maxlength="1000">@f.Description</textarea>
+                </div>
+            </div>
+            <div class="mt-4 d-flex gap-2">
+                <button type="submit" class="btn btn-primary">Create asset type</button>
+                <a class="btn btn-outline-secondary" asp-page="/AssetTypes/Index">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>

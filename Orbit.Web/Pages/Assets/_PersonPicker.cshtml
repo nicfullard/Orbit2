@@ -1,0 +1,31 @@
+@using Orbit.Pages.Assets
+@model PersonPickerVm
+@* The people picker (spec §6.19): chips for the people chosen, and a type-ahead search. Behaviour in site.js (js-person-picker). *@
+<div class="person-picker js-person-picker" id="@Model.Id" data-search-url="@Model.SearchUrl" data-field-name="@Model.FieldName"
+     data-mode="@(Model.SubmitOnPick ? "submit" : "multi")">
+    @if (!Model.SubmitOnPick)
+    {
+        <div class="d-flex flex-wrap gap-1 mb-1 js-picker-chips">
+            @foreach (var u in Model.Selected)
+            {
+                <span class="badge rounded-pill text-bg-light border person-chip" data-id="@u.Id" data-name="@u.DisplayName">
+                    <span class="fw-semibold">@u.DisplayName</span>@if (u.DepartmentName is not null) { <span class="text-muted fw-normal ms-1">@u.DepartmentName</span> }
+                    <input type="hidden" name="@Model.FieldName" value="@u.Id" />
+                    <button type="button" class="btn-close ms-1 js-picker-remove" aria-label="Remove @u.DisplayName"></button>
+                </span>
+            }
+            <span class="text-muted small js-picker-empty @(Model.Selected.Count == 0 ? "" : "d-none")">Nobody - unassigned</span>
+        </div>
+    }
+    else
+    {
+        <input type="hidden" name="@Model.FieldName" value="" />
+    }
+    <div class="position-relative">
+        <input type="search" class="form-control form-control-sm js-picker-input" autocomplete="off" spellcheck="false"
+               role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="@(Model.Id)-results"
+               aria-label="@Model.Label" placeholder="@Model.Placeholder" />
+        <ul class="list-group position-absolute w-100 shadow-sm person-picker-results js-picker-results d-none" id="@(Model.Id)-results" role="listbox"></ul>
+    </div>
+    <div class="visually-hidden js-picker-status" aria-live="polite"></div>
+</div>

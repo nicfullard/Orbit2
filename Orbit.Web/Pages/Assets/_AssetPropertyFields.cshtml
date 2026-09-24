@@ -1,0 +1,65 @@
+@using Orbit.Pages.Assets
+@using Orbit.Application.Assets
+@model AssetPropertyFieldsVm
+@* The chosen type's properties (spec §6.19). Re-rendered by the form's Properties handler when the type changes. *@
+@if (!Model.TypeChosen)
+{
+    <p class="text-muted small mb-0">Choose a type to see its properties.</p>
+}
+else
+{
+    @if (Model.Dropped.Count > 0)
+    {
+        <div class="alert alert-warning small py-2">
+            Changing the type drops these values when you save: <strong>@string.Join("; ", Model.Dropped)</strong>.
+            @if (Model.Carried.Count > 0) { <span>Carried over: @string.Join(", ", Model.Carried).</span> }
+        </div>
+    }
+    else if (Model.Carried.Count > 0)
+    {
+        <div class="alert alert-info small py-2">Carried over from the current type: @string.Join(", ", Model.Carried).</div>
+    }
+    @if (Model.Properties.Count == 0)
+    {
+        <p class="text-muted small mb-0">This type has no extra properties.</p>
+    }
+    <div class="row g-3">
+        @foreach (var p in Model.Properties)
+        {
+            var name = $"Form.Properties[{p.Id}]";
+            var id = $"prop_{p.Id:N}";
+            Model.Values.TryGetValue(p.Id, out var value);
+            <div class="col-md-4">
+                <label class="form-label" for="@id">@p.Name @if (p.IsRequired) { <span class="text-danger" title="Required">*</span> }</label>
+                @switch (p.PropertyType)
+                {
+                    case AssetPropertyType.Number:
+                        <input type="text" inputmode="decimal" class="form-control" id="@id" name="@name" value="@value" required="@p.IsRequired" placeholder="e.g. 16" />
+                        break;
+                    case AssetPropertyType.Date:
+                        <input type="date" class="form-control" id="@id" name="@name" value="@value" required="@p.IsRequired" />
+                        break;
+                    case AssetPropertyType.YesNo:
+                        <select class="form-select" id="@id" name="@name" required="@p.IsRequired">
+                            <option value="">-</option>
+                            <option value="true" selected="@(value == "true")">Yes</option>
+                            <option value="false" selected="@(value == "false")">No</option>
+                        </select>
+                        break;
+                    case AssetPropertyType.Choice:
+                        <select class="form-select" id="@id" name="@name" required="@p.IsRequired">
+                            <option value="">-</option>
+                            @foreach (var o in p.Options)
+                            {
+                                <option value="@o" selected="@(string.Equals(o, value, StringComparison.OrdinalIgnoreCase))">@o</option>
+                            }
+                        </select>
+                        break;
+                    default:
+                        <input type="text" class="form-control" id="@id" name="@name" value="@value" maxlength="@AssetPropertyRules.MaxValueLength" required="@p.IsRequired" />
+                        break;
+                }
+            </div>
+        }
+    </div>
+}

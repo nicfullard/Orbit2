@@ -108,6 +108,37 @@ public enum BufferStatus
     Red
 }
 
+/// <summary>
+/// An asset's state (spec §6.19). <see cref="Disposed"/> is the end state: nobody holds it and no check is due.
+/// <see cref="Lost"/> keeps its assignments, since who last had it is the useful fact.
+/// </summary>
+public enum AssetStatus
+{
+    Active,
+    InStorage,
+    Damaged,
+    Lost,
+    Disposed
+}
+
+/// <summary>What a check found (§6.19). A check never changes the asset; a last outcome other than Ok is flagged instead.</summary>
+public enum AssetCheckOutcome
+{
+    Ok,
+    IssueFound,
+    NotFound
+}
+
+/// <summary>The kind of value an asset type's property holds (§6.19).</summary>
+public enum AssetPropertyType
+{
+    Text,
+    Number,
+    Date,
+    YesNo,
+    Choice
+}
+
 public static class TaskStatusExtensions
 {
     public static bool IsClosed(this TaskItemStatus status) =>
@@ -144,6 +175,26 @@ public static class TaskStatusExtensions
     {
         BufferStatus.NotAvailable => "Not available",
         _ => status.ToString()
+    };
+
+    public static string Label(this AssetStatus status) => status switch
+    {
+        AssetStatus.InStorage => "In storage",
+        _ => status.ToString()
+    };
+
+    public static string Label(this AssetCheckOutcome outcome) => outcome switch
+    {
+        AssetCheckOutcome.Ok => "OK",
+        AssetCheckOutcome.IssueFound => "Issue found",
+        AssetCheckOutcome.NotFound => "Not found",
+        _ => outcome.ToString()
+    };
+
+    public static string Label(this AssetPropertyType type) => type switch
+    {
+        AssetPropertyType.YesNo => "Yes / No",
+        _ => type.ToString()
     };
 
     /// <summary>The conventional two-letter code: FS, SS, FF, SF.</summary>

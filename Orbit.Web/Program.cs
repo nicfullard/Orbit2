@@ -34,6 +34,7 @@ builder.Services.Configure<AgentOptions>(config.GetSection(AgentOptions.Section)
 builder.Services.Configure<SecurityOptions>(config.GetSection(SecurityOptions.Section));
 builder.Services.Configure<CriticalPathOptions>(config.GetSection(CriticalPathOptions.Section));
 builder.Services.Configure<AttachmentOptions>(config.GetSection(AttachmentOptions.Section));
+builder.Services.Configure<AssetOptions>(config.GetSection(AssetOptions.Section));
 var security = config.GetSection(SecurityOptions.Section).Get<SecurityOptions>() ?? new SecurityOptions();
 
 // Behind nginx/Caddy on the same host (deploy/README.md) the app only ever sees 127.0.0.1 over plain http.
@@ -112,6 +113,12 @@ builder.Services.AddRazorPages(options =>
         options.Conventions.AuthorizeFolder("/Reports", Policies.Permission(Permission.ReportsView));
         options.Conventions.AuthorizePage("/Sprints/Create", Policies.Permission(Permission.SprintsManage));
         options.Conventions.AuthorizePage("/Sprints/Edit", Policies.Permission(Permission.SprintsManage));
+        // Assets (§6.19): the page door opens on the permission at any scope; the services apply the scope.
+        options.Conventions.AuthorizeFolder("/Assets", Policies.Permission(Permission.AssetsView));
+        options.Conventions.AuthorizePage("/Assets/Create", Policies.Permission(Permission.AssetsCreate));
+        options.Conventions.AuthorizePage("/Assets/Edit", Policies.Permission(Permission.AssetsEdit));
+        options.Conventions.AuthorizeFolder("/AssetTypes", Policies.Permission(Permission.AssetsConfigure));
+        options.Conventions.AuthorizeFolder("/AssetLocations", Policies.Permission(Permission.AssetsConfigure));
     })
     .AddMvcOptions(o =>
     {
@@ -146,6 +153,9 @@ builder.Services.AddScoped<ReportingService>();
 builder.Services.AddScoped<DashboardService>();
 builder.Services.AddScoped<WorkingCalendarService>();
 builder.Services.AddScoped<CriticalPathService>();
+builder.Services.AddScoped<AssetService>();
+builder.Services.AddScoped<AssetTypeService>();
+builder.Services.AddScoped<AssetLocationService>();
 builder.Services.AddTransient<IEmailSender, LoggingEmailSender>();
 
 // --- MCP server (Streamable HTTP, stateless) ----------------------------------------------
@@ -156,7 +166,11 @@ builder.Services.AddMcpServer(o =>
             "to resolve ids before creating or updating tasks. Every write you make is tagged as API-created and audited. " +
             "For a project's critical path, task float and project-buffer status use get_critical_path - Orbit's stored, deterministic analysis - " +
             "rather than deriving criticality from raw tasks; run_critical_path_analysis runs and stores a fresh one. " +
-            "Files attached to tasks and projects are listed by get_task / get_project and read with get_attachment.";
+            "Files attached to tasks and projects are listed by get_task / get_project and read with get_attachment. " +
+            "The asset register (laptops, vehicles, equipment) is separate from tasks and projects: list_assets / get_asset read it, " +
+            "create_asset / update_asset / record_asset_check write it; each department has its own asset types and locations " +
+            "(list_asset_types, list_asset_locations), and any assetId argument also accepts the asset's ERP asset number, which not every asset has. " +
+            "Pass an idempotencyKey to create_asset so a retry can't register an asset twice.";
     })
     .WithHttpTransport(o => o.SessionMode = HttpServerSessionMode.Stateless)
     .WithTools<OrbitTools>();

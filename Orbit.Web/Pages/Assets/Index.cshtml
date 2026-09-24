@@ -1,0 +1,203 @@
+@page
+@using Orbit.Application.Assets
+@model Orbit.Pages.Assets.IndexModel
+@{
+    ViewData["Title"] = "Assets";
+    var actor = Model.Actor;
+    var statusItems = new List<SelectListItem> { new("Not disposed", "", string.IsNullOrEmpty(Model.Status)) };
+    statusItems.AddRange(Enum.GetValues<AssetStatus>().Select(s => new SelectListItem(s.Label(), s.ToString(), string.Equals(Model.Status, s.ToString(), StringComparison.OrdinalIgnoreCase))));
+    statusItems.Add(new SelectListItem("All, including disposed", "all", string.Equals(Model.Status, "all", StringComparison.OrdinalIgnoreCase)));
+    var checkItems = new List<SelectListItem>
+    {
+        new("Any", "", Model.Check is null),
+        new("Overdue", nameof(AssetCheckFilter.Overdue), Model.Check == AssetCheckFilter.Overdue),
+        new("Due soon", nameof(AssetCheckFilter.DueSoon), Model.Check == AssetCheckFilter.DueSoon),
+        new("Due soon or overdue", nameof(AssetCheckFilter.Due), Model.Check == AssetCheckFilter.Due),
+        new("Last check not OK", nameof(AssetCheckFilter.NotOk), Model.Check == AssetCheckFilter.NotOk),
+        new("Never checked", nameof(AssetCheckFilter.Never), Model.Check == AssetCheckFilter.Never)
+    };
+    var warrantyItems = new List<SelectListItem>
+    {
+        new("Any", "", Model.Warranty is null),
+        new("Expiring soon", nameof(AssetWarrantyFilter.Expiring), Model.Warranty == AssetWarrantyFilter.Expiring),
+        new("Expired", nameof(AssetWarrantyFilter.Expired), Model.Warranty == AssetWarrantyFilter.Expired)
+    };
+    var holder = Model.Holder?.Trim().ToLowerInvariant();
+    var canConfigure = actor.Has(Permission.AssetsConfigure);
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+    <div>
+        <h1 class="h3 mb-0">Assets <span class="text-muted fs-6">@Model.Result.TotalCount</span></h1>
+        @if (actor.ScopeOf(Permission.AssetsView) == PermissionScope.Own)
+        {
+            <div class="text-muted small">The assets assigned to you.</div>
+        }
+    </div>
+    <div class="d-flex gap-2">
+        @if (canConfigure)
+        {
+            <a class="btn btn-outline-secondary btn-sm" asp-page="/AssetTypes/Index">Asset types</a>
+            <a class="btn btn-outline-secondary btn-sm" asp-page="/AssetLocations/Index">Locations</a>
+        }
+        @if (actor.Has(Permission.AssetsCreate))
+        {
+            <a class="btn btn-primary btn-sm" asp-page="/Assets/Create">Register asset</a>
+        }
+    </div>
+</div>
+
+<form method="get" class="card mb-3">
+    <div class="card-body py-2">
+        <div class="row g-2 align-items-end">
+            <div class="col-sm-6 col-lg-3">
+                <label class="form-label small mb-0">Search</label>
+                <input class="form-control form-control-sm" name="Search" value="@Model.Search" placeholder="Number, name, serial, make, model" />
+            </div>
+            @if (actor.CanAnywhere(Permission.AssetsView))
+            {
+                <div class="col-sm-6 col-lg-2">
+                    <label class="form-label small mb-0">Department</label>
+                    <select class="form-select form-select-sm" name="DepartmentId">
+                        <option value="">All</option>
+                        @foreach (var i in Model.DepartmentItems) { <option value="@i.Value" selected="@i.Selected">@i.Text</option> }
+                    </select>
+                </div>
+            }
+            <div class="col-sm-6 col-lg-2">
+                <label class="form-label small mb-0">Type</label>
+                <select class="form-select form-select-sm" name="AssetTypeId">
+                    <option value="">All</option>
+                    @foreach (var o in Model.TypeOptions) { <option value="@o.Id" selected="@(o.Id == Model.AssetTypeId)">@Model.OptionLabel(o)</option> }
+                </select>
+            </div>
+            <div class="col-sm-6 col-lg-2">
+                <label class="form-label small mb-0">Location</label>
+                <select class="form-select form-select-sm" name="LocationId">
+                    <option value="">All</option>
+                    @foreach (var o in Model.LocationOptions) { <option value="@o.Id" selected="@(o.Id == Model.LocationId)">@Model.OptionLabel(o)</option> }
+                </select>
+            </div>
+            <div class="col-sm-6 col-lg-2">
+                <label class="form-label small mb-0">Status</label>
+                <select class="form-select form-select-sm" name="Status" asp-items="statusItems"></select>
+            </div>
+            <div class="col-sm-6 col-lg-2">
+                <label class="form-label small mb-0">Assigned to</label>
+                <select class="form-select form-select-sm" name="Holder">
+                    <option value="" selected="@string.IsNullOrEmpty(holder)">Anyone</option>
+                    <option value="me" selected="@(holder == "me")">Me</option>
+                    <option value="none" selected="@(holder == "none")">Unassigned</option>
+                    <option value="deactivated" selected="@(holder == "deactivated")">Held by deactivated users</option>
+                    @foreach (var h in Model.Holders)
+                    {
+                        <option value="@h.Id" selected="@(holder == h.Id.ToString())">@h.Name@(h.IsActive ? "" : " (deactivated)")</option>
+                    }
+                </select>
+            </div>
+            <div class="col-sm-6 col-lg-2">
+                <label class="form-label small mb-0">Check</label>
+                <select class="form-select form-select-sm" name="Check" asp-items="checkItems"></select>
+            </div>
+            <div class="col-sm-6 col-lg-2">
+                <label class="form-label small mb-0">Warranty</label>
+                <select class="form-select form-select-sm" name="Warranty" asp-items="warrantyItems"></select>
+            </div>
+            <div class="col-auto">
+                <button class="btn btn-sm btn-outline-primary" type="submit">Filter</button>
+                <a class="btn btn-sm btn-link" asp-page="/Assets/Index" asp-route-reset="true" title="Clear the filters - they are remembered for this browser session until you reset them">Reset</a>
+            </div>
+        </div>
+    </div>
+</form>
+
+<div class="card">
+    <div class="card-body p-0">
+        @if (Model.Result.Items.Count == 0)
+        {
+            <p class="text-muted fst-italic p-3 mb-0">No assets.</p>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Asset</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Location</th>
+                            <th>Assigned to</th>
+                            @if (Model.ShowDepartment) { <th>Department</th> }
+                            <th>Next check</th>
+                            <th>Warranty</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in Model.Result.Items)
+                        {
+                            var a = item.Asset;
+                            <tr>
+                                <td>
+                                    @if (a.AssetNumber is not null) { <span class="font-monospace small text-muted me-1" title="ERP asset number">@a.AssetNumber</span> }
+                                    <a asp-page="/Assets/Details" asp-route-id="@a.Id" class="fw-semibold text-decoration-none">@a.Name</a>
+                                </td>
+                                <td>
+                                    @a.AssetType.Name
+                                    @if (!string.IsNullOrEmpty(a.AssetType.Category)) { <div class="small text-muted">@a.AssetType.Category</div> }
+                                </td>
+                                <td><span class="badge @Ui.AssetStatusBadge(a.Status)">@a.Status.Label()</span></td>
+                                <td>@(a.AssetLocation?.Name ?? "-")</td>
+                                <td>
+                                    @if (a.Assignments.Count == 0)
+                                    {
+                                        <span class="text-muted small">Unassigned</span>
+                                    }
+                                    @foreach (var x in a.Assignments.OrderBy(x => x.User.DisplayName))
+                                    {
+                                        <div class="small">
+                                            @x.User.DisplayName
+                                            @if (!x.User.IsActive) { <span class="badge text-bg-warning">deactivated</span> }
+                                        </div>
+                                    }
+                                </td>
+                                @if (Model.ShowDepartment) { <td><span class="badge text-bg-light border">@a.Department.Name</span></td> }
+                                <td class="text-nowrap">
+                                    @if (item.NextCheckDue is DateOnly due)
+                                    {
+                                        @Ui.Day(due)
+                                        @if (item.CheckState == CheckDueState.Overdue) { <span class="badge text-bg-danger ms-1">Overdue</span> }
+                                        else if (item.CheckState == CheckDueState.DueSoon) { <span class="badge text-bg-warning ms-1">Due soon</span> }
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">-</span>
+                                    }
+                                    @if (AssetCheckSchedule.LastCheckNotOk(a))
+                                    {
+                                        <div><span class="badge text-bg-danger" title="The last check found an issue or didn't find the asset">Last check: @a.LastCheckOutcome!.Value.Label()</span></div>
+                                    }
+                                </td>
+                                <td class="text-nowrap">
+                                    @Ui.Day(a.WarrantyExpiresOn)
+                                    @if (Model.WarrantyExpired(a)) { <span class="badge text-bg-secondary ms-1">Expired</span> }
+                                    else if (Model.WarrantyExpiring(a)) { <span class="badge text-bg-warning ms-1">Expiring</span> }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+    @if (Model.Result.TotalPages > 1)
+    {
+        <div class="card-footer d-flex justify-content-between align-items-center small">
+            <span>Page @Model.Result.Page of @Model.Result.TotalPages</span>
+            <div>
+                @if (Model.Result.HasPrevious) { <a class="btn btn-sm btn-outline-secondary" href="@Model.PageUrl(Model.Result.Page - 1)">Previous</a> }
+                @if (Model.Result.HasNext) { <a class="btn btn-sm btn-outline-secondary" href="@Model.PageUrl(Model.Result.Page + 1)">Next</a> }
+            </div>
+        </div>
+    }
+</div>

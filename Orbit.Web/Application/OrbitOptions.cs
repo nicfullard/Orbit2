@@ -119,6 +119,16 @@ public sealed class CriticalPathOptions
     public int HoursPerWorkingDay { get; set; } = 8;
 }
 
+/// <summary>The asset register's two windows (spec §6.19). Check intervals are per asset type, edited on the Asset types pages.</summary>
+public sealed class AssetOptions
+{
+    public const string Section = "Assets";
+    /// <summary>A check due within this many days (today included) is "due soon".</summary>
+    public int CheckDueSoonDays { get; set; } = 14;
+    /// <summary>A warranty ending within this many days is "expiring".</summary>
+    public int WarrantyExpiringDays { get; set; } = 60;
+}
+
 /// <summary>File attachments on tasks and projects (spec §6.18). The bytes live in the database, so there is nothing to configure but the limits.</summary>
 public sealed class AttachmentOptions
 {

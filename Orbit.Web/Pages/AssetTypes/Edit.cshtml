@@ -1,0 +1,151 @@
+@page "{id:guid}"
+@model Orbit.Pages.AssetTypes.EditModel
+@{
+    var t = Model.Type;
+    var f = Model.Form;
+    ViewData["Title"] = $"Edit {t.Name}";
+    var typeItems = Ui.EnumItems<AssetPropertyType>(AssetPropertyType.Text, null, x => x.Label()).ToList();
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Assets/Index">Assets</a></li>
+        <li class="breadcrumb-item"><a asp-page="/AssetTypes/Index">Asset types</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@t.Name</li>
+    </ol>
+</nav>
+<h1 class="h3 mb-1">
+    @t.Name
+    @if (t.IsArchived) { <span class="badge text-bg-secondary fs-6 align-middle">Archived</span> }
+</h1>
+<div class="text-muted small mb-3">An asset type of <strong>@t.Department.Name</strong>.</div>
+
+<div class="row g-3">
+    <div class="col-lg-5">
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Type</div>
+            <div class="card-body">
+                <form method="post" asp-route-id="@t.Id">
+                    <div asp-validation-summary="ModelOnly" class="text-danger mb-2"></div>
+                    <div class="mb-3">
+                        <label class="form-label" for="form_Name">Name</label>
+                        <input class="form-control" id="form_Name" name="form.Name" value="@f.Name" maxlength="100" required />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="form_Category">Category</label>
+                        <input class="form-control" id="form_Category" name="form.Category" value="@f.Category" maxlength="100" list="type-categories" autocomplete="off" />
+                        <datalist id="type-categories">@foreach (var c in Model.Categories) { <option value="@c"></option> }</datalist>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="form_CheckIntervalDays">Check every</label>
+                        <div class="input-group">
+                            <input type="number" class="form-control" id="form_CheckIntervalDays" name="form.CheckIntervalDays" value="@f.CheckIntervalDays" min="0" max="3650" step="1" />
+                            <span class="input-group-text">days</span>
+                        </div>
+                        <div class="form-text">Blank for no scheduled checks. Changing it re-dates every asset of this type.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="form_Description">Description</label>
+                        <textarea class="form-control" id="form_Description" name="form.Description" rows="2" maxlength="1000">@f.Description</textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </form>
+                <hr />
+                <div class="d-flex flex-wrap gap-2">
+                    @if (t.IsArchived)
+                    {
+                        <form method="post" asp-page-handler="Archive" asp-route-id="@t.Id" asp-route-archived="false">
+                            <button class="btn btn-outline-success btn-sm" type="submit">Restore type</button>
+                        </form>
+                    }
+                    else
+                    {
+                        <form method="post" asp-page-handler="Archive" asp-route-id="@t.Id" asp-route-archived="true" data-confirm="Archive this asset type? It stops being offered for new assets; assets that have it keep it.">
+                            <button class="btn btn-outline-secondary btn-sm" type="submit">Archive type</button>
+                        </form>
+                    }
+                    <form method="post" asp-page-handler="Delete" asp-route-id="@t.Id" data-confirm="Delete the asset type &quot;@t.Name&quot; and its properties? Only possible while no asset uses it.">
+                        <button class="btn btn-outline-danger btn-sm" type="submit">Delete type</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Properties <span class="text-muted fw-normal">(@Model.Properties.Count)</span></div>
+            <div class="card-body">
+                <p class="small text-muted">
+                    Extra fields every asset of this type carries, in this order. A property's type can change only while no asset has a value for it,
+                    and a Choice option only be removed while no asset holds it.
+                </p>
+                @for (var i = 0; i < Model.Properties.Count; i++)
+                {
+                    var p = Model.Properties[i];
+                    var count = Model.ValueCounts.GetValueOrDefault(p.Id);
+                    var formId = $"prop-{p.Id:N}";
+                    <div class="border rounded p-2 mb-2">
+                        <form method="post" asp-page-handler="UpdateProperty" asp-route-id="@t.Id" asp-route-propertyId="@p.Id" id="@formId" class="row g-2 align-items-end">
+                            <div class="col-md-4">
+                                <label class="form-label small mb-0">Name</label>
+                                <input class="form-control form-control-sm" name="property.Name" value="@p.Name" maxlength="100" required />
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small mb-0">Type</label>
+                                <select class="form-select form-select-sm js-property-type" name="property.PropertyType">
+                                    @foreach (var o in typeItems) { <option value="@o.Value" selected="@(o.Value == p.PropertyType.ToString())">@o.Text</option> }
+                                </select>
+                            </div>
+                            <div class="col-md-2 form-check ms-2 mb-1">
+                                <input class="form-check-input" type="checkbox" name="property.IsRequired" value="true" id="req-@p.Id.ToString("N")" checked="@p.IsRequired" />
+                                <label class="form-check-label small" for="req-@p.Id.ToString("N")">Required</label>
+                            </div>
+                            <div class="col-md-12 js-property-options @(p.PropertyType == AssetPropertyType.Choice ? "" : "d-none")">
+                                <label class="form-label small mb-0">Options, one per line</label>
+                                <textarea class="form-control form-control-sm" name="property.Options" rows="3">@string.Join("\n", p.Options)</textarea>
+                            </div>
+                        </form>
+                        <div class="d-flex flex-wrap gap-2 align-items-center mt-2">
+                            <button class="btn btn-sm btn-outline-primary py-0" type="submit" form="@formId">Save</button>
+                            <form method="post" asp-page-handler="MoveProperty" asp-route-id="@t.Id" asp-route-propertyId="@p.Id" asp-route-direction="-1">
+                                <button class="btn btn-sm btn-outline-secondary py-0" type="submit" disabled="@(i == 0)" title="Move up">&uarr;</button>
+                            </form>
+                            <form method="post" asp-page-handler="MoveProperty" asp-route-id="@t.Id" asp-route-propertyId="@p.Id" asp-route-direction="1">
+                                <button class="btn btn-sm btn-outline-secondary py-0" type="submit" disabled="@(i == Model.Properties.Count - 1)" title="Move down">&darr;</button>
+                            </form>
+                            <form method="post" asp-page-handler="DeleteProperty" asp-route-id="@t.Id" asp-route-propertyId="@p.Id"
+                                  data-confirm="@(count == 0 ? $"Delete the property \"{p.Name}\"?" : $"Delete the property \"{p.Name}\"? {count} {(count == 1 ? "asset has" : "assets have")} a value for it, and those values are deleted too.")">
+                                <button class="btn btn-sm btn-outline-danger py-0" type="submit">Delete</button>
+                            </form>
+                            <span class="small text-muted ms-auto">@(count == 0 ? "No values yet" : $"{count} {(count == 1 ? "asset has" : "assets have")} a value")</span>
+                        </div>
+                    </div>
+                }
+
+                <h2 class="h6 mt-3">Add a property</h2>
+                <form method="post" asp-page-handler="AddProperty" asp-route-id="@t.Id" class="row g-2 align-items-end border rounded p-2">
+                    <div class="col-md-4">
+                        <label class="form-label small mb-0" for="new-name">Name</label>
+                        <input class="form-control form-control-sm" id="new-name" name="property.Name" maxlength="100" required placeholder="e.g. RAM (GB)" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small mb-0" for="new-type">Type</label>
+                        <select class="form-select form-select-sm js-property-type" id="new-type" name="property.PropertyType" asp-items="typeItems"></select>
+                    </div>
+                    <div class="col-md-2 form-check ms-2 mb-1">
+                        <input class="form-check-input" type="checkbox" name="property.IsRequired" value="true" id="new-required" />
+                        <label class="form-check-label small" for="new-required">Required</label>
+                    </div>
+                    <div class="col-md-2">
+                        <button class="btn btn-sm btn-primary w-100" type="submit">Add</button>
+                    </div>
+                    <div class="col-md-12 js-property-options d-none">
+                        <label class="form-label small mb-0" for="new-options">Options, one per line</label>
+                        <textarea class="form-control form-control-sm" id="new-options" name="property.Options" rows="3" placeholder="Windows&#10;Linux&#10;macOS"></textarea>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>

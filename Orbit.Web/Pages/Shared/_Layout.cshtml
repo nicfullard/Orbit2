@@ -55,6 +55,10 @@
                             <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Sprints/Index">Sprints</a></li>
                             <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Recurring/Index">Recurring</a></li>
                             <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Time/My">My Time</a></li>
+                            @if (actor is not null && actor.Has(Permission.AssetsView))
+                            {
+                                <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Assets/Index">Assets</a></li>
+                            }
                             @if (actor is not null && AccessPolicy.CanViewReports(actor))
                             {
                                 <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Reports/Index">Reports</a></li>

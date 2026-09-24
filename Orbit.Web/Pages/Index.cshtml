@@ -174,6 +174,35 @@
                 }
             </div>
         </div>
+        @if (Model.AssetChecks is AssetCheckSummary ac)
+        {
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span class="fw-semibold">Asset checks</span>
+                    <a class="small text-decoration-none" asp-page="/Assets/Index" asp-route-Check="Due">Open</a>
+                </div>
+                <div class="card-body py-2 small">
+                    @if (ac.Scope == PermissionScope.Own)
+                    {
+                        <div class="mb-1">
+                            You hold <a class="fw-semibold text-decoration-none" asp-page="/Assets/Index" asp-route-Holder="me">@ac.Held @(ac.Held == 1 ? "asset" : "assets")</a>.
+                        </div>
+                    }
+                    @if (ac.Overdue == 0 && ac.DueSoon == 0 && ac.NotOk == 0)
+                    {
+                        <span class="text-muted">No checks due@(ac.Scope == PermissionScope.Own ? " on your assets" : "").</span>
+                    }
+                    else
+                    {
+                        <div class="d-flex flex-wrap gap-3">
+                            <a class="text-decoration-none" asp-page="/Assets/Index" asp-route-Check="Overdue"><span class="fs-5 fw-semibold text-danger">@ac.Overdue</span> overdue</a>
+                            <a class="text-decoration-none" asp-page="/Assets/Index" asp-route-Check="DueSoon"><span class="fs-5 fw-semibold text-warning-emphasis">@ac.DueSoon</span> due soon</a>
+                            <a class="text-decoration-none" asp-page="/Assets/Index" asp-route-Check="NotOk"><span class="fs-5 fw-semibold">@ac.NotOk</span> last check not OK</a>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
         <div class="card mb-3">
             <div class="card-header fw-semibold">Due soon</div>
             <ul class="list-group list-group-flush">

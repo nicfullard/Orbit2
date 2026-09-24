@@ -25,6 +25,11 @@ public static class Permission
     public const string CalendarManage = "calendar.manage";
     public const string DirectoryManage = "directory.manage";
     public const string AgentsManage = "agents.manage";
+    public const string AssetsView = "assets.view";
+    public const string AssetsCreate = "assets.create";
+    public const string AssetsEdit = "assets.edit";
+    public const string AssetsCheck = "assets.check";
+    public const string AssetsConfigure = "assets.configure";
 }
 
 /// <summary>

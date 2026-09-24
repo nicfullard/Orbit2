@@ -12,8 +12,8 @@ public static class DefaultRoles
     public const string DepartmentAdmin = "Department Admin";
 
     public const string SystemAdministratorDescription = "Every permission, everywhere. Built in; cannot be edited or deleted.";
-    public const string MemberDescription = "Sees their department's work; edits, plans and logs time on their own tasks; takes unassigned tasks.";
-    public const string DepartmentAdminDescription = "Manages every task and project in their own department, including colleagues' time.";
+    public const string MemberDescription = "Sees their department's work; edits, plans and logs time on their own tasks; takes unassigned tasks; sees and confirms the assets they hold.";
+    public const string DepartmentAdminDescription = "Manages every task and project in their own department, including colleagues' time, and the department's asset register.";
 
     public static readonly IReadOnlyDictionary<string, PermissionScope> MemberGrants = new Dictionary<string, PermissionScope>(StringComparer.Ordinal)
     {
@@ -25,7 +25,10 @@ public static class DefaultRoles
         [Permission.ProjectsView] = PermissionScope.Department,
         [Permission.ProjectsCreate] = PermissionScope.Department,
         [Permission.ProjectsEdit] = PermissionScope.Own,
-        [Permission.TimeLog] = PermissionScope.Own
+        [Permission.TimeLog] = PermissionScope.Own,
+        // Assets (§6.19): see and self-certify the assets they hold.
+        [Permission.AssetsView] = PermissionScope.Own,
+        [Permission.AssetsCheck] = PermissionScope.Own
     };
 
     public static readonly IReadOnlyDictionary<string, PermissionScope> DepartmentAdminGrants = new Dictionary<string, PermissionScope>(StringComparer.Ordinal)
@@ -38,6 +41,12 @@ public static class DefaultRoles
         [Permission.ProjectsView] = PermissionScope.Department,
         [Permission.ProjectsCreate] = PermissionScope.Department,
         [Permission.ProjectsEdit] = PermissionScope.Department,
-        [Permission.TimeLog] = PermissionScope.Department
+        [Permission.TimeLog] = PermissionScope.Department,
+        // Assets (§6.19): run the department's register, including its own asset types and locations.
+        [Permission.AssetsView] = PermissionScope.Department,
+        [Permission.AssetsCreate] = PermissionScope.Department,
+        [Permission.AssetsEdit] = PermissionScope.Department,
+        [Permission.AssetsCheck] = PermissionScope.Department,
+        [Permission.AssetsConfigure] = PermissionScope.Department
     };
 }

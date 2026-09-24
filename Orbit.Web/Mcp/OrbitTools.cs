@@ -29,7 +29,10 @@ public sealed class OrbitTools(
     TaskStructureService structure,
     CriticalPathService criticalPaths,
     AttachmentService attachments,
-    IOptions<AttachmentOptions> attachmentOptions)
+    IOptions<AttachmentOptions> attachmentOptions,
+    AssetService assets,
+    AssetTypeService assetTypes,
+    AssetLocationService assetLocations)
 {
     private const string Clear = "none";
 
@@ -217,33 +220,50 @@ public sealed class OrbitTools(
 
     // ------------------------------------------------------------- comments
 
-    [McpServerTool(Name = "add_comment"), Description("Add a comment to a task, e.g. to explain why you created or changed it. Shown in the UI attributed to Claude.")]
+    [McpServerTool(Name = "add_comment"), Description(
+        "Add a comment to a task - e.g. to explain why you created or changed it - or to an asset. Pass exactly one of taskId or assetId. " +
+        "Shown in the UI attributed to Claude. Anyone who can see the task or asset can comment on it.")]
     public Task<string> AddComment(
-        [Description("Task id (GUID), or task number such as T-26-00012.")] string taskId,
         [Description("Comment text (markdown is fine).")] string body,
+        [Description("Task id (GUID), or task number such as T-26-00012.")] string? taskId = null,
+        [Description("Asset id (GUID), or its ERP asset number when it has one.")] string? assetId = null,
         CancellationToken ct = default) => Run(async () =>
     {
-        var comment = await comments.AddAsync(await TaskIdAsync(taskId, ct), body, ct);
+        var comment = await CommentParentAsync(taskId, assetId, ct) is { IsTask: true } parent
+            ? await comments.AddAsync(parent.Id, body, ct)
+            : await comments.AddToAssetAsync(await assets.ResolveIdAsync(assetId, ct), body, ct);
         return CommentDto(comment);
     });
 
-    [McpServerTool(Name = "list_comments"), Description("List a task's comments, oldest first.")]
+    [McpServerTool(Name = "list_comments"), Description("List a task's or an asset's comments, oldest first. Pass exactly one of taskId or assetId.")]
     public Task<string> ListComments(
-        [Description("Task id (GUID), or task number such as T-26-00012.")] string taskId,
+        [Description("Task id (GUID), or task number such as T-26-00012.")] string? taskId = null,
+        [Description("Asset id (GUID), or its ERP asset number when it has one.")] string? assetId = null,
         CancellationToken ct = default) => Run(async () =>
     {
-        var list = await comments.ListAsync(await TaskIdAsync(taskId, ct), ct);
+        var list = await CommentParentAsync(taskId, assetId, ct) is { IsTask: true } parent
+            ? await comments.ListAsync(parent.Id, ct)
+            : await comments.ListForAssetAsync(await assets.ResolveIdAsync(assetId, ct), ct);
         return new { items = list.Select(CommentDto).ToList(), totalCount = list.Count };
     });
+
+    /// <summary>A comment tool's parent: exactly one of a task or an asset.</summary>
+    private async Task<(bool IsTask, Guid Id)> CommentParentAsync(string? taskId, string? assetId, CancellationToken ct)
+    {
+        var hasTask = !string.IsNullOrWhiteSpace(taskId);
+        var hasAsset = !string.IsNullOrWhiteSpace(assetId);
+        if (hasTask == hasAsset) throw new McpException("Pass exactly one of taskId or assetId.");
+        return hasTask ? (true, await TaskIdAsync(taskId, ct)) : (false, Guid.Empty);
+    }
 
     // ---------------------------------------------------------------- attachments
 
     [McpServerTool(Name = "get_attachment"), Description(
-        "Get the content of a file attached to a task or project - one of the attachments that get_task / get_project list. " +
-        "Returns two content blocks: JSON describing the file (its metadata, taskId or projectId, and what follows), then the file itself: " +
+        "Get the content of a file attached to a task, project or asset - one of the attachments that get_task / get_project / get_asset list. " +
+        "Returns two content blocks: JSON describing the file (its metadata, taskId, projectId or assetId, and what follows), then the file itself: " +
         "text files (text/*, JSON, XML and the like, or an untyped file that is valid UTF-8) as text, PNG/JPEG/GIF/WebP as an image, " +
         "anything else (PDF, Office documents, archives...) as an embedded resource carrying base64 data. A file over Orbit's size limit for " +
-        "this tool is described but not returned: the JSON says so, and downloadPath is the web UI download. Visible to whoever may see the task or project.")]
+        "this tool is described but not returned: the JSON says so, and downloadPath is the web UI download. Visible to whoever may see the task, project or asset.")]
     public Task<CallToolResult> GetAttachment(
         [Description("Attachment id (GUID), from the attachments list of get_task or get_project.")] string attachmentId,
         CancellationToken ct = default) => RunResult(async () =>
@@ -258,7 +278,7 @@ public sealed class OrbitTools(
                 [
                     Json(new
                     {
-                        attachment = AttachmentDto(attachment), taskId = attachment.TaskId, projectId = attachment.ProjectId,
+                        attachment = AttachmentDto(attachment), taskId = attachment.TaskId, projectId = attachment.ProjectId, assetId = attachment.AssetId,
                         content = "notReturned",
                         reason = $"The file is {attachment.SizeBytes} bytes, over the {limits.MaxMcpFileSizeMb} MB limit for get_attachment; it can be downloaded from downloadPath in the web UI."
                     })
@@ -291,7 +311,7 @@ public sealed class OrbitTools(
             [
                 Json(new
                 {
-                    attachment = AttachmentDto(attachment), taskId = attachment.TaskId, projectId = attachment.ProjectId,
+                    attachment = AttachmentDto(attachment), taskId = attachment.TaskId, projectId = attachment.ProjectId, assetId = attachment.AssetId,
                     content = kind switch { AttachmentContentKind.Text => "text", AttachmentContentKind.Image => "image", _ => "binary" }
                 }),
                 body
@@ -513,16 +533,302 @@ public sealed class OrbitTools(
         return AnalysisDto(view?.Analysis.Id, view?.IsStale ?? false, result);
     });
 
+    // ---------------------------------------------------------------- assets (§6.19)
+
+    [McpServerTool(Name = "list_assets"), Description(
+        "List assets in the asset register - laptops, vehicles, tools, equipment; separate from tasks and projects - ordered by name, paginated. " +
+        "Each asset is managed by one department. The key sees the assets within its role's View assets scope: the ones assigned to the Claude user, " +
+        "the ones its department manages, or every department's. Disposed assets are left out unless status is \"all\" or \"Disposed\". " +
+        "Use check = \"overdue\" for assets overdue for their periodic check, heldByDeactivated = true for assets leavers still hold.")]
+    public Task<string> ListAssets(
+        [Description("Text to match in the name, ERP asset number, serial number, manufacturer or model.")] string? query = null,
+        [Description("Managing department id (GUID). Only useful for a key that sees every department.")] string? departmentId = null,
+        [Description("Asset type id (GUID); list_asset_types lists them.")] string? assetTypeId = null,
+        [Description("Asset type category, e.g. \"IT equipment\".")] string? category = null,
+        [Description("Location id (GUID); list_asset_locations lists them.")] string? locationId = null,
+        [Description("Active, InStorage, Damaged, Lost or Disposed, or \"all\". Default: every status except Disposed.")] string? status = null,
+        [Description("Only assets assigned to this user id (GUID).")] string? assignedToUserId = null,
+        [Description("true = only assets nobody holds.")] bool? unassigned = null,
+        [Description("true = only assets held by a deactivated user (leavers whose assets need recovering).")] bool? heldByDeactivated = null,
+        [Description("overdue, dueSoon, due (either), notOk (the last check found an issue or didn't find the asset) or never (never checked).")] string? check = null,
+        [Description("expiring (ends within Orbit's warning window) or expired.")] string? warranty = null,
+        [Description("Page number, starting at 1.")] int page = 1,
+        [Description("Page size (1-200). Default 50.")] int pageSize = 50,
+        CancellationToken ct = default) => Run(async () =>
+    {
+        var result = await assets.ListAsync(new AssetFilter
+        {
+            Search = query,
+            DepartmentId = ParseGuid(departmentId, "departmentId"),
+            AssetTypeId = ParseGuid(assetTypeId, "assetTypeId"),
+            Category = category,
+            LocationId = ParseGuid(locationId, "locationId"),
+            Status = status,
+            AssignedToUserId = ParseGuid(assignedToUserId, "assignedToUserId"),
+            Unassigned = unassigned == true,
+            HeldByDeactivated = heldByDeactivated == true,
+            Check = ParseEnum<AssetCheckFilter>(check, "check"),
+            Warranty = ParseEnum<AssetWarrantyFilter>(warranty, "warranty"),
+            Page = page,
+            PageSize = Math.Clamp(pageSize, 1, 200)
+        }, ct);
+        return Paged(result, AssetSummaryDto);
+    });
+
+    [McpServerTool(Name = "get_asset"), Description(
+        "Get one asset in full: its fields, purchase and warranty details, its type's properties with their values (and any required ones missing), " +
+        "who holds it and since when, its checks newest first with the next check due, flags (check overdue, last check not OK, warranty expired, " +
+        "possible duplicates by serial number), its attachments (read one with get_attachment) and how many comments it has (read them with list_comments).")]
+    public Task<string> GetAsset(
+        [Description("Asset id (GUID), or its ERP asset number when it has one.")] string assetId,
+        CancellationToken ct = default) => Run(async () =>
+    {
+        var id = await assets.ResolveIdAsync(assetId, ct);
+        var asset = await assets.GetAsync(id, ct);
+        var files = await attachments.ListForAssetAsync(id, ct);
+        var commentCount = (await comments.ListForAssetAsync(id, ct)).Count;
+        var duplicates = await assets.PossibleDuplicatesAsync(asset, ct);
+        return AssetDto(asset, files, commentCount, duplicates);
+    });
+
+    [McpServerTool(Name = "create_asset"), Description(
+        "Register an asset. assetNumber is its number in the ERP asset register - optional, since not every asset is on the ERP system - and unique " +
+        "(ignoring case) when given. Pass an idempotencyKey so a retried call returns the asset already registered instead of a second one. " +
+        "Department defaults to the key's own; the type and location must be the department's own (list_asset_types / list_asset_locations; a name " +
+        "works in place of the id). properties is an object of property name to value, e.g. {\"RAM (GB)\": 16, \"OS\": \"Windows\"}; required " +
+        "properties must be given. The result flags possibleDuplicates (same manufacturer and serial number). Needs Register assets in the department.")]
+    public Task<string> CreateAsset(
+        [Description("Name (required), e.g. \"Reception laptop\".")] string name,
+        [Description("Asset type id (GUID) or name - one of the department's types (required).")] string assetTypeId,
+        [Description("Its number in the ERP asset register, e.g. FA-004211 - only if it is on the ERP system; unique.")] string? assetNumber = null,
+        [Description("Optional idempotency key. Retrying with the same key returns the asset already registered instead of a duplicate.")] string? idempotencyKey = null,
+        [Description("Managing department id (GUID). Defaults to the key's own department; required for a key without one.")] string? departmentId = null,
+        [Description("Free-text description.")] string? description = null,
+        [Description("Manufacturer, e.g. Dell.")] string? manufacturer = null,
+        [Description("Model, e.g. Latitude 5440.")] string? model = null,
+        [Description("Serial number.")] string? serialNumber = null,
+        [Description("Active (default), InStorage, Damaged, Lost or Disposed.")] string? status = null,
+        [Description("Location id (GUID) or name - one of the department's locations.")] string? locationId = null,
+        [Description("Purchase date yyyy-MM-dd.")] string? purchaseDate = null,
+        [Description("Purchase value, e.g. 18500.00, in the organisation's currency.")] decimal? purchaseValue = null,
+        [Description("Purchase order number.")] string? purchaseOrder = null,
+        [Description("Invoice number.")] string? invoiceNumber = null,
+        [Description("Supplier.")] string? supplier = null,
+        [Description("Warranty end date yyyy-MM-dd.")] string? warrantyExpiresOn = null,
+        [Description("With status Disposed: the disposal date yyyy-MM-dd (default today).")] string? disposedOn = null,
+        [Description("User ids (GUID) of the people who hold it - anyone active, in any department; list_users finds them.")] string[]? assigneeIds = null,
+        [Description("Property values by property name, e.g. {\"RAM (GB)\": 16}.")] Dictionary<string, JsonElement>? properties = null,
+        CancellationToken ct = default) => Run(async () =>
+    {
+        var department = ParseGuid(departmentId, "departmentId");
+        var typeId = await AssetTypeIdAsync(assetTypeId, department, ct);
+        var input = new AssetInput
+        {
+            AssetNumber = assetNumber,
+            IdempotencyKey = idempotencyKey,
+            Name = name,
+            DepartmentId = department,
+            AssetTypeId = typeId,
+            Description = description,
+            Manufacturer = manufacturer,
+            Model = model,
+            SerialNumber = serialNumber,
+            Status = ParseEnum<AssetStatus>(status, "status") ?? AssetStatus.Active,
+            AssetLocationId = string.IsNullOrWhiteSpace(locationId) ? null : await AssetLocationIdAsync(locationId, department, ct),
+            PurchaseDate = ParseDate(purchaseDate, "purchaseDate"),
+            PurchaseValue = purchaseValue,
+            PurchaseOrder = purchaseOrder,
+            InvoiceNumber = invoiceNumber,
+            Supplier = supplier,
+            WarrantyExpiresOn = ParseDate(warrantyExpiresOn, "warrantyExpiresOn"),
+            DisposedOn = ParseDate(disposedOn, "disposedOn"),
+            AssigneeIds = (assigneeIds ?? []).Select(u => RequireGuid(u, "assigneeIds")).ToList(),
+            Properties = await PropertyChangesAsync(typeId, properties, ct)
+        };
+        var created = await assets.CreateAsync(input, ct);
+        // Same maker and serial as an asset already registered: say so now, when a double registration is cheapest to undo.
+        return AssetDto(created, [], 0, await assets.PossibleDuplicatesAsync(created, ct));
+    });
+
+    [McpServerTool(Name = "update_asset"), Description(
+        "Change an asset. Only the arguments passed change; \"none\" clears an optional text or date field. departmentId moves the asset to another " +
+        "managing department (the key needs Edit assets there too, in practice for all departments) and must come with an assetTypeId of that department; " +
+        "its location is cleared unless a locationId there is given. assetTypeId changes the type: values carry over to properties with the same name and " +
+        "type, the rest are dropped. status Disposed (with disposedOn, default today) removes everyone it is assigned to. assigneeIds replaces the whole " +
+        "set ([] unassigns everyone). properties merges: each named property is set, \"none\" clears one, others are untouched. Needs Edit assets.")]
+    public Task<string> UpdateAsset(
+        [Description("Asset id (GUID), or its ERP asset number when it has one.")] string assetId,
+        [Description("ERP asset register number (unique), or \"none\" when the asset isn't on the ERP system.")] string? assetNumber = null,
+        [Description("New name.")] string? name = null,
+        [Description("Managing department id (GUID) to move the asset to; needs assetTypeId too.")] string? departmentId = null,
+        [Description("Asset type id (GUID) or name - one of the (new) department's types.")] string? assetTypeId = null,
+        [Description("Description, or \"none\".")] string? description = null,
+        [Description("Manufacturer, or \"none\".")] string? manufacturer = null,
+        [Description("Model, or \"none\".")] string? model = null,
+        [Description("Serial number, or \"none\".")] string? serialNumber = null,
+        [Description("Active, InStorage, Damaged, Lost or Disposed.")] string? status = null,
+        [Description("Location id (GUID) or name - one of the (new) department's locations - or \"none\".")] string? locationId = null,
+        [Description("Purchase date yyyy-MM-dd, or \"none\".")] string? purchaseDate = null,
+        [Description("Purchase value, e.g. 18500.00, or \"none\".")] string? purchaseValue = null,
+        [Description("Purchase order number, or \"none\".")] string? purchaseOrder = null,
+        [Description("Invoice number, or \"none\".")] string? invoiceNumber = null,
+        [Description("Supplier, or \"none\".")] string? supplier = null,
+        [Description("Warranty end date yyyy-MM-dd, or \"none\".")] string? warrantyExpiresOn = null,
+        [Description("With status Disposed: the disposal date yyyy-MM-dd (default today).")] string? disposedOn = null,
+        [Description("The complete set of holders' user ids (GUID); [] unassigns everyone. Omit to leave them as they are.")] string[]? assigneeIds = null,
+        [Description("Property values to set by property name, e.g. {\"RAM (GB)\": 32}; \"none\" clears one.")] Dictionary<string, JsonElement>? properties = null,
+        CancellationToken ct = default) => Run(async () =>
+    {
+        var id = await assets.ResolveIdAsync(assetId, ct);
+        var current = await assets.GetAsync(id, ct);
+        var input = AssetInput.From(current);
+        var targetDepartment = ParseGuid(departmentId, "departmentId") ?? current.DepartmentId;
+        var moving = targetDepartment != current.DepartmentId;
+        input.DepartmentId = targetDepartment;
+        input.AssetNumber = Text(assetNumber, current.AssetNumber);
+        if (name is not null) input.Name = name;
+        input.Description = Text(description, current.Description);
+        input.Manufacturer = Text(manufacturer, current.Manufacturer);
+        input.Model = Text(model, current.Model);
+        input.SerialNumber = Text(serialNumber, current.SerialNumber);
+        input.PurchaseOrder = Text(purchaseOrder, current.PurchaseOrder);
+        input.InvoiceNumber = Text(invoiceNumber, current.InvoiceNumber);
+        input.Supplier = Text(supplier, current.Supplier);
+        if (!string.IsNullOrWhiteSpace(assetTypeId)) input.AssetTypeId = await AssetTypeIdAsync(assetTypeId, targetDepartment, ct);
+        if (IsClear(locationId)) input.AssetLocationId = null;
+        else if (!string.IsNullOrWhiteSpace(locationId)) input.AssetLocationId = await AssetLocationIdAsync(locationId, targetDepartment, ct);
+        else if (moving) input.AssetLocationId = null; // the old location belongs to the department the asset is leaving
+        if (ParseEnum<AssetStatus>(status, "status") is AssetStatus s) input.Status = s;
+        input.PurchaseDate = IsClear(purchaseDate) ? null : ParseDate(purchaseDate, "purchaseDate") ?? current.PurchaseDate;
+        input.PurchaseValue = IsClear(purchaseValue) ? null : ParseDecimal(purchaseValue, "purchaseValue") ?? current.PurchaseValue;
+        input.WarrantyExpiresOn = IsClear(warrantyExpiresOn) ? null : ParseDate(warrantyExpiresOn, "warrantyExpiresOn") ?? current.WarrantyExpiresOn;
+        input.DisposedOn = ParseDate(disposedOn, "disposedOn") ?? current.DisposedOn;
+        if (assigneeIds is not null) input.AssigneeIds = assigneeIds.Select(u => RequireGuid(u, "assigneeIds")).ToList();
+        input.Properties = await PropertyChangesAsync(input.AssetTypeId, properties, ct);
+        var saved = await assets.UpdateAsync(id, input, ct);
+        return AssetDto(saved, await attachments.ListForAssetAsync(id, ct), (await comments.ListForAssetAsync(id, ct)).Count,
+            await assets.PossibleDuplicatesAsync(saved, ct));
+    });
+
+    [McpServerTool(Name = "record_asset_check"), Description(
+        "Record a check on an asset: someone looked at it and found it OK, found an issue (describe it in notes) or didn't find it. A check never changes " +
+        "the asset's status - a last check that isn't OK is flagged for the asset's managers instead - and it resets when the next check is due. " +
+        "Needs Record asset checks reaching the asset (a key at Own scope only reaches assets assigned to the Claude user). A disposed asset can't be checked.")]
+    public Task<string> RecordAssetCheck(
+        [Description("Asset id (GUID), or its ERP asset number when it has one.")] string assetId,
+        [Description("Ok (default), IssueFound (needs notes) or NotFound.")] string? outcome = null,
+        [Description("The day it was checked, yyyy-MM-dd; default today, never in the future.")] string? checkDate = null,
+        [Description("Notes - what the issue is, where it was found.")] string? notes = null,
+        CancellationToken ct = default) => Run(async () =>
+    {
+        var id = await assets.ResolveIdAsync(assetId, ct);
+        var check = await assets.RecordCheckAsync(id, new AssetCheckInput
+        {
+            Outcome = ParseEnum<AssetCheckOutcome>(outcome, "outcome") ?? AssetCheckOutcome.Ok,
+            CheckDate = ParseDate(checkDate, "checkDate"),
+            Notes = notes
+        }, ct);
+        var asset = await assets.GetAsync(id, ct);
+        return new { check = CheckDto(check), asset = AssetSummaryDto(assets.Item(asset)) };
+    });
+
+    [McpServerTool(Name = "list_asset_types"), Description(
+        "List the active asset types, each with its department (every department defines its own types) and its properties - name, type " +
+        "(Text, Number, Date, YesNo, Choice), whether required, a Choice property's options, display order - which is what create_asset and " +
+        "update_asset need to fill properties. Also each type's check interval in days. Available to every key.")]
+    public Task<string> ListAssetTypes(
+        [Description("Only this department's types (GUID).")] string? departmentId = null,
+        CancellationToken ct = default) => Run(async () =>
+    {
+        var list = await assetTypes.ListActiveAsync(ParseGuid(departmentId, "departmentId"), ct);
+        return new
+        {
+            items = list.Select(t => new
+            {
+                id = t.Id, name = t.Name, category = t.Category, description = t.Description, checkIntervalDays = t.CheckIntervalDays,
+                departmentId = t.DepartmentId, department = t.Department.Name,
+                properties = t.Properties.OrderBy(p => p.DisplayOrder).Select(p => new
+                {
+                    name = p.Name, type = p.PropertyType, required = p.IsRequired,
+                    options = p.PropertyType == AssetPropertyType.Choice ? p.Options : null, order = p.DisplayOrder
+                }).ToList()
+            }).ToList(),
+            totalCount = list.Count
+        };
+    });
+
+    [McpServerTool(Name = "list_asset_locations"), Description(
+        "List the active asset locations, each with its department (every department keeps its own list). Available to every key.")]
+    public Task<string> ListAssetLocations(
+        [Description("Only this department's locations (GUID).")] string? departmentId = null,
+        CancellationToken ct = default) => Run(async () =>
+    {
+        var list = await assetLocations.ListActiveAsync(ParseGuid(departmentId, "departmentId"), ct);
+        return new
+        {
+            items = list.Select(l => new { id = l.Id, name = l.Name, description = l.Description, departmentId = l.DepartmentId, department = l.Department.Name }).ToList(),
+            totalCount = list.Count
+        };
+    });
+
+    /// <summary>A type argument: its GUID, or its name among the department's types.</summary>
+    private async Task<Guid> AssetTypeIdAsync(string value, Guid? departmentId, CancellationToken ct) =>
+        Guid.TryParse(value.Trim(), out var id)
+            ? id
+            : await assetTypes.FindIdByNameAsync(departmentId, value, ct)
+                ?? throw new McpException($"The department has no asset type called \"{value.Trim()}\"; list_asset_types lists them.");
+
+    /// <summary>A location argument: its GUID, or its name among the department's locations.</summary>
+    private async Task<Guid> AssetLocationIdAsync(string value, Guid? departmentId, CancellationToken ct) =>
+        Guid.TryParse(value.Trim(), out var id)
+            ? id
+            : await assetLocations.FindIdByNameAsync(departmentId, value, ct)
+                ?? throw new McpException($"The department has no location called \"{value.Trim()}\"; list_asset_locations lists them.");
+
+    /// <summary>Property values by name, turned into changes by property id for the type; "none" (or null) clears one.</summary>
+    private async Task<Dictionary<Guid, string?>> PropertyChangesAsync(Guid typeId, Dictionary<string, JsonElement>? values, CancellationToken ct)
+    {
+        var changes = new Dictionary<Guid, string?>();
+        if (values is null || values.Count == 0) return changes;
+        var type = await assetTypes.GetAsync(typeId, ct);
+        foreach (var (key, element) in values)
+        {
+            var property = type.Properties.FirstOrDefault(p => string.Equals(p.Name, key.Trim(), StringComparison.OrdinalIgnoreCase))
+                ?? throw new McpException($"\"{type.Name}\" has no property called \"{key}\". Its properties: {string.Join(", ", type.Properties.OrderBy(p => p.DisplayOrder).Select(p => p.Name))}.");
+            var text = element.ValueKind switch
+            {
+                JsonValueKind.Null or JsonValueKind.Undefined => null,
+                JsonValueKind.String => element.GetString(),
+                JsonValueKind.True => "true",
+                JsonValueKind.False => "false",
+                _ => element.GetRawText()
+            };
+            changes[property.Id] = IsClear(text) ? null : text;
+        }
+        return changes;
+    }
+
+    /// <summary>An optional text argument: unchanged when omitted, cleared by "none".</summary>
+    private static string? Text(string? value, string? current) => value is null ? current : IsClear(value) ? null : value;
+
+    private static decimal? ParseDecimal(string? value, string name)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        return decimal.TryParse(value.Trim(), NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var d)
+            ? d
+            : throw new McpException($"{name} must be an amount like 18500.00; got \"{value}\".");
+    }
+
     // ------------------------------------------------------------- lookups
 
     [McpServerTool(Name = "list_activity"), Description(
         "Read the audit log: every task/project/comment write, who or what made it, and when. " +
         "Defaults to the last 24 hours when from/to are omitted. Needs the View activity log permission: the key's own department, or every department. " +
-        "One task's or project's own activity (entityId) is open to whoever may see that task or project.")]
+        "One task's, project's or asset's own activity (entityId) is open to whoever may see that task, project or asset.")]
     public Task<string> ListActivity(
         [Description("Start of the window, ISO 8601 date-time (UTC assumed if no offset). Default: now - 24h.")] string? from = null,
         [Description("End of the window, ISO 8601 date-time. Default: now.")] string? to = null,
-        [Description("Task, Project, Sprint, RecurringTaskDefinition, Department, User or ApiKey.")] string? entityType = null,
+        [Description("Task, Project, Sprint, RecurringTaskDefinition, Department, User, ApiKey, Asset, AssetType or AssetLocation.")] string? entityType = null,
         [Description("Scope to one entity id (GUID), e.g. a task or project.")] string? entityId = null,
         [Description("Page number, starting at 1.")] int page = 1,
         [Description("Page size (1-200). Default 100.")] int pageSize = 100,
@@ -547,7 +853,8 @@ public sealed class OrbitTools(
 
     [McpServerTool(Name = "list_users"), Description(
         "List users (id, displayName, email, role, departmentId, canBeAssignedAnywhere). Optional name/email fragment filter, e.g. \"Bob\". " +
-        "A key that sees every department can pass departmentId or omit it for everyone; any other key sees only its own department's users.")]
+        "A key that sees every department's tasks, or may edit assets (which are handed to people in any department), can pass departmentId or omit it " +
+        "for everyone; any other key sees only its own department's users.")]
     public Task<string> ListUsers(
         [Description("Name or email fragment to match (case-insensitive).")] string? query = null,
         [Description("Filter by department id (GUID). Only useful for a key that sees every department.")] string? departmentId = null,
@@ -654,6 +961,7 @@ public sealed class OrbitTools(
     {
         id = c.Id,
         taskId = c.TaskId,
+        assetId = c.AssetId,
         authorId = c.AuthorId,
         author = c.Author is null ? "Claude" : c.Author.IsSystemAccount ? "Claude" : c.Author.DisplayName,
         body = c.Body,
@@ -710,6 +1018,66 @@ public sealed class OrbitTools(
         id = a.Id, fileName = a.FileName, contentType = a.ContentType, sizeBytes = a.SizeBytes,
         uploadedById = a.UploadedById, uploadedBy = a.UploadedBy?.DisplayName, uploadedAt = a.UploadedAt,
         downloadPath = $"/Attachments/Download/{a.Id}"
+    };
+
+    /// <summary>An asset as list_assets returns it (§6.19): who holds it, where, and where it stands against its check schedule.</summary>
+    private static object AssetSummaryDto(AssetListItem item)
+    {
+        var a = item.Asset;
+        return new
+        {
+            id = a.Id, assetNumber = a.AssetNumber, name = a.Name,
+            assetTypeId = a.AssetTypeId, type = a.AssetType?.Name, category = a.AssetType?.Category,
+            status = a.Status, departmentId = a.DepartmentId, department = a.Department?.Name,
+            locationId = a.AssetLocationId, location = a.AssetLocation?.Name,
+            assignees = a.Assignments.Select(x => new { id = x.UserId, name = x.User?.DisplayName, active = x.User?.IsActive }).ToList(),
+            lastCheckedOn = a.LastCheckedOn, lastCheckOutcome = a.LastCheckOutcome, nextCheckDue = item.NextCheckDue,
+            checkOverdue = item.CheckState == Orbit.Application.Assets.CheckDueState.Overdue,
+            checkDueSoon = item.CheckState == Orbit.Application.Assets.CheckDueState.DueSoon,
+            warrantyExpiresOn = a.WarrantyExpiresOn
+        };
+    }
+
+    /// <summary>An asset in full, as get_asset / create_asset / update_asset return it (§6.19).</summary>
+    private object AssetDto(Asset a, IReadOnlyList<Attachment> files, int commentCount, IReadOnlyList<AssetRef> duplicates)
+    {
+        var item = assets.Item(a);
+        var values = a.PropertyValues.ToDictionary(v => v.AssetTypePropertyId, v => v.Value);
+        var properties = a.AssetType.Properties.OrderBy(p => p.DisplayOrder).ThenBy(p => p.Name).ToList();
+        return new
+        {
+            asset = AssetSummaryDto(item),
+            description = a.Description, manufacturer = a.Manufacturer, model = a.Model, serialNumber = a.SerialNumber,
+            purchaseDate = a.PurchaseDate, purchaseValue = a.PurchaseValue, purchaseOrder = a.PurchaseOrder, invoiceNumber = a.InvoiceNumber,
+            supplier = a.Supplier, disposedOn = a.DisposedOn,
+            createdAt = a.CreatedAt, createdBy = a.CreatedBy is null ? null : a.CreatedBy.IsSystemAccount ? "Claude" : a.CreatedBy.DisplayName,
+            updatedAt = a.UpdatedAt,
+            properties = properties.Select(p => new
+            {
+                name = p.Name, type = p.PropertyType, required = p.IsRequired, value = values.GetValueOrDefault(p.Id)
+            }).ToList(),
+            missingRequired = Orbit.Application.Assets.AssetPropertyRules.MissingRequired(properties, values),
+            assignees = a.Assignments.Select(x => new
+            {
+                id = x.UserId, name = x.User?.DisplayName, active = x.User?.IsActive, department = x.User?.Department?.Name, assignedAt = x.AssignedAt
+            }).ToList(),
+            checks = a.Checks.OrderByDescending(c => c.CheckDate).ThenByDescending(c => c.CreatedAt).Select(CheckDto).ToList(),
+            flags = new
+            {
+                checkOverdue = item.CheckState == Orbit.Application.Assets.CheckDueState.Overdue,
+                lastCheckNotOk = Orbit.Application.Assets.AssetCheckSchedule.LastCheckNotOk(a),
+                warrantyExpired = assets.WarrantyExpired(a),
+                possibleDuplicates = duplicates.Select(d => new { id = d.Id, assetNumber = d.AssetNumber, name = d.Name }).ToList()
+            },
+            attachments = files.Select(AttachmentDto).ToList(),
+            commentCount
+        };
+    }
+
+    private static object CheckDto(AssetCheck c) => new
+    {
+        id = c.Id, checkDate = c.CheckDate, outcome = c.Outcome, notes = c.Notes,
+        checkedBy = c.CheckedBy is null ? null : c.CheckedBy.IsSystemAccount ? "Claude" : c.CheckedBy.DisplayName, recordedAt = c.CreatedAt
     };
 
     private static object IssueDto(PlanIssue i) => new { code = i.Code, message = i.Message, informational = i.Informational, taskIds = i.TaskIds, linkIds = i.LinkIds };

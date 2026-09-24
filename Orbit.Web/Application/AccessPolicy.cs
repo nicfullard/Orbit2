@@ -110,6 +110,52 @@ public static class AccessPolicy
     public static bool CanDeleteAttachment(Actor a, Attachment at, Project parent) =>
         (a.UserId is not null && at.UploadedById == a.UserId) || CanEditProject(a, parent);
 
+    // ---------------------------------------------------------------- assets (§6.19)
+    // Department = the asset's managing department. Own = the actor holds the asset (an AssetAssignment row), wherever it is
+    // managed; the caller works out isAssigned from the asset's assignments. Registering an asset doesn't make it the registrar's own.
+
+    /// <summary>Whether the actor is one of the asset's holders. Needs <see cref="Asset.Assignments"/> loaded.</summary>
+    public static bool IsAssigned(Actor a, Asset asset) =>
+        a.UserId is Guid me && asset.Assignments.Any(x => x.UserId == me);
+
+    /// <summary>assets.view at Own (the actor holds it), Department (their department manages it) or All. Comments, files and activity follow it.</summary>
+    public static bool CanViewAsset(Actor a, Asset asset, bool isAssigned) => a.Can(Permission.AssetsView, asset.DepartmentId, isAssigned);
+
+    public static bool CanCreateAssetIn(Actor a, Guid departmentId) => a.CanInDepartment(Permission.AssetsCreate, departmentId);
+
+    /// <summary>Every field, status and disposal, assignment, removing anyone's checks and files, deleting: assets.edit at Department or All - never Own.</summary>
+    public static bool CanEditAsset(Actor a, Asset asset) => a.CanInDepartment(Permission.AssetsEdit, asset.DepartmentId);
+
+    /// <summary>Moving an asset to another managing department: an edit that must also reach the target department (in practice, All).</summary>
+    public static bool CanMoveAssetTo(Actor a, Guid departmentId) => a.CanInDepartment(Permission.AssetsEdit, departmentId);
+
+    /// <summary>Recording a check: assets.check at Own (the actor holds it), Department or All. A disposed asset can't be checked.</summary>
+    public static bool CanCheckAsset(Actor a, Asset asset, bool isAssigned) =>
+        asset.Status != AssetStatus.Disposed && a.Can(Permission.AssetsCheck, asset.DepartmentId, isAssigned);
+
+    /// <summary>Removing a check (for mistakes): whoever recorded it, or anyone who may edit the asset.</summary>
+    public static bool CanRemoveCheck(Actor a, AssetCheck check, Asset asset) =>
+        (a.UserId is not null && check.CheckedById == a.UserId) || CanEditAsset(a, asset);
+
+    /// <summary>Commenting on an asset follows viewing it, as it does on tasks.</summary>
+    public static bool CanCommentOnAsset(Actor a, Asset asset, bool isAssigned) => CanViewAsset(a, asset, isAssigned);
+
+    /// <summary>Attaching a file to an asset follows viewing it, so a holder can upload a photo of the damage.</summary>
+    public static bool CanAttachToAsset(Actor a, Asset asset, bool isAssigned) => CanViewAsset(a, asset, isAssigned);
+
+    /// <summary>Removing an attachment: whoever uploaded it, or anyone who may edit the asset it is attached to.</summary>
+    public static bool CanDeleteAttachment(Actor a, Attachment at, Asset parent) =>
+        (a.UserId is not null && at.UploadedById == a.UserId) || CanEditAsset(a, parent);
+
+    /// <summary>A department's asset types and locations: assets.configure reaching that department.</summary>
+    public static bool CanConfigureAssetsIn(Actor a, Guid departmentId) => a.CanInDepartment(Permission.AssetsConfigure, departmentId);
+
+    /// <summary>An asset's type is always one of its managing department's types - a rule, not a permission.</summary>
+    public static bool CanUseAssetType(Guid assetDepartmentId, AssetType type) => type.DepartmentId == assetDepartmentId;
+
+    /// <summary>An asset's location, when set, is always one of its managing department's locations.</summary>
+    public static bool CanUseAssetLocation(Guid assetDepartmentId, AssetLocation location) => location.DepartmentId == assetDepartmentId;
+
     public static bool CanManageUsers(Actor a) => a.CanAnywhere(Permission.UsersManage);
     public static bool CanManageRoles(Actor a) => a.CanAnywhere(Permission.RolesManage);
     public static bool CanManageApiKeys(Actor a) => a.CanAnywhere(Permission.ApiKeysManage);

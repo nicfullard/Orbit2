@@ -14,6 +14,10 @@ public static class AuditEntity
     public const string WorkingCalendar = "WorkingCalendar";
     /// <summary>A role and its grants (spec §6.5).</summary>
     public const string Role = "Role";
+    /// <summary>The asset register (spec §6.19).</summary>
+    public const string Asset = "Asset";
+    public const string AssetType = "AssetType";
+    public const string AssetLocation = "AssetLocation";
 }
 
 public static class AuditAction
@@ -56,6 +60,12 @@ public static class AuditAction
     /// <summary>Working-calendar exceptions (§6.17), recorded against the calendar.</summary>
     public const string ExceptionAdded = "ExceptionAdded";
     public const string ExceptionRemoved = "ExceptionRemoved";
+    /// <summary>A person given or relieved of an asset (§6.19), recorded on the asset.</summary>
+    public const string AssetAssigned = "AssetAssigned";
+    public const string AssetUnassigned = "AssetUnassigned";
+    /// <summary>A check recorded on, or removed from, an asset (§6.19).</summary>
+    public const string CheckRecorded = "CheckRecorded";
+    public const string CheckRemoved = "CheckRemoved";
 }
 
 public sealed class AuditFilter

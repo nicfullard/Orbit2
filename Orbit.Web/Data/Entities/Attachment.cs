@@ -1,9 +1,9 @@
 namespace Orbit.Data.Entities;
 
 /// <summary>
-/// A file attached to a task or a project (spec §6.18). Exactly one of <see cref="TaskId"/> / <see cref="ProjectId"/> is set.
-/// This row is the metadata; the bytes are the companion <see cref="AttachmentContent"/> row, kept in its own table so that
-/// listing attachments (or loading a task or project with them) never reads file content - only a download does.
+/// A file attached to a task, a project or an asset (spec §6.18, §6.19). Exactly one of <see cref="TaskId"/> / <see cref="ProjectId"/> /
+/// <see cref="AssetId"/> is set. This row is the metadata; the bytes are the companion <see cref="AttachmentContent"/> row, kept in its own
+/// table so that listing attachments (or loading a task or project with them) never reads file content - only a download does.
 /// </summary>
 public class Attachment
 {
@@ -12,6 +12,8 @@ public class Attachment
     public TaskItem? Task { get; set; }
     public Guid? ProjectId { get; set; }
     public Project? Project { get; set; }
+    public Guid? AssetId { get; set; }
+    public Asset? Asset { get; set; }
     /// <summary>The name the file was uploaded with, reduced to a plain file name.</summary>
     public string FileName { get; set; } = string.Empty;
     public string ContentType { get; set; } = "application/octet-stream";

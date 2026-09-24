@@ -23,6 +23,12 @@
             @if (isDirectoryUser) { <span class="badge text-bg-info">LDAP</span> }
             @if (u.IsLockedOut) { <span class="badge text-bg-warning">Locked out until @Ui.When(u.LockoutEnd!.Value.UtcDateTime)</span> }
         </div>
+        @if (Model.AssetsHeld > 0)
+        {
+            <div class="small mt-1">
+                Holds <a asp-page="/Assets/Index" asp-route-Holder="@u.Id">@Model.AssetsHeld @(Model.AssetsHeld == 1 ? "asset" : "assets")</a>@(u.IsActive ? "" : " - recover them: deactivating a user doesn't unassign their assets").
+            </div>
+        }
     </div>
     <div class="d-flex gap-2">
         @if (u.IsLockedOut)

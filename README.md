@@ -28,10 +28,10 @@ Inside `Orbit.Web/`, folders stand in for the layers of spec §11, and namespace
 | `Application/` | Services (`TaskService`, `ProjectService`, `RoleService`, ...), the permission catalogue, `Actor` + `AccessPolicy` + `Scoping` (the §6.5 rules), `RoleRules`, models |
 | `Auth/` | API-key and Orbit Agent authentication schemes, `OrbitSignInManager` (directory sign-in), claims factory, actor resolution, page filters |
 | `Agents/` | Server side of the Orbit Agent: the SignalR hub agents connect to, the registry of connected agents, the register/de-register endpoints |
-| `Mcp/` | `OrbitTools` - the 19 MCP tools, mapped onto the same services the UI uses |
+| `Mcp/` | `OrbitTools` - the 26 MCP tools, mapped onto the same services the UI uses |
 | `Jobs/` | Quartz.NET jobs: recurring-task generation and due-date notifications, cron-scheduled from `Jobs:*` |
 | `Reporting/` | QuestPDF report rendering |
-| `Pages/` | Razor Pages UI (dashboard, tasks, projects, backlog, sprints, recurring, time, admin, reports) |
+| `Pages/` | Razor Pages UI (dashboard, tasks, projects, backlog, sprints, recurring, time, assets, admin, reports) |
 | `Areas/Identity/` | Overrides of the default Identity UI (login, self-registration disabled, no self-delete) |
 | `Migrations/` | EF Core migrations |
 
@@ -81,12 +81,18 @@ scopes below it, and a role with no grants sees nothing.
 | `audit.view` | Dept / All | Admin > Activity Log and `list_activity` | - | - |
 | `users.manage`, `roles.manage`, `api_keys.manage` | All, reserved to the built-in role | Users, roles, API keys | - | - |
 | `departments.manage`, `calendar.manage`, `directory.manage`, `agents.manage` | All | Departments, working calendar, directory (LDAP) settings, Orbit Agents | - | - |
+| `assets.view` | Own / Dept / All | See assets, comment, attach (Own: the assets you hold; Dept: the ones your department manages, plus yours) | Own | Dept |
+| `assets.create` | Dept / All | Register assets | - | Dept |
+| `assets.edit` | Dept / All | Edit assets: status, disposal, type, properties, location, holders; delete one registered in error | - | Dept |
+| `assets.check` | Own / Dept / All | Record asset checks (Own: "Confirm I have it" on the assets you hold) | Own | Dept |
+| `assets.configure` | Dept / All | The department's asset types (with properties and check intervals) and locations | - | Dept |
 
 A role with any grant at Department scope needs its users and keys to belong to a department. The same rules
 are enforced in `AccessPolicy` and `Scoping` for signed-in users and for API keys; grants are read from the
 database on every request, so a role edit applies at once. Upgrading an existing database renames the old
 fixed roles in place (`SystemAdmin` becomes the built-in System Administrator) and gives Member and Department
-Admin the grants above, so nobody's rights change.
+Admin the grants above, so nobody's rights change. The asset permissions arrived later; the migration that added
+them gave their defaults to the roles still named Member and Department Admin.
 
 A project is owned by one department, but someone whose role may create tasks in every department can file
 tasks under it for other departments (unassigned, or assigned to someone in that department). Each such task
@@ -133,7 +139,12 @@ dotnet run --project Orbit.Agent -- help
   department, and are shown once.
 - Tools: `create_task`, `get_task`, `list_tasks`, `update_task`, `add_comment`, `list_comments`, `get_attachment`,
   `add_dependency`, `remove_dependency`, `create_project`, `get_project`, `get_project_status`,
-  `list_projects`, `update_project`, `list_activity`, `list_users`, `list_departments`, `get_critical_path`, `run_critical_path_analysis`.
+  `list_projects`, `update_project`, `list_activity`, `list_users`, `list_departments`, `get_critical_path`, `run_critical_path_analysis`,
+  `list_assets`, `get_asset`, `create_asset`, `update_asset`, `record_asset_check`, `list_asset_types`, `list_asset_locations`.
+- Assets (spec §6.19): any `assetId` argument takes the GUID or, when the asset has one, its ERP asset number;
+  `create_asset` takes an optional `idempotencyKey` so a retry can't register an asset twice; `create_asset` / `update_asset` take
+  the type and location by id or name and property values by name; `add_comment` / `list_comments` take `assetId`
+  in place of `taskId`.
 - Tasks can be subtasks (`parentTaskId`) and can depend on each other (`add_dependency`: FS, SS, FF or SF
   plus a lag in days, spec §6.15). Links gate status changes - the successor can't start / finish until the
   predecessor has - and a parent can't close while a subtask is open; `get_task` reports what a task is
@@ -150,9 +161,20 @@ Every API write is stamped `Source = Api`, attributed to the `Claude` user and w
 
 A deliberate action, never automatic (spec §6.17): **Run critical path analysis** on a project page or its Gantt validates the plan, finds the critical and near-critical tasks and their float in *working days*, and compares the planned completion with the project's target date and its **required project buffer** (set on the project form). The Gantt then shows the critical path, the planned completion, the target and the buffer, and says when the schedule has changed since the analysis. The working week and public holidays live under **Admin > Working Calendar**; the thresholds (near-critical days, Amber/Red buffer percentages, hours per working day) are `CriticalPath:*` settings.
 
+## Assets
+
+The asset register (spec §6.19) - laptops, vehicles, tools, equipment - is separate from tasks and projects. Each
+asset is managed by one department, which defines its own **asset types** (each with its own properties and check
+interval) and **locations** under **Assets > Asset types / Locations**. An asset is named by its name and may carry
+its number in the ERP asset register (optional - not every asset is on the ERP system - and unique ignoring case
+when given); it can be held by any number of people in any department, and carries purchase
+and warranty details, periodic **checks** (OK / issue found / not found - a check never changes the asset's
+status), comments and files. Overdue checks, last checks that weren't OK, expiring warranties and assets still
+held by deactivated users are flagged and filterable; disposing of an asset removes its holders.
+
 ## Configuration
 
 See `Orbit.Web/appsettings.json` for defaults and `deploy/orbit.env.example` for the production environment
-variables (`Database:ApplyMigrations`, `DataProtection:KeyRingPath`, `Jobs:*`, `Security:*`, `Agents:*`, `CriticalPath:*`, `Seed:Admin:*`, `App:BaseUrl`).
+variables (`Database:ApplyMigrations`, `DataProtection:KeyRingPath`, `Jobs:*`, `Security:*`, `Agents:*`, `CriticalPath:*`, `Assets:*`, `Seed:Admin:*`, `App:BaseUrl`).
 `App:BaseUrl` is also the address put into an agent's `configure` command, so it must be the public `https` URL.
 Notification emails go through Identity's `IEmailSender`; the shipped implementation only logs them.

@@ -75,6 +75,28 @@ public static class Ui
         _ => "text-bg-secondary"
     };
 
+    public static string AssetStatusBadge(AssetStatus s) => s switch
+    {
+        AssetStatus.Active => "text-bg-success",
+        AssetStatus.InStorage => "text-bg-secondary",
+        AssetStatus.Damaged => "text-bg-warning",
+        AssetStatus.Lost => "text-bg-danger",
+        AssetStatus.Disposed => "text-bg-dark",
+        _ => "text-bg-light"
+    };
+
+    public static string CheckOutcomeBadge(AssetCheckOutcome o) => o switch
+    {
+        AssetCheckOutcome.Ok => "text-bg-success",
+        AssetCheckOutcome.IssueFound => "text-bg-warning",
+        AssetCheckOutcome.NotFound => "text-bg-danger",
+        _ => "text-bg-light"
+    };
+
+    /// <summary>A purchase value in the organisation's one currency (§6.19): "18,500.00".</summary>
+    public static string Money(decimal? value) =>
+        value?.ToString("#,##0.00", System.Globalization.CultureInfo.InvariantCulture) ?? "-";
+
     /// <summary>Built-in: danger; any grant at All departments: warning; else secondary (spec §6.5).</summary>
     public static string RoleBadge(RoleRef r) =>
         r.IsBuiltIn ? "text-bg-danger" : r.ReachesEverywhere ? "text-bg-warning" : "text-bg-secondary";
@@ -154,6 +176,10 @@ public static class Ui
         "CriticalPathAnalysed" => "ran a critical path analysis on",
         "ExceptionAdded" => "added a calendar exception to the",
         "ExceptionRemoved" => "removed a calendar exception from the",
+        "AssetAssigned" => "assigned",
+        "AssetUnassigned" => "unassigned",
+        "CheckRecorded" => "recorded a check on",
+        "CheckRemoved" => "removed a check from",
         _ => action.ToLowerInvariant()
     };
 

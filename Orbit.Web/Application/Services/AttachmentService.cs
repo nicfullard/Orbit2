@@ -67,6 +67,33 @@ public sealed class AttachmentService(
         return attachment;
     }
 
+    /// <summary>An asset's files (§6.19): whoever can see the asset.</summary>
+    public async Task<IReadOnlyList<Attachment>> ListForAssetAsync(Guid assetId, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        var asset = await db.Assets.AsNoTracking().Include(a => a.Assignments).FirstOrDefaultAsync(a => a.Id == assetId, ct)
+            ?? throw new NotFoundException("Asset not found.");
+        RequireCanViewAsset(actor, asset);
+        return await Ordered(db.Attachments.AsNoTracking().Where(a => a.AssetId == assetId)).ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Attach a file to an asset (§6.19): attaching follows viewing it, so a holder can upload a photo of the damage. A disposed asset
+    /// still takes files - a disposal certificate is the usual one.
+    /// </summary>
+    public async Task<Attachment> AddToAssetAsync(Guid assetId, AttachmentUpload upload, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        var asset = await db.Assets.Include(a => a.Assignments).FirstOrDefaultAsync(a => a.Id == assetId, ct)
+            ?? throw new NotFoundException("Asset not found.");
+        AccessPolicy.Require(AccessPolicy.CanAttachToAsset(actor, asset, AccessPolicy.IsAssigned(actor, asset)), "You don't have permission to see this asset.");
+        var attachment = await StoreAsync(actor, upload, a => a.AssetId = assetId, ct);
+        asset.UpdatedAt = attachment.UploadedAt;
+        audit.Add(actor, AuditEntity.Asset, asset.Id, AuditAction.AttachmentAdded, asset.DepartmentId, AssetService.Summary(asset), Details(attachment));
+        await CommitAsync(attachment, ct);
+        return attachment;
+    }
+
     /// <summary>The attachment and its bytes, for download. The content row is read here and nowhere else.</summary>
     public async Task<(Attachment Attachment, byte[] Content)> DownloadAsync(Guid id, CancellationToken ct = default)
     {
@@ -90,8 +117,8 @@ public sealed class AttachmentService(
         var actor = await actors.GetAsync(ct);
         var attachment = await Load(db.Attachments).FirstOrDefaultAsync(a => a.Id == id, ct)
             ?? throw new NotFoundException("Attachment not found.");
-        var allowed = attachment.Task is not null
-            ? AccessPolicy.CanDeleteAttachment(actor, attachment, attachment.Task)
+        var allowed = attachment.Task is not null ? AccessPolicy.CanDeleteAttachment(actor, attachment, attachment.Task)
+            : attachment.Asset is not null ? AccessPolicy.CanDeleteAttachment(actor, attachment, attachment.Asset)
             : AccessPolicy.CanDeleteAttachment(actor, attachment, attachment.Project!);
         AccessPolicy.Require(allowed, "Only the uploader, or someone who may edit what it is attached to, can delete an attachment.");
 
@@ -99,6 +126,11 @@ public sealed class AttachmentService(
         {
             task.UpdatedAt = DateTime.UtcNow;
             audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.AttachmentRemoved, task.DepartmentId, task.Title, Details(attachment));
+        }
+        else if (attachment.Asset is Asset asset)
+        {
+            asset.UpdatedAt = DateTime.UtcNow;
+            audit.Add(actor, AuditEntity.Asset, asset.Id, AuditAction.AttachmentRemoved, asset.DepartmentId, AssetService.Summary(asset), Details(attachment));
         }
         else
         {
@@ -181,7 +213,8 @@ public sealed class AttachmentService(
     private static IQueryable<Attachment> Load(IQueryable<Attachment> q) => q
         .Include(a => a.UploadedBy)
         .Include(a => a.Task)
-        .Include(a => a.Project);
+        .Include(a => a.Project)
+        .Include(a => a.Asset).ThenInclude(x => x!.Assignments);
 
     private static IOrderedQueryable<Attachment> Ordered(IQueryable<Attachment> q) =>
         q.Include(a => a.UploadedBy).OrderBy(a => a.UploadedAt);
@@ -190,9 +223,14 @@ public sealed class AttachmentService(
     {
         if (attachment.Task is TaskItem task)
             AccessPolicy.Require(AccessPolicy.CanViewTask(actor, task), "This task belongs to another department.");
+        else if (attachment.Asset is Asset asset)
+            RequireCanViewAsset(actor, asset);
         else
             await RequireCanViewProjectAsync(actor, attachment.Project!, ct);
     }
+
+    private static void RequireCanViewAsset(Actor actor, Asset asset) =>
+        AccessPolicy.Require(AccessPolicy.CanViewAsset(actor, asset, AccessPolicy.IsAssigned(actor, asset)), "You don't have permission to see this asset.");
 
     /// <summary>A department that has tasks on another department's project sees the project - and its attachments - read-only (§6.2.1).</summary>
     private async Task RequireCanViewProjectAsync(Actor actor, Project project, CancellationToken ct)

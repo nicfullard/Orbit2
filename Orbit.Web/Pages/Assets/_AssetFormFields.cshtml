@@ -1,0 +1,151 @@
+@using Orbit.Pages.Assets
+@model AssetFormLookups
+@{
+    var form = ViewData["Form"] as AssetForm ?? new AssetForm();
+    var statusItems = Ui.EnumItems<AssetStatus>(form.Status, null, s => s.Label());
+    var typeGroups = Model.Types.GroupBy(t => t.Category ?? "");
+    var holderPicker = new PersonPickerVm
+    {
+        Id = "holders", FieldName = "Form.AssigneeIds", SearchUrl = Url.Page("/Assets/People")!, Selected = Model.Holders,
+        Label = "Add a person who holds this asset"
+    };
+}
+
+<div asp-validation-summary="ModelOnly" class="text-danger mb-2"></div>
+
+<h2 class="h6 text-muted text-uppercase mt-1">Identification</h2>
+<div class="row g-3 mb-3">
+    <div class="col-md-5">
+        <label class="form-label" for="Form_Name">Name</label>
+        <input class="form-control" id="Form_Name" name="Form.Name" value="@form.Name" maxlength="200" required />
+    </div>
+    <div class="col-md-3">
+        <label class="form-label" for="Form_AssetNumber">ERP asset number</label>
+        <input class="form-control" id="Form_AssetNumber" name="Form.AssetNumber" value="@form.AssetNumber" maxlength="50" placeholder="Optional" />
+        <div class="form-text">Its number in the ERP asset register, if it's on it.</div>
+    </div>
+    <div class="col-md-4">
+        <label class="form-label" for="Form_DepartmentId">Managing department</label>
+        @if (Model.CanChooseDepartment)
+        {
+            <select class="form-select js-asset-department" id="Form_DepartmentId" name="Form.DepartmentId" asp-items="Model.Departments" required></select>
+            @if (Model.AssetId is not null)
+            {
+                <div class="form-text">Moving the asset to another department means choosing one of its types, and one of its locations or none.</div>
+            }
+        }
+        else
+        {
+            <input type="hidden" name="Form.DepartmentId" value="@form.DepartmentId" />
+            <input class="form-control" value="@Model.DepartmentName" disabled />
+        }
+    </div>
+    <div class="col-md-4">
+        <label class="form-label" for="Form_AssetTypeId">Type</label>
+        <select class="form-select js-asset-type" id="Form_AssetTypeId" name="Form.AssetTypeId" required>
+            <option value="">- choose -</option>
+            @foreach (var g in typeGroups)
+            {
+                if (g.Key.Length > 0)
+                {
+                    <optgroup label="@g.Key">
+                        @foreach (var t in g) { <option value="@t.Id" selected="@(t.Id == form.AssetTypeId)">@t.Name@(t.IsArchived ? " (archived)" : "")</option> }
+                    </optgroup>
+                }
+                else
+                {
+                    foreach (var t in g) { <option value="@t.Id" selected="@(t.Id == form.AssetTypeId)">@t.Name@(t.IsArchived ? " (archived)" : "")</option> }
+                }
+            }
+        </select>
+        @if (Model.Types.Count == 0 && form.DepartmentId is not null)
+        {
+            <div class="form-text text-danger">This department has no asset types yet. Someone who configures its assets adds them under Assets &gt; Asset types.</div>
+        }
+    </div>
+    <div class="col-md-8">
+        <label class="form-label" for="Form_Description">Description</label>
+        <textarea class="form-control" id="Form_Description" name="Form.Description" rows="2" maxlength="4000">@form.Description</textarea>
+    </div>
+</div>
+
+<h2 class="h6 text-muted text-uppercase">Details</h2>
+<div class="row g-3 mb-3">
+    <div class="col-md-4">
+        <label class="form-label" for="Form_Manufacturer">Manufacturer</label>
+        <input class="form-control" id="Form_Manufacturer" name="Form.Manufacturer" value="@form.Manufacturer" maxlength="200" list="asset-manufacturers" autocomplete="off" />
+    </div>
+    <div class="col-md-4">
+        <label class="form-label" for="Form_Model">Model</label>
+        <input class="form-control" id="Form_Model" name="Form.Model" value="@form.Model" maxlength="200" list="asset-models" autocomplete="off" />
+    </div>
+    <div class="col-md-4">
+        <label class="form-label" for="Form_SerialNumber">Serial number</label>
+        <input class="form-control" id="Form_SerialNumber" name="Form.SerialNumber" value="@form.SerialNumber" maxlength="100" />
+    </div>
+</div>
+<datalist id="asset-manufacturers">@foreach (var v in Model.Suggestions.Manufacturers) { <option value="@v"></option> }</datalist>
+<datalist id="asset-models">@foreach (var v in Model.Suggestions.Models) { <option value="@v"></option> }</datalist>
+<datalist id="asset-suppliers">@foreach (var v in Model.Suggestions.Suppliers) { <option value="@v"></option> }</datalist>
+
+<h2 class="h6 text-muted text-uppercase">Properties</h2>
+<div class="mb-3 js-asset-properties">
+    <partial name="_AssetPropertyFields" model="Model.PropertyFields" />
+</div>
+
+<h2 class="h6 text-muted text-uppercase">Purchase &amp; warranty</h2>
+<div class="row g-3 mb-3">
+    <div class="col-md-2">
+        <label class="form-label" for="Form_PurchaseDate">Purchase date</label>
+        <input type="date" class="form-control" id="Form_PurchaseDate" name="Form.PurchaseDate" value="@(form.PurchaseDate?.ToString("yyyy-MM-dd"))" />
+    </div>
+    <div class="col-md-2">
+        <label class="form-label" for="Form_PurchaseValue">Purchase value</label>
+        <input type="text" inputmode="decimal" class="form-control" id="Form_PurchaseValue" name="Form.PurchaseValue" value="@form.PurchaseValue" placeholder="e.g. 18500.00" />
+    </div>
+    <div class="col-md-2">
+        <label class="form-label" for="Form_PurchaseOrder">Purchase order</label>
+        <input class="form-control" id="Form_PurchaseOrder" name="Form.PurchaseOrder" value="@form.PurchaseOrder" maxlength="100" />
+    </div>
+    <div class="col-md-2">
+        <label class="form-label" for="Form_InvoiceNumber">Invoice number</label>
+        <input class="form-control" id="Form_InvoiceNumber" name="Form.InvoiceNumber" value="@form.InvoiceNumber" maxlength="100" />
+    </div>
+    <div class="col-md-2">
+        <label class="form-label" for="Form_Supplier">Supplier</label>
+        <input class="form-control" id="Form_Supplier" name="Form.Supplier" value="@form.Supplier" maxlength="200" list="asset-suppliers" autocomplete="off" />
+    </div>
+    <div class="col-md-2">
+        <label class="form-label" for="Form_WarrantyExpiresOn">Warranty ends</label>
+        <input type="date" class="form-control" id="Form_WarrantyExpiresOn" name="Form.WarrantyExpiresOn" value="@(form.WarrantyExpiresOn?.ToString("yyyy-MM-dd"))" />
+    </div>
+</div>
+
+<h2 class="h6 text-muted text-uppercase">Status &amp; location</h2>
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <label class="form-label" for="Form_Status">Status</label>
+        <select class="form-select js-asset-status" id="Form_Status" name="Form.Status" asp-items="statusItems"></select>
+    </div>
+    <div class="col-md-3 js-disposed-on @(form.Status == AssetStatus.Disposed ? "" : "d-none")">
+        <label class="form-label" for="Form_DisposedOn">Disposed on</label>
+        <input type="date" class="form-control" id="Form_DisposedOn" name="Form.DisposedOn" value="@((form.DisposedOn ?? DateOnly.FromDateTime(DateTime.UtcNow)).ToString("yyyy-MM-dd"))" />
+        <div class="form-text">Disposing removes everyone it is assigned to.</div>
+    </div>
+    <div class="col-md-4">
+        <label class="form-label" for="Form_AssetLocationId">Location</label>
+        <select class="form-select js-asset-location" id="Form_AssetLocationId" name="Form.AssetLocationId">
+            <option value="">- none -</option>
+            @foreach (var l in Model.Locations)
+            {
+                <option value="@l.Id" selected="@(l.Id == form.AssetLocationId)">@l.Name@(l.IsArchived ? " (archived)" : "")</option>
+            }
+        </select>
+    </div>
+</div>
+
+<h2 class="h6 text-muted text-uppercase">Assigned to</h2>
+<div class="mb-2" style="max-width:36rem">
+    <partial name="_PersonPicker" model="holderPicker" />
+    <div class="form-text">Anyone in the organisation can hold an asset, and several people can share one. Search to add someone; × removes them.</div>
+</div>

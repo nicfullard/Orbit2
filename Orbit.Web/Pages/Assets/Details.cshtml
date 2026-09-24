@@ -1,0 +1,342 @@
+@page "{id:guid}"
+@using Orbit.Application.Assets
+@model Orbit.Pages.Assets.DetailsModel
+@{
+    var a = Model.Asset;
+    var s = Model.Schedule;
+    ViewData["Title"] = a.Name;
+    var properties = a.AssetType.Properties.OrderBy(p => p.DisplayOrder).ThenBy(p => p.Name).ToList();
+    var today = DateOnly.FromDateTime(DateTime.UtcNow);
+    var heldByDeactivated = a.Assignments.Where(x => !x.User.IsActive).Select(x => x.User.DisplayName).ToList();
+    var outcomeItems = Ui.EnumItems<AssetCheckOutcome>(AssetCheckOutcome.Ok, null, o => o.Label());
+    var assignPicker = new Orbit.Pages.Assets.PersonPickerVm
+    {
+        Id = "assign", FieldName = "userId", SearchUrl = Url.Page("/Assets/People")!, SubmitOnPick = true,
+        Placeholder = "Assign someone: type a name, email or department...", Label = "Assign this asset to someone"
+    };
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Assets/Index">Assets</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@a.Name</li>
+    </ol>
+</nav>
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div>
+        <h1 class="h3 mb-1">@if (a.AssetNumber is not null) { <span class="font-monospace text-muted me-2" title="ERP asset number">@a.AssetNumber</span> }@a.Name</h1>
+        <div class="d-flex flex-wrap gap-1 align-items-center">
+            <span class="badge @Ui.AssetStatusBadge(a.Status)">@a.Status.Label()</span>
+            <span class="badge text-bg-light border">@a.AssetType.Name</span>
+            <span class="badge text-bg-light border" title="Managing department">@a.Department.Name</span>
+            @if (s.CheckState == CheckDueState.Overdue) { <span class="badge text-bg-danger">Check overdue</span> }
+            else if (s.CheckState == CheckDueState.DueSoon) { <span class="badge text-bg-warning">Check due soon</span> }
+            @if (AssetCheckSchedule.LastCheckNotOk(a)) { <span class="badge text-bg-danger">Last check: @a.LastCheckOutcome!.Value.Label()</span> }
+            @if (Model.WarrantyExpired) { <span class="badge text-bg-secondary">Warranty expired</span> }
+            else if (Model.WarrantyExpiring) { <span class="badge text-bg-warning">Warranty expiring</span> }
+            @if (Model.MissingRequired.Count > 0) { <span class="badge text-bg-warning" title="Required properties without a value; the next save must supply them">Missing required: @string.Join(", ", Model.MissingRequired)</span> }
+            @if (heldByDeactivated.Count > 0) { <span class="badge text-bg-warning" title="Recover the asset from a leaver">Held by a deactivated user: @string.Join(", ", heldByDeactivated)</span> }
+        </div>
+        @if (Model.Duplicates.Count > 0)
+        {
+            <div class="small mt-1">
+                <span class="badge text-bg-warning">Possible duplicate</span>
+                Same manufacturer and serial number as
+                @for (var i = 0; i < Model.Duplicates.Count; i++)
+                {
+                    var d = Model.Duplicates[i];
+                    <a asp-page="/Assets/Details" asp-route-id="@d.Id">@AssetRules.Label(d.AssetNumber, d.Name)</a>@(i < Model.Duplicates.Count - 1 ? ", " : ".")
+                }
+            </div>
+        }
+    </div>
+    @if (Model.CanEdit)
+    {
+        <a class="btn btn-outline-primary btn-sm" asp-page="/Assets/Edit" asp-route-id="@a.Id">Edit</a>
+    }
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-8">
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Details</div>
+            <div class="card-body">
+                <dl class="row mb-0 small">
+                    <dt class="col-sm-3">Manufacturer</dt><dd class="col-sm-9">@(a.Manufacturer ?? "-")</dd>
+                    <dt class="col-sm-3">Model</dt><dd class="col-sm-9">@(a.Model ?? "-")</dd>
+                    <dt class="col-sm-3">Serial number</dt><dd class="col-sm-9 font-monospace">@(a.SerialNumber ?? "-")</dd>
+                    <dt class="col-sm-3">Location</dt><dd class="col-sm-9">@(a.AssetLocation?.Name ?? "-")</dd>
+                    @if (a.Status == AssetStatus.Disposed)
+                    {
+                        <dt class="col-sm-3">Disposed on</dt><dd class="col-sm-9">@Ui.Day(a.DisposedOn)</dd>
+                    }
+                    <dt class="col-sm-3">Registered</dt><dd class="col-sm-9">@Ui.When(a.CreatedAt) by @Ui.AuthorName(a.CreatedBy)</dd>
+                </dl>
+                @if (!string.IsNullOrWhiteSpace(a.Description))
+                {
+                    <div class="description-box mt-2">@a.Description</div>
+                }
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Properties <span class="text-muted fw-normal small">(@a.AssetType.Name)</span></div>
+            <div class="card-body">
+                @if (properties.Count == 0)
+                {
+                    <p class="text-muted fst-italic small mb-0">This type has no extra properties.</p>
+                }
+                else
+                {
+                    <dl class="row mb-0 small">
+                        @foreach (var p in properties)
+                        {
+                            <dt class="col-sm-3">@p.Name</dt>
+                            <dd class="col-sm-9">
+                                @if (Model.Values.TryGetValue(p.Id, out var v)) { @AssetPropertyRules.Display(p.PropertyType, v) }
+                                else if (p.IsRequired) { <span class="text-warning-emphasis">missing (required)</span> }
+                                else { <span class="text-muted">-</span> }
+                            </dd>
+                        }
+                    </dl>
+                }
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Purchase &amp; warranty</div>
+            <div class="card-body">
+                <dl class="row mb-0 small">
+                    <dt class="col-sm-3">Purchase date</dt><dd class="col-sm-9">@Ui.Day(a.PurchaseDate)</dd>
+                    <dt class="col-sm-3">Purchase value</dt><dd class="col-sm-9">@Ui.Money(a.PurchaseValue)</dd>
+                    <dt class="col-sm-3">Purchase order</dt><dd class="col-sm-9">@(a.PurchaseOrder ?? "-")</dd>
+                    <dt class="col-sm-3">Invoice number</dt><dd class="col-sm-9">@(a.InvoiceNumber ?? "-")</dd>
+                    <dt class="col-sm-3">Supplier</dt><dd class="col-sm-9">@(a.Supplier ?? "-")</dd>
+                    <dt class="col-sm-3">Warranty ends</dt>
+                    <dd class="col-sm-9">
+                        @Ui.Day(a.WarrantyExpiresOn)
+                        @if (Model.WarrantyExpired) { <span class="badge text-bg-secondary ms-1">Expired</span> }
+                        else if (Model.WarrantyExpiring) { <span class="badge text-bg-warning ms-1">Expiring</span> }
+                    </dd>
+                </dl>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="fw-semibold">Checks <span class="text-muted fw-normal">(@a.Checks.Count)</span></span>
+                <span class="small">
+                    @if (s.NextCheckDue is DateOnly due)
+                    {
+                        <span>Next check due <strong>@Ui.Day(due)</strong></span>
+                        @if (s.CheckState == CheckDueState.Overdue) { <span class="badge text-bg-danger ms-1">Overdue</span> }
+                        else if (s.CheckState == CheckDueState.DueSoon) { <span class="badge text-bg-warning ms-1">Due soon</span> }
+                    }
+                    else if (a.AssetType.CheckIntervalDays is null)
+                    {
+                        <span class="text-muted">No scheduled checks</span>
+                    }
+                    else
+                    {
+                        <span class="text-muted">No check due (@a.Status.Label())</span>
+                    }
+                </span>
+            </div>
+            <div class="card-body">
+                @if (a.Checks.Count == 0)
+                {
+                    <p class="text-muted fst-italic small">Never checked.</p>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle small mb-3">
+                            <thead class="table-light"><tr><th>Date</th><th>Outcome</th><th>Notes</th><th>Recorded by</th><th></th></tr></thead>
+                            <tbody>
+                                @foreach (var c in a.Checks)
+                                {
+                                    <tr>
+                                        <td class="text-nowrap">@Ui.Day(c.CheckDate)</td>
+                                        <td><span class="badge @Ui.CheckOutcomeBadge(c.Outcome)">@c.Outcome.Label()</span></td>
+                                        <td>@c.Notes</td>
+                                        <td class="text-nowrap">@Ui.AuthorName(c.CheckedBy)</td>
+                                        <td class="text-end">
+                                            @if (AccessPolicy.CanRemoveCheck(Model.Actor, c, a))
+                                            {
+                                                <form method="post" asp-page-handler="RemoveCheck" asp-route-id="@a.Id" asp-route-checkId="@c.Id" data-confirm="Remove the check of @Ui.Day(c.CheckDate)? Only for a check recorded by mistake.">
+                                                    <button class="btn btn-sm btn-outline-danger py-0" type="submit" title="Remove a check recorded by mistake">Remove</button>
+                                                </form>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                @if (Model.ConfirmOnly)
+                {
+                    <form method="post" asp-page-handler="ConfirmHeld" asp-route-id="@a.Id" class="d-flex flex-wrap gap-2 align-items-center">
+                        <button class="btn btn-sm btn-success" type="submit">Confirm I have it</button>
+                        <span class="form-text mt-0">Records today's check: you still have this asset and it's OK. Found a problem? Add a comment or a photo below.</span>
+                    </form>
+                }
+                else if (Model.CanCheck)
+                {
+                    <form method="post" asp-page-handler="RecordCheck" asp-route-id="@a.Id" class="row g-2 align-items-end">
+                        <div class="col-sm-3">
+                            <label class="form-label small mb-0" for="checkDate">Date</label>
+                            <input type="date" class="form-control form-control-sm" id="checkDate" name="checkDate" value="@today.ToString("yyyy-MM-dd")" max="@today.ToString("yyyy-MM-dd")" required />
+                        </div>
+                        <div class="col-sm-3">
+                            <label class="form-label small mb-0" for="outcome">Outcome</label>
+                            <select class="form-select form-select-sm" id="outcome" name="outcome" asp-items="outcomeItems"></select>
+                        </div>
+                        <div class="col-sm-4">
+                            <label class="form-label small mb-0" for="notes">Notes</label>
+                            <input class="form-control form-control-sm" id="notes" name="notes" maxlength="2000" placeholder="Required when an issue is found" />
+                        </div>
+                        <div class="col-sm-2">
+                            <button class="btn btn-sm btn-primary w-100" type="submit">Record check</button>
+                        </div>
+                    </form>
+                }
+                else if (a.Status == AssetStatus.Disposed)
+                {
+                    <p class="text-muted small mb-0">A disposed asset isn't checked.</p>
+                }
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Comments <span class="text-muted fw-normal">(@Model.Comments.Count)</span></div>
+            <div class="card-body">
+                @foreach (var c in Model.Comments)
+                {
+                    var isClaude = c.Author is null || c.Author.IsSystemAccount;
+                    <div class="border-bottom pb-2 mb-2">
+                        <div class="small">
+                            <span class="fw-semibold">@Ui.AuthorName(c.Author)</span>
+                            @if (isClaude) { <span class="badge badge-claude">Claude</span> }
+                            <span class="text-muted">· @Ui.When(c.CreatedAt)</span>
+                        </div>
+                        <div class="description-box">@c.Body</div>
+                    </div>
+                }
+                <form method="post" asp-page-handler="Comment" asp-route-id="@a.Id">
+                    <textarea class="form-control mb-2" name="CommentBody" rows="3" placeholder="Add a comment" required></textarea>
+                    <button class="btn btn-sm btn-primary" type="submit">Post comment</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Attachments <span class="text-muted fw-normal">(@Model.Attachments.Count)</span></div>
+            <div class="card-body">
+                @if (Model.Attachments.Count == 0)
+                {
+                    <p class="text-muted fst-italic mb-2">No attachments.</p>
+                }
+                else
+                {
+                    <ul class="list-unstyled mb-2 attachment-list">
+                        @foreach (var f in Model.Attachments)
+                        {
+                            <li class="d-flex justify-content-between align-items-center gap-2 border-bottom py-1">
+                                <div class="text-truncate">
+                                    <a asp-page="/Attachments/Download" asp-route-id="@f.Id" class="text-decoration-none fw-semibold" title="Download">@f.FileName</a>
+                                    <div class="small text-muted">@Ui.Bytes(f.SizeBytes) · @Ui.AuthorName(f.UploadedBy) · @Ui.When(f.UploadedAt)</div>
+                                </div>
+                                @if (AccessPolicy.CanDeleteAttachment(Model.Actor, f, a))
+                                {
+                                    <form method="post" asp-page-handler="DeleteAttachment" asp-route-id="@a.Id" asp-route-attachmentId="@f.Id" data-confirm="Delete the attachment &quot;@f.FileName&quot;?">
+                                        <button class="btn btn-sm btn-outline-danger py-0" type="submit" title="Delete this attachment">Delete</button>
+                                    </form>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+                <form method="post" enctype="multipart/form-data" asp-page-handler="Attach" asp-route-id="@a.Id" class="d-flex flex-wrap gap-2 align-items-center">
+                    <input type="file" name="files" class="form-control form-control-sm w-auto" multiple required aria-label="Files to attach" />
+                    <button class="btn btn-sm btn-primary" type="submit">Upload</button>
+                    <span class="form-text mt-0">Invoices, photos, warranty documents. Up to @Model.AttachmentLimits.MaxFilesPerUpload files, @Model.AttachmentLimits.MaxFileSizeMb MB each.</span>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Assigned to</div>
+            <ul class="list-group list-group-flush small">
+                @if (a.Assignments.Count == 0)
+                {
+                    <li class="list-group-item text-muted fst-italic">Unassigned</li>
+                }
+                @foreach (var x in a.Assignments.OrderBy(x => x.User.DisplayName))
+                {
+                    <li class="list-group-item d-flex justify-content-between align-items-start gap-2">
+                        <div>
+                            <div class="fw-semibold">
+                                @x.User.DisplayName
+                                @if (!x.User.IsActive) { <span class="badge text-bg-warning">deactivated</span> }
+                            </div>
+                            <div class="text-muted">
+                                @(x.User.Department?.Name ?? "No department") · since @Ui.When(x.AssignedAt)@(x.AssignedBy is null ? "" : $" by {Ui.AuthorName(x.AssignedBy)}")
+                            </div>
+                        </div>
+                        @if (Model.CanEdit)
+                        {
+                            <form method="post" asp-page-handler="Unassign" asp-route-id="@a.Id" asp-route-userId="@x.UserId" data-confirm="Take this asset off @x.User.DisplayName?">
+                                <button class="btn btn-sm btn-outline-danger py-0" type="submit" title="@x.User.DisplayName no longer holds it">Remove</button>
+                            </form>
+                        }
+                    </li>
+                }
+                @if (Model.CanAssign)
+                {
+                    <li class="list-group-item">
+                        <form method="post" asp-page-handler="Assign" asp-route-id="@a.Id">
+                            <partial name="_PersonPicker" model="assignPicker" />
+                        </form>
+                    </li>
+                }
+            </ul>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">History</div>
+            <div class="card-body py-2">
+                <ul class="list-unstyled activity-feed mb-0 small">
+                    @if (Model.Activity.Count == 0)
+                    {
+                        <li class="text-muted fst-italic">No history.</li>
+                    }
+                    @foreach (var e in Model.Activity)
+                    {
+                        <li>
+                            <span class="fw-semibold">@e.ActorName</span>
+                            @if (e.ActorType == ActorType.Api) { <span class="badge badge-claude">Claude</span> }
+                            @Ui.ActionLabel(e.Action) <span class="text-muted">· @Ui.When(e.Timestamp)</span>
+                            @if (e.Details is { Length: > 2 })
+                            {
+                                <div class="text-muted key-box" style="font-size:.75rem">@Ui.Truncate(e.Details, 180)</div>
+                            }
+                        </li>
+                    }
+                </ul>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-body small">
+                <dl class="row mb-0">
+                    <dt class="col-5">ERP asset number</dt><dd class="col-7 font-monospace">@(a.AssetNumber ?? "-")</dd>
+                    <dt class="col-5">Id</dt><dd class="col-7 text-muted key-box">@a.Id</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>
