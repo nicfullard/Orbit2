@@ -10,7 +10,7 @@ using ValidationException = Orbit.Application.ValidationException;
 
 namespace Orbit.Pages.Admin.Users;
 
-public class EditModel(UserAdminService users, DepartmentService departments, IActorProvider actors, LdapSettingsService ldapSettings) : OrbitPageModel
+public class EditModel(UserAdminService users, DepartmentService departments, RoleService roles, IActorProvider actors, LdapSettingsService ldapSettings) : OrbitPageModel
 {
     public bool DirectoryEnabled { get; private set; }
     [BindProperty] public UserForm Form { get; set; } = new();
@@ -18,13 +18,14 @@ public class EditModel(UserAdminService users, DepartmentService departments, IA
     public UserSummary Account { get; private set; } = null!;
     public Actor Actor { get; private set; } = null!;
     public IReadOnlyList<SelectListItem> DepartmentItems { get; private set; } = [];
+    public IReadOnlyList<RolePickerItem> RoleItems { get; private set; } = [];
     public string? ResetLink { get; private set; }
 
     public async Task<IActionResult> OnGetAsync(Guid id, CancellationToken ct)
     {
         await LoadAsync(id, ct);
         Form = UserForm.From(Account);
-        DepartmentItems = await UserForm.DepartmentItemsAsync(departments, Form.DepartmentId, ct);
+        await LoadLookupsAsync(ct);
         ResetLink = TempData["ResetLink"] as string;
         return Page();
     }
@@ -47,7 +48,7 @@ public class EditModel(UserAdminService users, DepartmentService departments, IA
             }
             catch (ValidationException ex) { ModelState.AddModelError(string.Empty, ex.Message); }
         }
-        DepartmentItems = await UserForm.DepartmentItemsAsync(departments, Form.DepartmentId, ct);
+        await LoadLookupsAsync(ct);
         return Page();
     }
 
@@ -116,5 +117,11 @@ public class EditModel(UserAdminService users, DepartmentService departments, IA
         Actor = await actors.GetAsync(ct);
         Account = await users.GetAsync(id, ct);
         DirectoryEnabled = await ldapSettings.IsEnabledAsync(ct);
+    }
+
+    private async Task LoadLookupsAsync(CancellationToken ct)
+    {
+        DepartmentItems = await UserForm.DepartmentItemsAsync(departments, Form.DepartmentId, ct);
+        RoleItems = await roles.ListForPickerAsync(ct);
     }
 }

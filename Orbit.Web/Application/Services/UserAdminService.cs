@@ -6,7 +6,7 @@ using Orbit.Data.Entities;
 
 namespace Orbit.Application.Services;
 
-/// <summary>System Admin user management: create, promote/demote, move between departments, deactivate, reset password.</summary>
+/// <summary>User management (users.manage): create, change role and department, deactivate, reset password.</summary>
 public sealed class UserAdminService(
     ApplicationDbContext db,
     UserManager<ApplicationUser> userManager,
@@ -20,8 +20,7 @@ public sealed class UserAdminService(
         var users = await db.Users.AsNoTracking().Include(u => u.Department)
             .Where(u => !u.IsSystemAccount)
             .OrderByDescending(u => u.IsActive).ThenBy(u => u.DisplayName).ToListAsync(ct);
-        var roles = await UserDirectoryService.GetRolesAsync(db, users.Select(u => u.Id).ToList(), ct);
-        return users.Select(u => UserDirectoryService.ToSummary(u, roles)).ToList();
+        return await UserDirectoryService.ToSummariesAsync(db, users, ct);
     }
 
     public async Task<UserSummary> GetAsync(Guid id, CancellationToken ct = default)
@@ -29,7 +28,7 @@ public sealed class UserAdminService(
         await RequireAdminAsync(ct);
         var user = await db.Users.AsNoTracking().Include(u => u.Department).FirstOrDefaultAsync(u => u.Id == id && !u.IsSystemAccount, ct)
             ?? throw new NotFoundException("User not found.");
-        var roles = await UserDirectoryService.GetRolesAsync(db, [id], ct);
+        var roles = await RoleResolver.ForUsersAsync(db, [id], ct);
         return UserDirectoryService.ToSummary(user, roles);
     }
 
@@ -38,7 +37,8 @@ public sealed class UserAdminService(
         var actor = await RequireAdminAsync(ct);
         var email = RequireEmail(input.Email);
         var displayName = RequireDisplayName(input.DisplayName);
-        var departmentId = await ValidateDepartmentForRoleAsync(input.Role, input.DepartmentId, ct);
+        var role = await RequireRoleAsync(input.RoleId, ct);
+        var departmentId = await ValidateDepartmentForRoleAsync(role, input.DepartmentId, ct);
         var isDirectoryUser = input.AuthSource == AuthSource.Ldap;
         if (isDirectoryUser)
             await RequireDirectorySignInEnabledAsync(ct);
@@ -61,10 +61,10 @@ public sealed class UserAdminService(
         };
         // A directory user gets no password hash at all: the directory is the only thing that can vouch for them.
         Throw(isDirectoryUser ? await userManager.CreateAsync(user) : await userManager.CreateAsync(user, input.Password!));
-        Throw(await userManager.AddToRoleAsync(user, input.Role.ToString()));
+        Throw(await userManager.AddToRoleAsync(user, role.Name));
 
         audit.Add(actor, AuditEntity.User, user.Id, AuditAction.Created, departmentId, displayName,
-            new { email, role = input.Role, departmentId, authSource = input.AuthSource });
+            new { email, role = role.Name, roleId = role.Id, departmentId, authSource = input.AuthSource });
         await db.SaveChangesAsync(ct);
         return await GetAsync(user.Id, ct);
     }
@@ -77,13 +77,13 @@ public sealed class UserAdminService(
         if (user.IsSystemAccount) throw new ValidationException("The system account can't be edited.");
 
         var displayName = RequireDisplayName(input.DisplayName);
-        var departmentId = await ValidateDepartmentForRoleAsync(input.Role, input.DepartmentId, ct);
-        var currentRoles = await userManager.GetRolesAsync(user);
-        var currentRole = currentRoles.Select(r => Enum.TryParse<OrbitRole>(r, out var x) ? x : OrbitRole.Member)
-            .DefaultIfEmpty(OrbitRole.Member).Max();
+        var role = await RequireRoleAsync(input.RoleId, ct);
+        var departmentId = await ValidateDepartmentForRoleAsync(role, input.DepartmentId, ct);
+        var currentRoleNames = await userManager.GetRolesAsync(user);
+        var currentRole = (await RoleResolver.ForUsersAsync(db, [id], ct)).GetValueOrDefault(id) ?? ResolvedRole.None;
 
-        var isLocalSystemAdmin = currentRole == OrbitRole.SystemAdmin && user.AuthSource == AuthSource.Local && user.IsActive;
-        var staysLocalSystemAdmin = input.Role == OrbitRole.SystemAdmin && input.AuthSource == AuthSource.Local;
+        var isLocalSystemAdmin = currentRole.IsBuiltIn && user.AuthSource == AuthSource.Local && user.IsActive;
+        var staysLocalSystemAdmin = role.IsBuiltIn && input.AuthSource == AuthSource.Local;
         if (isLocalSystemAdmin && !staysLocalSystemAdmin)
             await RequireAnotherLocalSystemAdminAsync(user.Id, ct);
         if (input.AuthSource == AuthSource.Ldap && user.AuthSource != AuthSource.Ldap)
@@ -92,7 +92,7 @@ public sealed class UserAdminService(
         var changes = new ChangeSet()
             .TrackText("displayName", user.DisplayName, displayName)
             .Track("departmentId", user.DepartmentId, departmentId)
-            .Track("role", currentRole, input.Role)
+            .Track("role", currentRole.Name, role.Name)
             .Track("authSource", user.AuthSource, input.AuthSource);
         if (!changes.HasChanges) return await GetAsync(id, ct);
 
@@ -106,10 +106,10 @@ public sealed class UserAdminService(
             user.PasswordHash = null;
         }
         Throw(await userManager.UpdateAsync(user));
-        if (currentRole != input.Role)
+        if (currentRole.Id != role.Id)
         {
-            if (currentRoles.Count > 0) Throw(await userManager.RemoveFromRolesAsync(user, currentRoles));
-            Throw(await userManager.AddToRoleAsync(user, input.Role.ToString()));
+            if (currentRoleNames.Count > 0) Throw(await userManager.RemoveFromRolesAsync(user, currentRoleNames));
+            Throw(await userManager.AddToRoleAsync(user, role.Name));
         }
         // Refresh the user's cookie claims on their next request.
         Throw(await userManager.UpdateSecurityStampAsync(user));
@@ -128,7 +128,8 @@ public sealed class UserAdminService(
             ?? throw new NotFoundException("User not found.");
         if (user.IsSystemAccount) throw new ValidationException("The system account can't be deactivated.");
         if (!user.IsActive) return;
-        if (user.AuthSource == AuthSource.Local && await userManager.IsInRoleAsync(user, Roles.SystemAdmin))
+        var role = (await RoleResolver.ForUsersAsync(db, [id], ct)).GetValueOrDefault(id);
+        if (user.AuthSource == AuthSource.Local && role is { IsBuiltIn: true })
             await RequireAnotherLocalSystemAdminAsync(user.Id, ct);
 
         user.IsActive = false;
@@ -206,23 +207,26 @@ public sealed class UserAdminService(
     private async Task<Actor> RequireAdminAsync(CancellationToken ct)
     {
         var actor = await actors.GetAsync(ct);
-        AccessPolicy.Require(AccessPolicy.CanManageUsers(actor), "Only a System Admin can manage users.");
+        AccessPolicy.Require(AccessPolicy.CanManageUsers(actor), "You don't have permission to manage users.");
         return actor;
     }
 
+    private async Task<ResolvedRole> RequireRoleAsync(Guid roleId, CancellationToken ct) =>
+        await RoleResolver.ForRoleAsync(db, roleId, ct) ?? throw new ValidationException("Choose a role.");
+
     /// <summary>
     /// The break-glass rule: someone must always be able to administer Orbit without the directory. If every System
-    /// Admin signed in through LDAP, an agent or directory outage would lock out the only people able to fix it.
+    /// Administrator signed in through LDAP, an agent or directory outage would lock out the only people able to fix it.
     /// </summary>
     private async Task RequireAnotherLocalSystemAdminAsync(Guid excludingUserId, CancellationToken ct)
     {
         var others = await db.UserRoles
-            .Join(db.Roles, ur => ur.RoleId, r => r.Id, (ur, r) => new { ur.UserId, r.Name })
-            .Where(x => x.Name == Roles.SystemAdmin && x.UserId != excludingUserId)
+            .Join(db.Roles, ur => ur.RoleId, r => r.Id, (ur, r) => new { ur.UserId, r.IsBuiltIn })
+            .Where(x => x.IsBuiltIn && x.UserId != excludingUserId)
             .Join(db.Users, x => x.UserId, u => u.Id, (x, u) => u)
             .CountAsync(u => u.IsActive && u.AuthSource == AuthSource.Local, ct);
         if (others == 0)
-            throw new ValidationException("At least one active System Admin with a local password must remain, so Orbit can still be administered if the directory or its agent is unavailable.");
+            throw new ValidationException("At least one active System Administrator with a local password must remain, so Orbit can still be administered if the directory or its agent is unavailable.");
     }
 
     private async Task RequireDirectorySignInEnabledAsync(CancellationToken ct)
@@ -237,10 +241,11 @@ public sealed class UserAdminService(
             throw new ValidationException("This user signs in with the company directory; their password is managed there, not in Orbit.");
     }
 
-    private async Task<Guid?> ValidateDepartmentForRoleAsync(OrbitRole role, Guid? departmentId, CancellationToken ct)
+    /// <summary>A role with any grant at Department scope needs a department (spec §6.5); any role may have one as a home department.</summary>
+    private async Task<Guid?> ValidateDepartmentForRoleAsync(ResolvedRole role, Guid? departmentId, CancellationToken ct)
     {
-        if (role != OrbitRole.SystemAdmin && departmentId is null)
-            throw new ValidationException("Members and Department Admins must belong to a department.");
+        if (role.RequiresDepartment && departmentId is null)
+            throw new ValidationException($"The {role.Name} role has permissions scoped to a department, so the user must belong to one.");
         if (departmentId is Guid id)
         {
             var dept = await db.Departments.AsNoTracking().FirstOrDefaultAsync(d => d.Id == id, ct)

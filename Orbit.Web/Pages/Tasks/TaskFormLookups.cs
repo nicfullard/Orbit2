@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Mvc.Rendering;
 using Orbit.Application;
 using Orbit.Application.Models;
 using Orbit.Application.Services;
-using Orbit.Data.Entities;
 
 namespace Orbit.Pages.Tasks;
 
@@ -13,10 +12,12 @@ public sealed record DepartmentedOption(string Value, string Text, Guid? Departm
 public sealed class TaskFormLookups
 {
     public required Actor Actor { get; init; }
+    /// <summary>The department picker is offered to whoever may create tasks in every department (§6.2.1); everyone else files in the default department.</summary>
+    public bool CanChooseDepartment { get; init; }
     public IReadOnlyList<SelectListItem> Departments { get; init; } = [];
     /// <summary>Projects the actor may file the task under (plus the one it is already on). Each carries its department.</summary>
     public IReadOnlyList<DepartmentedOption> Projects { get; init; } = [];
-    /// <summary>Assignable users. DepartmentId is null for System Admins, who can be assigned anywhere.</summary>
+    /// <summary>Assignable users. DepartmentId is null for users whose role sees every department, who can be assigned anywhere.</summary>
     public IReadOnlyList<DepartmentedOption> Assignees { get; init; } = [];
     public IReadOnlyList<SelectListItem> Sprints { get; init; } = [];
     /// <summary>Parent task options (§6.15), each carrying its project and department so the form can filter them client-side.</summary>
@@ -46,8 +47,10 @@ public sealed class TaskFormLookups
         Guid? existingTaskId,
         CancellationToken ct)
     {
+        var canChooseDepartment = actor.CanAnywhere(Permission.TasksCreate);
+        var seesEverywhere = actor.CanAnywhere(Permission.TasksView);
         var deptItems = new List<SelectListItem>();
-        if (actor.IsSystemAdmin)
+        if (canChooseDepartment)
         {
             deptItems.Add(new SelectListItem("(default)", string.Empty, form.DepartmentId is null));
             deptItems.AddRange((await departments.ListAsync(false, ct))
@@ -57,19 +60,17 @@ public sealed class TaskFormLookups
         var projectItems = new List<DepartmentedOption> { new(string.Empty, "(standalone task)", null, form.ProjectId is null) };
         projectItems.AddRange((await projects.ListOpenForPickerAsync(null, form.ProjectId, ct))
             .Select(p => new DepartmentedOption(p.Id.ToString(),
-                actor.IsSystemAdmin ? $"{p.Department.Name} / {p.Name}" : p.Name,
+                seesEverywhere ? $"{p.Department.Name} / {p.Name}" : p.Name,
                 p.DepartmentId, p.Id == form.ProjectId)));
 
         var assigneeItems = new List<DepartmentedOption> { new(string.Empty, "(unassigned)", null, form.AssigneeId is null) };
-        var candidates = actor.IsSystemAdmin
+        var candidates = seesEverywhere
             ? await users.ListAsync(null, null, false, ct)
-            : await users.GetAssignableAsync(actor.DepartmentId!.Value, ct);
+            : actor.DepartmentId is Guid ownDept ? await users.GetAssignableAsync(ownDept, ct) : [];
         assigneeItems.AddRange(candidates.Select(u => new DepartmentedOption(
             u.Id.ToString(),
-            actor.IsSystemAdmin
-                ? $"{u.DisplayName} ({(u.Role == OrbitRole.SystemAdmin ? "System Admin" : u.DepartmentName)})"
-                : u.DisplayName,
-            u.Role == OrbitRole.SystemAdmin ? null : u.DepartmentId,
+            seesEverywhere ? $"{u.DisplayName} ({u.DepartmentName ?? u.Role.Name})" : u.DisplayName,
+            u.CanViewAllTasks ? null : u.DepartmentId,
             u.Id == form.AssigneeId)));
 
         var sprintItems = new List<SelectListItem> { new("(backlog)", string.Empty) };
@@ -87,6 +88,7 @@ public sealed class TaskFormLookups
         return new TaskFormLookups
         {
             Actor = actor,
+            CanChooseDepartment = canChooseDepartment,
             Departments = deptItems,
             Projects = projectItems,
             Assignees = assigneeItems,

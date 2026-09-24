@@ -2,7 +2,6 @@
 @model Orbit.Pages.Admin.ApiKeys.CreateModel
 @{
     ViewData["Title"] = "New API key";
-    var roleItems = Ui.EnumItems<OrbitRole>(Model.Role, null, r => r.Label());
     var mcpUrl = $"{Request.Scheme}://{Request.Host}/mcp";
 }
 
@@ -27,8 +26,8 @@
         <div class="card-body small">
             <dl class="row mb-0">
                 <dt class="col-4">Name</dt><dd class="col-8">@Model.Created.Key.Name</dd>
-                <dt class="col-4">Role</dt><dd class="col-8">@Model.Created.Key.Role.Label()</dd>
-                <dt class="col-4">Department</dt><dd class="col-8">@(Model.Created.Key.Department?.Name ?? "(all departments)")</dd>
+                <dt class="col-4">Role</dt><dd class="col-8">@Model.Created.Key.Role.Name</dd>
+                <dt class="col-4">Department</dt><dd class="col-8">@(Model.Created.Key.Department?.Name ?? "(none)")</dd>
                 <dt class="col-4">MCP endpoint</dt><dd class="col-8"><code>@mcpUrl</code></dd>
                 <dt class="col-4">Header</dt><dd class="col-8"><code>Authorization: Bearer @Model.Created.RawKey</code></dd>
             </dl>
@@ -50,16 +49,21 @@ else
                 </div>
                 <div class="row g-3">
                     <div class="col-md-5">
-                        <label class="form-label" for="Role">Role</label>
-                        <select class="form-select" id="Role" name="Role" asp-items="roleItems"></select>
+                        <label class="form-label" for="RoleId">Role</label>
+                        <select class="form-select js-role-select" id="RoleId" name="RoleId" data-department-target="#DepartmentId" data-department-hint="#departmentHint">
+                            @foreach (var r in Model.RoleItems)
+                            {
+                                <option value="@r.Id" data-requires-department="@(r.RequiresDepartment ? "true" : "false")" title="@r.Description" selected="@(r.Id == Model.RoleId)">@r.Name</option>
+                            }
+                        </select>
                     </div>
                     <div class="col-md-7">
                         <label class="form-label" for="DepartmentId">Department</label>
                         <select class="form-select" id="DepartmentId" name="DepartmentId" asp-items="Model.DepartmentItems"></select>
-                        <div class="form-text">Required for Member and Department Admin keys; ignored for System Admin keys.</div>
+                        <div class="form-text" id="departmentHint">Required for a role with permissions scoped to a department; otherwise the key's default department for new work.</div>
                     </div>
                 </div>
-                <p class="small text-muted mt-3 mb-0">The key is bound by exactly the same rules as a user of that role: a Member key can create and edit tasks in its department but cannot close them; a Department Admin key can close tasks in its department; a System Admin key can do anything anywhere.</p>
+                <p class="small text-muted mt-3 mb-0">The key is bound by exactly the same rules as a user in that role: each of the role's permissions applies at its scope to every tool call (see <a asp-page="/Admin/Roles/Index">Admin &gt; Roles</a>).</p>
                 <div class="mt-4 d-flex gap-2">
                     <button type="submit" class="btn btn-primary">Create key</button>
                     <a class="btn btn-outline-secondary" asp-page="/Admin/ApiKeys/Index">Cancel</a>

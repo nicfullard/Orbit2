@@ -1,12 +1,13 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
+using Orbit.Application;
 using Orbit.Application.Models;
 using Orbit.Application.Services;
 using Orbit.Data.Entities;
 
 namespace Orbit.Pages.Admin.Activity;
 
-public class IndexModel(AuditService audit, DepartmentService departments) : OrbitPageModel
+public class IndexModel(AuditService audit, DepartmentService departments, IActorProvider actors) : OrbitPageModel
 {
     [BindProperty(SupportsGet = true)] public DateTime? From { get; set; }
     [BindProperty(SupportsGet = true)] public DateTime? To { get; set; }
@@ -16,10 +17,16 @@ public class IndexModel(AuditService audit, DepartmentService departments) : Orb
 
     public PagedResult<AuditLog> Result { get; private set; } = null!;
     public IReadOnlyList<SelectListItem> DepartmentItems { get; private set; } = [];
-    public static readonly string[] EntityTypes = [AuditEntity.Task, AuditEntity.Project, AuditEntity.Sprint, AuditEntity.RecurringTaskDefinition, AuditEntity.Department, AuditEntity.User, AuditEntity.ApiKey];
+    /// <summary>audit.view for every department offers the department filter; at Department scope the log is the viewer's own department's.</summary>
+    public bool CanFilterDepartments { get; private set; }
+    public static readonly string[] EntityTypes =
+        [AuditEntity.Task, AuditEntity.Project, AuditEntity.Sprint, AuditEntity.RecurringTaskDefinition, AuditEntity.Department, AuditEntity.User, AuditEntity.Role, AuditEntity.ApiKey];
 
     public async Task OnGetAsync(CancellationToken ct)
     {
+        var actor = await actors.GetAsync(ct);
+        CanFilterDepartments = actor.CanAnywhere(Permission.AuditView);
+        if (!CanFilterDepartments) DepartmentId = null;
         To ??= DateTime.UtcNow;
         From ??= To.Value.AddDays(-7);
         Result = await audit.ListAsync(new AuditFilter
@@ -31,7 +38,8 @@ public class IndexModel(AuditService audit, DepartmentService departments) : Orb
             Page = PageNumber,
             PageSize = 100
         }, ct);
-        DepartmentItems = (await departments.ListAsync(true, ct))
-            .Select(d => new SelectListItem(d.Name, d.Id.ToString(), d.Id == DepartmentId)).ToList();
+        if (CanFilterDepartments)
+            DepartmentItems = (await departments.ListAsync(true, ct))
+                .Select(d => new SelectListItem(d.Name, d.Id.ToString(), d.Id == DepartmentId)).ToList();
     }
 }

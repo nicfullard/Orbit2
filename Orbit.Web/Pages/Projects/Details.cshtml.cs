@@ -81,7 +81,7 @@ public class DetailsModel(
     /// <summary>Departments with tasks on this project, for the filter (more than one on a cross-department project).</summary>
     public IReadOnlyList<Department> Departments { get; private set; } = [];
     public bool CanEdit { get; private set; }
-    /// <summary>The project's own department (or a System Admin) may add tasks; a department that only shares it may not.</summary>
+    /// <summary>Whoever may create tasks in the project's department may add tasks; a department that only shares it may not.</summary>
     public bool CanAddTasks { get; private set; }
     /// <summary>True when tasks or recurring definitions from a department other than the project's are filed under it (§6.2.1).</summary>
     public bool IsCrossDepartment { get; private set; }
@@ -95,7 +95,7 @@ public class DetailsModel(
         Summary = await projects.GetStatusAsync(id, ct);
         CanEdit = AccessPolicy.CanEditProject(Actor, Project);
         CanAddTasks = Project.Status != ProjectStatus.Archived && AccessPolicy.CanAddTaskToProject(Actor, Project);
-        IsSharedView = !Actor.CanAccessDepartment(Project.DepartmentId);
+        IsSharedView = !AccessPolicy.CanViewProject(Actor, Project);
         IsCrossDepartment = Summary.IsCrossDepartment
             || Project.RecurringTaskDefinitions.Any(r => r.DepartmentId != Project.DepartmentId);
 

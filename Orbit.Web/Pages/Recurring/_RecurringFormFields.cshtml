@@ -26,7 +26,7 @@
             }
         </select>
     </div>
-    @if (Model.Actor.IsSystemAdmin)
+    @if (Model.CanChooseDepartment)
     {
         <div class="col-md-6">
             <label class="form-label" for="Form_DepartmentId">Department</label>

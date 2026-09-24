@@ -12,7 +12,7 @@ public class CreateModel(SprintService sprints, IActorProvider actors) : OrbitPa
     public async Task<IActionResult> OnGetAsync(CancellationToken ct)
     {
         var actor = await actors.GetAsync(ct);
-        AccessPolicy.Require(AccessPolicy.CanManageSprints(actor), "Only a System Admin can manage sprints.");
+        AccessPolicy.Require(AccessPolicy.CanManageSprints(actor), "You don't have permission to manage sprints.");
         return Page();
     }
 

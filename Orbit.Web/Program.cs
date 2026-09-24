@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
@@ -63,7 +64,7 @@ builder.Services.AddDefaultIdentity<ApplicationUser>(options =>
         options.Lockout.MaxFailedAccessAttempts = Math.Max(1, security.Lockout.MaxFailedAttempts);
         options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(Math.Max(1, security.Lockout.LockoutMinutes));
     })
-    .AddRoles<IdentityRole<Guid>>()
+    .AddRoles<ApplicationRole>()
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddClaimsPrincipalFactory<OrbitClaimsPrincipalFactory>()
     .AddSignInManager<OrbitSignInManager>(); // directory (LDAP) users are checked against AD via an Orbit Agent
@@ -83,22 +84,34 @@ builder.Services.AddAuthentication()
     .AddScheme<ApiKeyAuthenticationOptions, ApiKeyAuthenticationHandler>(ApiKeyAuthenticationDefaults.Scheme, null)
     .AddScheme<AgentAuthenticationOptions, AgentAuthenticationHandler>(AgentAuthenticationDefaults.Scheme, null);
 
-builder.Services.AddAuthorizationBuilder()
-    .AddPolicy(Policies.SystemAdmin, p => p.RequireRole(Roles.SystemAdmin))
+// One page-door policy per permission (spec §6.5): granted at any scope opens the page, the service applies the scope.
+builder.Services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
+var authorization = builder.Services.AddAuthorizationBuilder()
     .AddPolicy(Policies.McpApiKey, p => p
         .AddAuthenticationSchemes(ApiKeyAuthenticationDefaults.Scheme)
         .RequireAuthenticatedUser())
     .AddPolicy(Policies.Agent, p => p
         .AddAuthenticationSchemes(AgentAuthenticationDefaults.Scheme)
         .RequireClaim(OrbitClaims.AgentId));
+foreach (var permission in PermissionCatalog.All)
+    authorization.AddPolicy(Policies.Permission(permission.Key), p => p.RequireAuthenticatedUser().AddRequirements(new PermissionRequirement(permission.Key)));
 
 // --- Razor Pages --------------------------------------------------------------------------
 builder.Services.AddRazorPages(options =>
     {
         options.Conventions.AuthorizeFolder("/");
         options.Conventions.AllowAnonymousToPage("/Error");
-        options.Conventions.AuthorizeFolder("/Admin", Policies.SystemAdmin);
-        options.Conventions.AuthorizeFolder("/Reports", Policies.SystemAdmin);
+        options.Conventions.AuthorizeFolder("/Admin/Users", Policies.Permission(Permission.UsersManage));
+        options.Conventions.AuthorizeFolder("/Admin/Roles", Policies.Permission(Permission.RolesManage));
+        options.Conventions.AuthorizeFolder("/Admin/Departments", Policies.Permission(Permission.DepartmentsManage));
+        options.Conventions.AuthorizeFolder("/Admin/ApiKeys", Policies.Permission(Permission.ApiKeysManage));
+        options.Conventions.AuthorizeFolder("/Admin/Directory", Policies.Permission(Permission.DirectoryManage));
+        options.Conventions.AuthorizeFolder("/Admin/Agents", Policies.Permission(Permission.AgentsManage));
+        options.Conventions.AuthorizeFolder("/Admin/Calendar", Policies.Permission(Permission.CalendarManage));
+        options.Conventions.AuthorizeFolder("/Admin/Activity", Policies.Permission(Permission.AuditView));
+        options.Conventions.AuthorizeFolder("/Reports", Policies.Permission(Permission.ReportsView));
+        options.Conventions.AuthorizePage("/Sprints/Create", Policies.Permission(Permission.SprintsManage));
+        options.Conventions.AuthorizePage("/Sprints/Edit", Policies.Permission(Permission.SprintsManage));
     })
     .AddMvcOptions(o =>
     {
@@ -124,6 +137,7 @@ builder.Services.AddScoped<TimeEntryService>();
 builder.Services.AddScoped<DepartmentService>();
 builder.Services.AddScoped<UserDirectoryService>();
 builder.Services.AddScoped<UserAdminService>();
+builder.Services.AddScoped<RoleService>();
 builder.Services.AddScoped<ApiKeyService>();
 builder.Services.AddScoped<AgentService>();
 builder.Services.AddScoped<LdapSettingsService>();

@@ -75,12 +75,16 @@ public static class Ui
         _ => "text-bg-secondary"
     };
 
-    public static string RoleBadge(OrbitRole r) => r switch
-    {
-        OrbitRole.SystemAdmin => "text-bg-danger",
-        OrbitRole.DepartmentAdmin => "text-bg-warning",
-        _ => "text-bg-secondary"
-    };
+    /// <summary>Built-in: danger; any grant at All departments: warning; else secondary (spec §6.5).</summary>
+    public static string RoleBadge(RoleRef r) =>
+        r.IsBuiltIn ? "text-bg-danger" : r.ReachesEverywhere ? "text-bg-warning" : "text-bg-secondary";
+
+    public static string RoleBadge(ApplicationRole r) =>
+        r.IsBuiltIn ? "text-bg-danger"
+        : r.Permissions.Any(p => p.Scope == PermissionScope.All) ? "text-bg-warning"
+        : "text-bg-secondary";
+
+    public static string ScopeLabel(PermissionScope s) => s.Label();
 
     public static string When(DateTime utc) =>
         DateTime.SpecifyKind(utc, DateTimeKind.Utc).ToLocalTime().ToString("yyyy-MM-dd HH:mm");
@@ -164,7 +168,6 @@ public static class Ui
 
     public static string TaskStatusLabel(TaskItemStatus s) => s.Label();
     public static string ProjectStatusLabel(ProjectStatus s) => s.Label();
-    public static string RoleLabel(OrbitRole r) => r.Label();
 
     /// <summary>Status options the actor may pick for this task in an inline control: every status if they may change it (§6.5), otherwise only the current one.</summary>
     public static IReadOnlyList<TaskItemStatus> AllowedStatuses(Actor actor, TaskItem task) =>

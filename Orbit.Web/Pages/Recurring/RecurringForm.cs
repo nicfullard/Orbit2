@@ -10,7 +10,7 @@ public sealed class RecurringForm
     [Required, StringLength(300)] public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
     public Guid? ProjectId { get; set; }
-    /// <summary>Blank = default (the project's department, or the caller's own). System Admins may choose another (§6.2.1).</summary>
+    /// <summary>Blank = default (the project's department, or the caller's own). Someone with tasks.create everywhere may choose another (§6.2.1).</summary>
     public Guid? DepartmentId { get; set; }
     public TaskPriority Priority { get; set; } = TaskPriority.Medium;
     public Guid? AssigneeId { get; set; }

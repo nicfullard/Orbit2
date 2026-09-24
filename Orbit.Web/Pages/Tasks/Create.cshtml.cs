@@ -29,7 +29,7 @@ public class CreateModel(
         }
         Form.ProjectId = projectId;
         Form.SprintId = sprintId;
-        // A task defaults to its project's department; a System Admin can change that on the form (§6.2.1).
+        // A task defaults to its project's department; someone with tasks.create everywhere can change that on the form (§6.2.1).
         Form.DepartmentId ??= projectId is Guid pid
             ? await projects.GetDepartmentIdAsync(pid, ct) ?? actor.DepartmentId
             : actor.DepartmentId;
@@ -39,7 +39,7 @@ public class CreateModel(
     public async Task<IActionResult> OnPostAsync(CancellationToken ct)
     {
         var actor = await actors.GetAsync(ct);
-        if (!actor.IsSystemAdmin) Form.DepartmentId = actor.DepartmentId;
+        if (!actor.CanAnywhere(Permission.TasksCreate)) Form.DepartmentId = actor.DepartmentId;
         if (ModelState.IsValid)
         {
             try

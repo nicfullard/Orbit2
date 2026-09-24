@@ -16,9 +16,9 @@ public class EditModel(ProjectService projects, DepartmentService departments, U
     {
         var actor = await actors.GetAsync(ct);
         Project = await projects.GetAsync(id, ct);
-        AccessPolicy.Require(AccessPolicy.CanEditProject(actor, Project), "Members can only edit projects they own.");
+        AccessPolicy.Require(AccessPolicy.CanEditProject(actor, Project), "You don't have permission to edit this project.");
         Form = ProjectForm.From(Project);
-        Lookups = await ProjectFormLookups.BuildAsync(actor, departments, users, Form, ct);
+        Lookups = await ProjectFormLookups.BuildAsync(actor, departments, users, Form, actor.CanAnywhere(Permission.ProjectsEdit), ct);
         return Page();
     }
 
@@ -26,7 +26,7 @@ public class EditModel(ProjectService projects, DepartmentService departments, U
     {
         var actor = await actors.GetAsync(ct);
         Project = await projects.GetAsync(id, ct);
-        if (!actor.IsSystemAdmin) Form.DepartmentId = Project.DepartmentId;
+        if (!actor.CanAnywhere(Permission.ProjectsEdit)) Form.DepartmentId = Project.DepartmentId;
         if (ModelState.IsValid)
         {
             try
@@ -40,7 +40,7 @@ public class EditModel(ProjectService projects, DepartmentService departments, U
                 ModelState.AddModelError(string.Empty, ex.Message);
             }
         }
-        Lookups = await ProjectFormLookups.BuildAsync(actor, departments, users, Form, ct);
+        Lookups = await ProjectFormLookups.BuildAsync(actor, departments, users, Form, actor.CanAnywhere(Permission.ProjectsEdit), ct);
         return Page();
     }
 }

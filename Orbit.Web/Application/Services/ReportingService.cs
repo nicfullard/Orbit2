@@ -13,8 +13,8 @@ public sealed class ReportingService(ApplicationDbContext db, IActorProvider act
     /// <summary>Tasks set to Done in the period, grouped by assignee.</summary>
     public async Task<IReadOnlyList<PersonCountRow>> ClosedByPersonAsync(ReportFilter f, CancellationToken ct = default)
     {
-        await RequireReportsAsync(ct);
-        var rows = await Apply(db.Tasks.AsNoTracking(), f)
+        var actor = await RequireReportsAsync(ct);
+        var rows = await Apply(db.Tasks.AsNoTracking(), f, actor)
             .Where(t => t.Status == TaskItemStatus.Done && t.CompletedAt >= f.FromUtc && t.CompletedAt < f.ToUtc)
             .GroupBy(t => t.AssigneeId)
             .Select(g => new { UserId = g.Key, Count = g.Count() })
@@ -27,8 +27,8 @@ public sealed class ReportingService(ApplicationDbContext db, IActorProvider act
     /// <summary>Tasks created in the period, grouped by author. API-created tasks roll up under Claude.</summary>
     public async Task<IReadOnlyList<PersonCountRow>> CreatedByPersonAsync(ReportFilter f, CancellationToken ct = default)
     {
-        await RequireReportsAsync(ct);
-        var rows = await Apply(db.Tasks.AsNoTracking(), f)
+        var actor = await RequireReportsAsync(ct);
+        var rows = await Apply(db.Tasks.AsNoTracking(), f, actor)
             .Where(t => t.CreatedAt >= f.FromUtc && t.CreatedAt < f.ToUtc)
             .GroupBy(t => t.CreatedById)
             .Select(g => new { UserId = g.Key, Count = g.Count() })
@@ -41,8 +41,8 @@ public sealed class ReportingService(ApplicationDbContext db, IActorProvider act
     /// <summary>Average FirstRespondedAt - CreatedAt for tasks created in the period that have responded.</summary>
     public async Task<MeanTimeReport> MeanTimeToRespondAsync(ReportFilter f, CancellationToken ct = default)
     {
-        await RequireReportsAsync(ct);
-        var q = Apply(db.Tasks.AsNoTracking(), f)
+        var actor = await RequireReportsAsync(ct);
+        var q = Apply(db.Tasks.AsNoTracking(), f, actor)
             .Where(t => t.FirstRespondedAt != null && t.CreatedAt >= f.FromUtc && t.CreatedAt < f.ToUtc);
         var rows = await q.GroupBy(t => t.AssigneeId)
             .Select(g => new
@@ -64,8 +64,8 @@ public sealed class ReportingService(ApplicationDbContext db, IActorProvider act
     /// <summary>Average CompletedAt - CreatedAt for tasks completed in the period.</summary>
     public async Task<MeanTimeReport> MeanTimeToResolveAsync(ReportFilter f, CancellationToken ct = default)
     {
-        await RequireReportsAsync(ct);
-        var q = Apply(db.Tasks.AsNoTracking(), f)
+        var actor = await RequireReportsAsync(ct);
+        var q = Apply(db.Tasks.AsNoTracking(), f, actor)
             .Where(t => t.Status == TaskItemStatus.Done && t.CompletedAt >= f.FromUtc && t.CompletedAt < f.ToUtc);
         var rows = await q.GroupBy(t => t.AssigneeId)
             .Select(g => new
@@ -84,16 +84,22 @@ public sealed class ReportingService(ApplicationDbContext db, IActorProvider act
             overallCount, overall);
     }
 
-    private async Task RequireReportsAsync(CancellationToken ct)
+    private async Task<Actor> RequireReportsAsync(CancellationToken ct)
     {
         var actor = await actors.GetAsync(ct);
-        AccessPolicy.Require(AccessPolicy.CanViewReports(actor), "Only a System Admin can view reports.");
+        AccessPolicy.Require(AccessPolicy.CanViewReports(actor), "You don't have permission to view reports.");
+        return actor;
     }
 
-    private static IQueryable<TaskItem> Apply(IQueryable<TaskItem> q, ReportFilter f)
+    /// <summary>The caller's own department is the only one they can report on unless reports.view is granted for all (§6.5).</summary>
+    public static Guid? RestrictedDepartment(Actor actor) =>
+        actor.CanAnywhere(Permission.ReportsView) ? null : actor.DepartmentId ?? Guid.Empty;
+
+    private static IQueryable<TaskItem> Apply(IQueryable<TaskItem> q, ReportFilter f, Actor actor)
     {
+        var departmentId = RestrictedDepartment(actor) ?? f.DepartmentId;
         if (f.ProjectId is Guid p) q = q.Where(t => t.ProjectId == p);
-        if (f.DepartmentId is Guid d) q = q.Where(t => t.DepartmentId == d);
+        if (departmentId is Guid d) q = q.Where(t => t.DepartmentId == d);
         return q;
     }
 

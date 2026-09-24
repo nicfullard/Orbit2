@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Orbit.Data.Entities;
@@ -6,7 +5,7 @@ using Orbit.Data.Entities;
 namespace Orbit.Data;
 
 public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
-    : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>(options)
+    : IdentityDbContext<ApplicationUser, ApplicationRole, Guid>(options)
 {
     public DbSet<Department> Departments => Set<Department>();
     public DbSet<Project> Projects => Set<Project>();
@@ -19,6 +18,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<RunningClock> RunningClocks => Set<RunningClock>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
+    public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
     public DbSet<Agent> Agents => Set<Agent>();
     public DbSet<LdapSettings> LdapSettings => Set<LdapSettings>();
     public DbSet<WorkingCalendar> WorkingCalendars => Set<WorkingCalendar>();
@@ -38,6 +38,23 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             b.HasOne(u => u.Department).WithMany(d => d.Users)
                 .HasForeignKey(u => u.DepartmentId).OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(u => u.DepartmentId);
+        });
+
+        builder.Entity<ApplicationRole>(b =>
+        {
+            b.Property(r => r.Description).HasMaxLength(500);
+            // Exactly one built-in role (spec §6.5), enforced at the database level as well.
+            b.HasIndex(r => r.IsBuiltIn).IsUnique().HasFilter("\"IsBuiltIn\"")
+                .HasDatabaseName("IX_AspNetRoles_SingleBuiltIn");
+        });
+
+        builder.Entity<RolePermission>(b =>
+        {
+            // One row per (role, permission); the grants die with their role.
+            b.HasKey(p => new { p.RoleId, p.Permission });
+            b.Property(p => p.Permission).HasMaxLength(100).IsRequired();
+            b.HasOne(p => p.Role).WithMany(r => r.Permissions)
+                .HasForeignKey(p => p.RoleId).OnDelete(DeleteBehavior.Cascade);
         });
 
         builder.Entity<Department>(b =>
@@ -183,6 +200,10 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             b.Property(k => k.Prefix).HasMaxLength(16);
             b.HasOne(k => k.Department).WithMany()
                 .HasForeignKey(k => k.DepartmentId).OnDelete(DeleteBehavior.Restrict);
+            // A role in use by a key (revoked or not) can't be deleted (spec §6.5).
+            b.HasOne(k => k.Role).WithMany()
+                .HasForeignKey(k => k.RoleId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(k => k.RoleId);
             b.HasIndex(k => k.HashedKey).IsUnique();
             b.Ignore(k => k.IsRevoked);
         });

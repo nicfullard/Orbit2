@@ -37,7 +37,7 @@
                         <tr class="@(k.IsRevoked ? "text-muted" : "")">
                             <td class="fw-semibold">@k.Name</td>
                             <td><code>@k.Prefix...</code></td>
-                            <td><span class="badge @Ui.RoleBadge(k.Role)">@k.Role.Label()</span></td>
+                            <td><span class="badge @Ui.RoleBadge(k.Role)">@k.Role.Name</span></td>
                             <td>@(k.Department?.Name ?? "(all)")</td>
                             <td>@Ui.When(k.CreatedAt)</td>
                             <td>@Ui.When(k.LastUsedAt)</td>

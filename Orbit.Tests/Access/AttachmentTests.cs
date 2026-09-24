@@ -10,9 +10,6 @@ public class AttachmentTests
     private static readonly Guid It = Guid.NewGuid();
     private static readonly Guid Marketing = Guid.NewGuid();
 
-    private static Actor User(OrbitRole role, Guid? department) =>
-        new(Guid.NewGuid(), role.ToString(), role, department, ActorType.User, Guid.NewGuid());
-
     private static TaskItem Task(Guid department, Guid? assignee = null) =>
         new() { DepartmentId = department, AssigneeId = assignee, CreatedById = Guid.NewGuid() };
 
@@ -24,28 +21,28 @@ public class AttachmentTests
     [Fact]
     public void Anyone_in_the_department_may_attach_to_a_task_they_can_see()
     {
-        var member = User(OrbitRole.Member, It);
+        var member = TestActors.Member(It);
         Assert.True(AccessPolicy.CanAttachToTask(member, Task(It, assignee: Guid.NewGuid())));
         Assert.False(AccessPolicy.CanAttachToTask(member, Task(Marketing)));
-        Assert.True(AccessPolicy.CanAttachToTask(User(OrbitRole.SystemAdmin, null), Task(Marketing)));
+        Assert.True(AccessPolicy.CanAttachToTask(TestActors.SystemAdmin(), Task(Marketing)));
     }
 
     [Fact]
     public void Only_the_projects_own_department_may_attach_to_it()
     {
-        Assert.True(AccessPolicy.CanAttachToProject(User(OrbitRole.Member, It), Project(It)));
-        Assert.True(AccessPolicy.CanAttachToProject(User(OrbitRole.DepartmentAdmin, It), Project(It)));
-        Assert.False(AccessPolicy.CanAttachToProject(User(OrbitRole.Member, Marketing), Project(It)));
-        Assert.False(AccessPolicy.CanAttachToProject(User(OrbitRole.DepartmentAdmin, Marketing), Project(It)));
-        Assert.True(AccessPolicy.CanAttachToProject(User(OrbitRole.SystemAdmin, null), Project(It)));
+        Assert.True(AccessPolicy.CanAttachToProject(TestActors.Member(It), Project(It)));
+        Assert.True(AccessPolicy.CanAttachToProject(TestActors.DepartmentAdmin(It), Project(It)));
+        Assert.False(AccessPolicy.CanAttachToProject(TestActors.Member(Marketing), Project(It)));
+        Assert.False(AccessPolicy.CanAttachToProject(TestActors.DepartmentAdmin(Marketing), Project(It)));
+        Assert.True(AccessPolicy.CanAttachToProject(TestActors.SystemAdmin(), Project(It)));
     }
 
     [Fact]
     public void The_uploader_or_an_editor_of_the_parent_may_delete()
     {
-        var uploader = User(OrbitRole.Member, It);
-        var colleague = User(OrbitRole.Member, It);
-        var admin = User(OrbitRole.DepartmentAdmin, It);
+        var uploader = TestActors.Member(It);
+        var colleague = TestActors.Member(It);
+        var admin = TestActors.DepartmentAdmin(It);
         var file = UploadedBy(uploader.UserId);
 
         var othersTask = Task(It, assignee: Guid.NewGuid());
@@ -65,7 +62,8 @@ public class AttachmentTests
     public void A_file_without_an_uploader_is_not_everyones_to_delete()
     {
         // UploadedById null (the uploader's account was removed) must not match an actor with no user id either.
-        Assert.False(AccessPolicy.CanDeleteAttachment(Actor.System with { Role = OrbitRole.Member }, UploadedBy(null), Task(It, assignee: Guid.NewGuid())));
+        var job = new Actor(null, "Job", RoleRef.None, DefaultRoles.MemberGrants, It, ActorType.System, Guid.Empty);
+        Assert.False(AccessPolicy.CanDeleteAttachment(job, UploadedBy(null), Task(It, assignee: Guid.NewGuid())));
     }
 
     [Theory]

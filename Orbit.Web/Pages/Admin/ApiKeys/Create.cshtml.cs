@@ -3,23 +3,25 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Orbit.Application.Models;
 using Orbit.Application.Services;
-using Orbit.Data.Entities;
+using Orbit.Pages.Admin.Users;
 using ValidationException = Orbit.Application.ValidationException;
 
 namespace Orbit.Pages.Admin.ApiKeys;
 
-public class CreateModel(ApiKeyService apiKeys, DepartmentService departments) : OrbitPageModel
+public class CreateModel(ApiKeyService apiKeys, DepartmentService departments, RoleService roles) : OrbitPageModel
 {
     [BindProperty, Required, StringLength(200)] public string Name { get; set; } = "Claude Project";
-    [BindProperty] public OrbitRole Role { get; set; } = OrbitRole.Member;
+    [BindProperty, Required] public Guid RoleId { get; set; }
     [BindProperty] public Guid? DepartmentId { get; set; }
 
     public IReadOnlyList<SelectListItem> DepartmentItems { get; private set; } = [];
+    public IReadOnlyList<RolePickerItem> RoleItems { get; private set; } = [];
     public CreatedApiKey? Created { get; private set; }
 
     public async Task OnGetAsync(CancellationToken ct)
     {
-        DepartmentItems = await BuildDepartmentsAsync(ct);
+        await LoadLookupsAsync(ct);
+        RoleId = UserForm.DefaultRole(RoleItems);
     }
 
     public async Task<IActionResult> OnPostAsync(CancellationToken ct)
@@ -28,19 +30,20 @@ public class CreateModel(ApiKeyService apiKeys, DepartmentService departments) :
         {
             try
             {
-                Created = await apiKeys.CreateAsync(new ApiKeyInput { Name = Name, Role = Role, DepartmentId = DepartmentId }, ct);
+                Created = await apiKeys.CreateAsync(new ApiKeyInput { Name = Name, RoleId = RoleId, DepartmentId = DepartmentId }, ct);
                 return Page();
             }
             catch (ValidationException ex) { ModelState.AddModelError(string.Empty, ex.Message); }
         }
-        DepartmentItems = await BuildDepartmentsAsync(ct);
+        await LoadLookupsAsync(ct);
         return Page();
     }
 
-    private async Task<IReadOnlyList<SelectListItem>> BuildDepartmentsAsync(CancellationToken ct)
+    private async Task LoadLookupsAsync(CancellationToken ct)
     {
-        var items = new List<SelectListItem> { new("(none - System Admin key)", string.Empty, DepartmentId is null) };
+        var items = new List<SelectListItem> { new("(none)", string.Empty, DepartmentId is null) };
         items.AddRange((await departments.ListAsync(false, ct)).Select(d => new SelectListItem(d.Name, d.Id.ToString(), d.Id == DepartmentId)));
-        return items;
+        DepartmentItems = items;
+        RoleItems = await roles.ListForPickerAsync(ct);
     }
 }

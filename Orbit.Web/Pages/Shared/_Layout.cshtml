@@ -1,3 +1,4 @@
+@inject IActorProvider Actors
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="light">
 <head>
@@ -24,7 +25,14 @@
 <body>
     @{
         var signedIn = User.Identity?.IsAuthenticated == true;
-        var isSystemAdmin = User.IsInRole(Roles.SystemAdmin);
+        // The navbar follows the actor's grants, read from the database per request - never the cookie's role claim,
+        // which can lag a role edit. A deactivated account gets no menu at all.
+        Actor? actor = null;
+        if (signedIn)
+        {
+            try { actor = await Actors.GetAsync(); } catch (ForbiddenException) { }
+        }
+        var showAdmin = actor is not null && PermissionCatalog.AdminPermissions.Any(actor.Has);
     }
     <header>
         <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-3">
@@ -47,20 +55,23 @@
                             <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Sprints/Index">Sprints</a></li>
                             <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Recurring/Index">Recurring</a></li>
                             <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Time/My">My Time</a></li>
-                            @if (isSystemAdmin)
+                            @if (actor is not null && AccessPolicy.CanViewReports(actor))
+                            {
+                                <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Reports/Index">Reports</a></li>
+                            }
+                            @if (showAdmin)
                             {
                                 <li class="nav-item dropdown">
                                     <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Admin</a>
                                     <ul class="dropdown-menu">
-                                        <li><a class="dropdown-item" asp-area="" asp-page="/Admin/Users/Index">Users</a></li>
-                                        <li><a class="dropdown-item" asp-area="" asp-page="/Admin/Departments/Index">Departments</a></li>
-                                        <li><a class="dropdown-item" asp-area="" asp-page="/Admin/ApiKeys/Index">API Keys</a></li>
-                                        <li><a class="dropdown-item" asp-area="" asp-page="/Admin/Directory/Index">Directory (LDAP)</a></li>
-                                        <li><a class="dropdown-item" asp-area="" asp-page="/Admin/Agents/Index">Agents</a></li>
-                                        <li><a class="dropdown-item" asp-area="" asp-page="/Admin/Calendar/Index">Working Calendar</a></li>
-                                        <li><a class="dropdown-item" asp-area="" asp-page="/Admin/Activity/Index">Activity Log</a></li>
-                                        <li><hr class="dropdown-divider"></li>
-                                        <li><a class="dropdown-item" asp-area="" asp-page="/Reports/Index">Reports</a></li>
+                                        @if (actor!.Has(Permission.UsersManage)) { <li><a class="dropdown-item" asp-area="" asp-page="/Admin/Users/Index">Users</a></li> }
+                                        @if (actor.Has(Permission.RolesManage)) { <li><a class="dropdown-item" asp-area="" asp-page="/Admin/Roles/Index">Roles</a></li> }
+                                        @if (actor.Has(Permission.DepartmentsManage)) { <li><a class="dropdown-item" asp-area="" asp-page="/Admin/Departments/Index">Departments</a></li> }
+                                        @if (actor.Has(Permission.ApiKeysManage)) { <li><a class="dropdown-item" asp-area="" asp-page="/Admin/ApiKeys/Index">API Keys</a></li> }
+                                        @if (actor.Has(Permission.DirectoryManage)) { <li><a class="dropdown-item" asp-area="" asp-page="/Admin/Directory/Index">Directory (LDAP)</a></li> }
+                                        @if (actor.Has(Permission.AgentsManage)) { <li><a class="dropdown-item" asp-area="" asp-page="/Admin/Agents/Index">Agents</a></li> }
+                                        @if (actor.Has(Permission.CalendarManage)) { <li><a class="dropdown-item" asp-area="" asp-page="/Admin/Calendar/Index">Working Calendar</a></li> }
+                                        @if (actor.Has(Permission.AuditView)) { <li><a class="dropdown-item" asp-area="" asp-page="/Admin/Activity/Index">Activity Log</a></li> }
                                     </ul>
                                 </li>
                             }

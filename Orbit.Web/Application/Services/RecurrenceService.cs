@@ -88,8 +88,8 @@ public sealed class RecurrenceService(
     {
         var actor = await actors.GetAsync(ct);
         var q = WithIncludes(db.RecurringTaskDefinitions.AsNoTracking());
-        if (!actor.IsSystemAdmin) q = q.Where(r => r.DepartmentId == actor.DepartmentId);
-        else if (f.DepartmentId is Guid dept) q = q.Where(r => r.DepartmentId == dept);
+        q = Scoping.RecurringDefinitions(q, actor);
+        if (f.DepartmentId is Guid dept) q = q.Where(r => r.DepartmentId == dept);
         if (f.ProjectId is Guid project) q = q.Where(r => r.ProjectId == project);
         if (!f.IncludeInactive) q = q.Where(r => r.Active);
         return await q.OrderByDescending(r => r.Active).ThenBy(r => r.NextRunDate == null).ThenBy(r => r.NextRunDate).ThenBy(r => r.Title).ToListAsync(ct);
@@ -100,7 +100,7 @@ public sealed class RecurrenceService(
         var actor = await actors.GetAsync(ct);
         var def = await WithIncludes(db.RecurringTaskDefinitions).FirstOrDefaultAsync(r => r.Id == id, ct)
             ?? throw new NotFoundException("Recurring task definition not found.");
-        AccessPolicy.Require(actor.CanAccessDepartment(def.DepartmentId), "This definition belongs to another department.");
+        AccessPolicy.Require(AccessPolicy.CanViewRecurring(actor, def), "You don't have permission to see this recurring task.");
         return def;
     }
 
@@ -110,7 +110,7 @@ public sealed class RecurrenceService(
         var title = RequireTitle(input.Title);
         var rule = ValidateRule(input.RecurrenceRule);
         var departmentId = await ResolveDepartmentAsync(input.ProjectId, input.DepartmentId, actor, existing: null, ct);
-        AccessPolicy.Require(actor.CanAccessDepartment(departmentId), "You can only create recurring tasks in your own department.");
+        AccessPolicy.Require(AccessPolicy.CanCreateTaskIn(actor, departmentId), "You don't have permission to create recurring tasks in this department.");
         await RequireOpenDepartmentAsync(departmentId, ct);
         await ValidateAssigneeAsync(input.AssigneeId, departmentId, ct);
         if (input.LeadTimeDays is < 0 or > 365) throw new ValidationException("Lead time must be between 0 and 365 days.");
@@ -149,15 +149,15 @@ public sealed class RecurrenceService(
         var actor = await actors.GetAsync(ct);
         var def = await WithIncludes(db.RecurringTaskDefinitions).FirstOrDefaultAsync(r => r.Id == id, ct)
             ?? throw new NotFoundException("Recurring task definition not found.");
-        AccessPolicy.Require(actor.CanAccessDepartment(def.DepartmentId), "This definition belongs to another department.");
-        AccessPolicy.Require(AccessPolicy.CanEditRecurring(actor, def), "Members can only edit recurring tasks they created or are assigned to.");
+        AccessPolicy.Require(AccessPolicy.CanViewRecurring(actor, def), "You don't have permission to see this recurring task.");
+        AccessPolicy.Require(AccessPolicy.CanEditRecurring(actor, def), "You don't have permission to edit this recurring task.");
 
         var title = RequireTitle(input.Title);
         var rule = ValidateRule(input.RecurrenceRule);
         var departmentId = await ResolveDepartmentAsync(input.ProjectId, input.DepartmentId, actor, def, ct);
         if (departmentId != def.DepartmentId)
         {
-            AccessPolicy.Require(actor.CanAccessDepartment(departmentId), "You can't move a definition to another department.");
+            AccessPolicy.Require(AccessPolicy.CanMoveTaskTo(actor, departmentId), "You don't have permission to move recurring tasks into that department.");
             await RequireOpenDepartmentAsync(departmentId, ct);
         }
         await ValidateAssigneeAsync(input.AssigneeId, departmentId, ct);
@@ -203,8 +203,8 @@ public sealed class RecurrenceService(
         var actor = await actors.GetAsync(ct);
         var def = await WithIncludes(db.RecurringTaskDefinitions).FirstOrDefaultAsync(r => r.Id == id, ct)
             ?? throw new NotFoundException("Recurring task definition not found.");
-        AccessPolicy.Require(actor.CanAccessDepartment(def.DepartmentId), "This definition belongs to another department.");
-        AccessPolicy.Require(AccessPolicy.CanEditRecurring(actor, def), "Members can only pause or resume recurring tasks they created or are assigned to.");
+        AccessPolicy.Require(AccessPolicy.CanViewRecurring(actor, def), "You don't have permission to see this recurring task.");
+        AccessPolicy.Require(AccessPolicy.CanEditRecurring(actor, def), "You don't have permission to pause or resume this recurring task.");
         if (def.Active == active) return def;
 
         def.Active = active;
@@ -231,7 +231,7 @@ public sealed class RecurrenceService(
         var actor = await actors.GetAsync(ct);
         var def = await WithIncludes(db.RecurringTaskDefinitions).FirstOrDefaultAsync(r => r.Id == id, ct)
             ?? throw new NotFoundException("Recurring task definition not found.");
-        AccessPolicy.Require(actor.CanAccessDepartment(def.DepartmentId), "This definition belongs to another department.");
+        AccessPolicy.Require(AccessPolicy.CanViewRecurring(actor, def), "You don't have permission to see this recurring task.");
         AccessPolicy.Require(AccessPolicy.CanEditRecurring(actor, def), "You can't generate tasks for this definition.");
         if (def.NextRunDate is not DateOnly due)
             throw new ValidationException("This definition has no further occurrences.");
@@ -336,7 +336,7 @@ public sealed class RecurrenceService(
 
     /// <summary>
     /// Same rule as <c>TaskService.ResolveDepartmentAsync</c> (§6.2.1): a definition on a project defaults to the
-    /// project's department; only a System Admin may file it under a project owned by another department, and a
+    /// project's department; filing it under a project owned by another department needs tasks.create everywhere, and a
     /// definition already filed that way keeps its department on edit.
     /// </summary>
     private async Task<Guid> ResolveDepartmentAsync(
@@ -345,7 +345,7 @@ public sealed class RecurrenceService(
         if (projectId is not Guid pid)
         {
             return requestedDepartmentId ?? existing?.DepartmentId ?? actor.DepartmentId
-                ?? throw new ValidationException("A department is required (System Admins aren't scoped to one, so choose it explicitly).");
+                ?? throw new ValidationException("A department is required (your role isn't scoped to one, so choose it explicitly).");
         }
 
         var project = await db.Projects.AsNoTracking().FirstOrDefaultAsync(p => p.Id == pid, ct)
@@ -356,7 +356,7 @@ public sealed class RecurrenceService(
             if (project.Status == ProjectStatus.Archived)
                 throw new ValidationException("Recurring tasks can't be added to an archived project.");
             AccessPolicy.Require(AccessPolicy.CanAddTaskToProject(actor, project),
-                "You can only add recurring tasks to projects in your own department.");
+                "You don't have permission to add recurring tasks to this project.");
         }
 
         var departmentId = requestedDepartmentId ?? (sameProject ? existing!.DepartmentId : project.DepartmentId);
@@ -365,7 +365,7 @@ public sealed class RecurrenceService(
         var alreadyFiledThere = sameProject && existing!.DepartmentId == departmentId;
         if (!alreadyFiledThere)
             AccessPolicy.Require(AccessPolicy.CanFileCrossDepartmentTask(actor),
-                "Only a System Admin can file a recurring task under a project owned by another department.");
+                "Filing a recurring task for another department under this project needs the Create tasks permission for all departments.");
         return departmentId;
     }
 
@@ -383,9 +383,6 @@ public sealed class RecurrenceService(
             ?? throw new NotFoundException("Assignee not found.");
         if (!user.IsActive || user.IsSystemAccount) throw new ValidationException("The assignee must be an active user.");
         if (user.DepartmentId == departmentId) return;
-        var isSystemAdmin = await db.UserRoles.Where(ur => ur.UserId == id)
-            .Join(db.Roles, ur => ur.RoleId, r => r.Id, (ur, r) => r.Name)
-            .AnyAsync(n => n == Roles.SystemAdmin, ct);
-        if (!isSystemAdmin) throw new ValidationException("A task can't be assigned to a user outside its own department.");
+        if (!await RoleResolver.HasScopeAsync(db, id, Permission.TasksView, PermissionScope.All, ct)) throw new ValidationException("A task can't be assigned to a user outside its own department.");
     }
 }

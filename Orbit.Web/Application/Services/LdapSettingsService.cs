@@ -150,7 +150,7 @@ public sealed class LdapSettingsService(
     private async Task<Actor> RequireAdminAsync(CancellationToken ct)
     {
         var actor = await actors.GetAsync(ct);
-        AccessPolicy.Require(actor.IsSystemAdmin, "Only a System Admin can manage directory sign-in.");
+        AccessPolicy.Require(AccessPolicy.CanManageDirectory(actor), "You don't have permission to manage directory sign-in.");
         return actor;
     }
 }

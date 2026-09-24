@@ -85,8 +85,14 @@ back to Server-Sent Events or long polling by itself.
 ## 5. First run
 
 Migrations are applied at startup (`Database__ApplyMigrations=true`). The `Seed__Admin__*` values are
-consumed only when no System Admin account exists yet. Sign in with the seeded account, change the
+consumed only when nobody holds the built-in **System Administrator** role yet. Sign in with the seeded account, change the
 password under *Manage account*, then remove the three `Seed__Admin__*` lines and restart the service.
+
+> **Upgrading a server installed before roles became data (spec §6.5):** the `AddDynamicRoles` migration runs at
+> startup and converts the fixed roles in place - `SystemAdmin` becomes the built-in *System Administrator*,
+> `DepartmentAdmin` becomes *Department Admin*, *Member* stays - giving the two migrated roles the grants that match
+> their old rights and pointing every API key at its role. Nobody's access changes and no key has to be reissued.
+> Afterwards roles are edited under *Admin > Roles*.
 
 ## 6. Claude / MCP
 
@@ -95,7 +101,9 @@ Create an API key under *Admin > API Keys* and configure the connector with:
 - Endpoint: `https://orbit.example.com/mcp` (Streamable HTTP)
 - Header: `Authorization: Bearer <key>`
 
-The key acts with the role and department it was issued with - the same rules as a human user of that role.
+The key acts with the role and department it was issued with - the same rules as a human user of that role: each of the
+role's permissions applies at its scope (*Admin > Roles*). A key whose role has any permission scoped to a department must
+be issued with a department; a key can be given no department only if its role is scoped company-wide.
 
 ## 7. Directory sign-in (LDAP / Active Directory) and the Orbit Agent
 

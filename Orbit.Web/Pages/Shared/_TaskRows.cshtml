@@ -119,7 +119,7 @@ else
                                     <form method="post" asp-page="/Tasks/Quick" asp-page-handler="Assignee" asp-route-id="@t.Id" asp-route-returnUrl="@Model.ReturnUrl" class="d-inline">
                                         <select name="assigneeId" class="form-select form-select-sm assignee-select js-autosubmit" aria-label="Assignee">
                                             <option value="" selected="@(t.AssigneeId is null)">Unassigned</option>
-                                            @foreach (var u in Model.QuickEditAssignees!.Where(u => u.DepartmentId == t.DepartmentId || u.Role == OrbitRole.SystemAdmin))
+                                            @foreach (var u in Model.QuickEditAssignees!.Where(u => u.DepartmentId == t.DepartmentId || u.CanViewAllTasks))
                                             {
                                                 <option value="@u.Id" selected="@(u.Id == t.AssigneeId)">@u.DisplayName</option>
                                             }

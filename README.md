@@ -14,7 +14,7 @@ Built on ASP.NET Core Razor Pages (.NET 10), EF Core + PostgreSQL, ASP.NET Core 
 | `Orbit.Web/` | The web app: Razor Pages UI, MCP server, background jobs, and the server side of the Orbit Agent. Builds `Orbit.Web.dll`. |
 | `Orbit.Agent/` | The **Orbit Agent** - a separate Worker Service that runs inside the corporate network. Published on its own; not part of the web app's output. |
 | `Orbit.Agents.Contracts/` | Messages and method names shared by the web app and the agent, so the two can't drift. No dependencies. |
-| `Orbit.Tests/` | xunit tests for the pure scheduling code: the working-day calendar, the critical path engine and the staleness fingerprint (spec §6.17). |
+| `Orbit.Tests/` | xunit tests for the pure code: the access rules, permission catalogue, role rules and list scoping (spec §6.5), and the working-day calendar, critical path engine and staleness fingerprint (spec §6.17). |
 
 Plus `deploy/` (systemd units for Orbit and the agent, env file template, least-privilege DB role script,
 deployment notes), `orbit-spec.md` and `dotnet-tools.json` (pins `dotnet-ef`).
@@ -25,7 +25,7 @@ Inside `Orbit.Web/`, folders stand in for the layers of spec §11, and namespace
 | Folder | Contents |
 |---|---|
 | `Data/` | `ApplicationDbContext`, entities, `DbInitializer` (migrations + seed) |
-| `Application/` | Services (`TaskService`, `ProjectService`, `SprintService`, ...), `Actor` + `AccessPolicy` (the §6.5 rules), models |
+| `Application/` | Services (`TaskService`, `ProjectService`, `RoleService`, ...), the permission catalogue, `Actor` + `AccessPolicy` + `Scoping` (the §6.5 rules), `RoleRules`, models |
 | `Auth/` | API-key and Orbit Agent authentication schemes, `OrbitSignInManager` (directory sign-in), claims factory, actor resolution, page filters |
 | `Agents/` | Server side of the Orbit Agent: the SignalR hub agents connect to, the registry of connected agents, the register/de-register endpoints |
 | `Mcp/` | `OrbitTools` - the 19 MCP tools, mapped onto the same services the UI uses |
@@ -48,35 +48,50 @@ dotnet ef migrations add <Name> --project Orbit.Web  # from the solution root (d
    first System Admin (`admin@orbit.local`). Change the seed values if you like.
 2. Scaffold the initial migration in the Package Manager Console:
    `Add-Migration InitialCreate`
-3. Run the app. On startup it applies pending migrations, seeds the three roles and the synthetic
-   `Claude` user, and creates the seed admin if no System Admin exists yet.
-4. Sign in as the seed admin, then under **Admin** create departments, users and an API key.
+3. Run the app. On startup it applies pending migrations, creates the built-in **System Administrator** role and
+   the shipped **Member** and **Department Admin** roles (once; later edits to them stick), the synthetic
+   `Claude` user, and the seed admin if nobody holds the built-in role yet.
+4. Sign in as the seed admin, then under **Admin** create departments, users and an API key, and adjust or add
+   roles under **Admin > Roles**.
 
 Self-registration is disabled: accounts are created under **Admin > Users**.
 
-## Roles
+## Permissions and scopes
 
-| | Member | Department Admin | System Admin |
-|---|---|---|---|
-| Create tasks/projects | own department | own department | any |
-| Edit tasks | own/assigned | any in department | any |
-| Take an unassigned task (assign it to yourself) | own department | own department | any |
-| Attach files to tasks / projects (spec §6.18) | own department's tasks / projects | own department | any |
-| Delete an attachment | own uploads, or on tasks/projects they can edit | any in department | any |
-| Change a task's status, incl. close/reopen (Done/Cancelled) | own/assigned | any in department | any |
-| File a task under another department's project (spec §6.2.1) | no | no | yes |
-| Set a task's parent; add/remove its dependencies (spec §6.15) | tasks they can edit | own department | any |
-| Run a project's critical path analysis (spec §6.17) | projects they own | own department | any |
-| Working calendar - working week and public holidays (spec §6.17) | no | no | yes |
-| Sprints (create/start/complete) | no | no | yes |
-| Users, departments, API keys, reports | no | no | yes |
-| Directory (LDAP) settings, Orbit Agents, users' sign-in method | no | no | yes |
+A user or API key has one **role**; a role is a set of **permissions**, each granted at a **scope** (spec §6.5).
+Roles are edited under **Admin > Roles**. The built-in **System Administrator** role holds every permission for
+all departments and can't be edited or deleted; **Member** and **Department Admin** ship with the grants below
+and can be changed like any other role. Scopes: *Own* = tasks assigned to or created by you, projects you own,
+your own time; *Department* = everything in your department; *All* = every department. A grant covers the
+scopes below it, and a role with no grants sees nothing.
 
-The same rules are enforced in `AccessPolicy` for signed-in users and for API keys.
+| Permission | Scopes | What it gates | Member | Dept Admin |
+|---|---|---|---|---|
+| `tasks.view` | Own / Dept / All | See tasks, comment, attach; sets the dashboard tier and the Department column/filter | Dept | Dept |
+| `tasks.create` | Dept / All | Create tasks and recurring definitions; All also files tasks for other departments under a project (spec §6.2.1) | Dept | Dept |
+| `tasks.edit` | Own / Dept / All | Edit any field, incl. every status change (close/reopen), parent, dependencies, assignee | Own | Dept |
+| `tasks.take` | Dept / All | Take an open, unassigned task for yourself | Dept | Dept |
+| `tasks.plan` | Own / Dept / All | Backlog/sprint moves and the Today tick | Dept | Dept |
+| `projects.view` | Own / Dept / All | See projects, their files and critical path results | Dept | Dept |
+| `projects.create` | Dept / All | Create projects | Dept | Dept |
+| `projects.edit` | Own / Dept / All | Edit/archive projects, run the critical path analysis; moving to another department needs All | Own | Dept |
+| `time.log` | Own / Dept / All | Log, edit, delete time (Own: yours on tasks assigned to you; Dept: for anyone in the department) | Own | Dept |
+| `sprints.manage` | All | Create/start/complete sprints | - | - |
+| `reports.view` | Dept / All | Reports (Dept: fixed to your own department) | - | - |
+| `audit.view` | Dept / All | Admin > Activity Log and `list_activity` | - | - |
+| `users.manage`, `roles.manage`, `api_keys.manage` | All, reserved to the built-in role | Users, roles, API keys | - | - |
+| `departments.manage`, `calendar.manage`, `directory.manage`, `agents.manage` | All | Departments, working calendar, directory (LDAP) settings, Orbit Agents | - | - |
 
-A project is owned by one department, but a System Admin can file tasks under it for other departments
-(unassigned, or assigned to someone in that department). Each such task belongs to its own department, which
-sees and works it as usual; a department with tasks on another department's project sees that project read-only.
+A role with any grant at Department scope needs its users and keys to belong to a department. The same rules
+are enforced in `AccessPolicy` and `Scoping` for signed-in users and for API keys; grants are read from the
+database on every request, so a role edit applies at once. Upgrading an existing database renames the old
+fixed roles in place (`SystemAdmin` becomes the built-in System Administrator) and gives Member and Department
+Admin the grants above, so nobody's rights change.
+
+A project is owned by one department, but someone whose role may create tasks in every department can file
+tasks under it for other departments (unassigned, or assigned to someone in that department). Each such task
+belongs to its own department, which sees and works it as usual; a department with tasks on another
+department's project sees that project read-only.
 
 ## Directory sign-in (LDAP / Active Directory)
 

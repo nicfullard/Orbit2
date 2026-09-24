@@ -3,7 +3,6 @@
 @{
     var u = Model.Account;
     ViewData["Title"] = u.DisplayName;
-    var roleItems = Ui.EnumItems<OrbitRole>(Model.Form.Role, null, r => r.Label());
     var authItems = Ui.EnumItems<AuthSource>(Model.Form.AuthSource, null, a => a.Label());
     var isSelf = Model.Actor.UserId == u.Id;
     var isDirectoryUser = u.AuthSource == AuthSource.Ldap;
@@ -19,7 +18,7 @@
 <div class="d-flex flex-wrap justify-content-between align-items-start mb-3 gap-2">
     <div>
         <h1 class="h3 mb-1">@u.DisplayName</h1>
-        <div class="text-muted">@u.Email · <span class="badge @Ui.RoleBadge(u.Role)">@u.Role.Label()</span>
+        <div class="text-muted">@u.Email · <span class="badge @Ui.RoleBadge(u.Role)">@u.Role.Name</span>
             @if (u.IsActive) { <span class="badge text-bg-success">Active</span> } else { <span class="badge text-bg-secondary">Deactivated</span> }
             @if (isDirectoryUser) { <span class="badge text-bg-info">LDAP</span> }
             @if (u.IsLockedOut) { <span class="badge text-bg-warning">Locked out until @Ui.When(u.LockoutEnd!.Value.UtcDateTime)</span> }
@@ -73,12 +72,19 @@
                             <input class="form-control" id="Form_DisplayName" name="Form.DisplayName" value="@Model.Form.DisplayName" maxlength="200" required />
                         </div>
                         <div class="col-md-5">
-                            <label class="form-label" for="Form_Role">Role</label>
-                            <select class="form-select" id="Form_Role" name="Form.Role" asp-items="roleItems"></select>
+                            <label class="form-label" for="Form_RoleId">Role</label>
+                            <select class="form-select js-role-select" id="Form_RoleId" name="Form.RoleId" data-department-target="#Form_DepartmentId" data-department-hint="#departmentHint">
+                                @foreach (var r in Model.RoleItems)
+                                {
+                                    <option value="@r.Id" data-requires-department="@(r.RequiresDepartment ? "true" : "false")" title="@r.Description" selected="@(r.Id == Model.Form.RoleId)">@r.Name</option>
+                                }
+                            </select>
+                            <div class="form-text">What the user may do: <a asp-page="/Admin/Roles/Index">Admin &gt; Roles</a>.</div>
                         </div>
                         <div class="col-md-7">
                             <label class="form-label" for="Form_DepartmentId">Department</label>
                             <select class="form-select" id="Form_DepartmentId" name="Form.DepartmentId" asp-items="Model.DepartmentItems"></select>
+                            <div class="form-text" id="departmentHint">Required for a role with permissions scoped to a department.</div>
                         </div>
                         <div class="col-md-12">
                             <label class="form-label" for="Form_AuthSource">Sign-in method</label>
@@ -99,7 +105,7 @@
                     </div>
                     @if (isSelf)
                     {
-                        <div class="form-text mt-2">This is your own account. At least one active System Admin must always remain.</div>
+                        <div class="form-text mt-2">This is your own account. At least one active System Administrator with a local password must always remain.</div>
                     }
                 </form>
             </div>

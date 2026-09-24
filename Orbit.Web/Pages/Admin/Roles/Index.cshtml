@@ -1,0 +1,40 @@
+@page
+@model Orbit.Pages.Admin.Roles.IndexModel
+@{
+    ViewData["Title"] = "Roles";
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+    <div>
+        <h1 class="h3 mb-0">Roles</h1>
+        <div class="text-muted small">A role is a set of permissions, each granted at a scope: the user's own work, their department, or every department. Users and API keys have one role each.</div>
+    </div>
+    <a class="btn btn-primary btn-sm" asp-page="/Admin/Roles/Create">New role</a>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light"><tr><th>Role</th><th>Description</th><th class="text-end">Permissions</th><th class="text-end">Users</th><th class="text-end">API keys</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var r in Model.Roles)
+                    {
+                        <tr>
+                            <td>
+                                <a asp-page="/Admin/Roles/Edit" asp-route-id="@r.Role.Id" class="fw-semibold text-decoration-none">@r.Role.Name</a>
+                                <span class="badge @Ui.RoleBadge(r.Ref) ms-1">@(r.Role.IsBuiltIn ? "Built-in" : r.Ref.ReachesEverywhere ? "Company-wide" : "Department")</span>
+                                @if (r.RequiresDepartment) { <span class="badge text-bg-light border ms-1" title="Has a permission at Department scope, so its users and keys must belong to a department">Needs a department</span> }
+                            </td>
+                            <td class="text-muted small">@r.Role.Description</td>
+                            <td class="text-end">@r.GrantCount</td>
+                            <td class="text-end">@r.UserCount</td>
+                            <td class="text-end">@r.KeyCount</td>
+                            <td class="text-end"><a class="btn btn-sm btn-outline-primary" asp-page="/Admin/Roles/Edit" asp-route-id="@r.Role.Id">@(r.Role.IsBuiltIn ? "View" : "Edit")</a></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

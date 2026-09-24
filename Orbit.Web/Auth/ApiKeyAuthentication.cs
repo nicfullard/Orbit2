@@ -18,8 +18,8 @@ public sealed class ApiKeyAuthenticationOptions : AuthenticationSchemeOptions;
 
 /// <summary>
 /// Authenticates machine callers (the MCP server) with <c>Authorization: Bearer &lt;key&gt;</c>.
-/// The key's Role and DepartmentId become claims, so the same role/department checks that apply to
-/// signed-in users apply unchanged to Claude.
+/// The key's role id and DepartmentId become claims; the actor provider resolves the role's grants per request,
+/// so the same permission checks that apply to signed-in users apply unchanged to Claude.
 /// </summary>
 public sealed class ApiKeyAuthenticationHandler(
     IOptionsMonitor<ApiKeyAuthenticationOptions> options,
@@ -35,7 +35,7 @@ public sealed class ApiKeyAuthenticationHandler(
         if (!raw.StartsWith(ApiKeyHasher.KeyPrefix, StringComparison.Ordinal)) return AuthenticateResult.NoResult();
 
         var hash = ApiKeyHasher.Hash(raw);
-        var key = await db.ApiKeys.AsNoTracking().FirstOrDefaultAsync(k => k.HashedKey == hash, Context.RequestAborted);
+        var key = await db.ApiKeys.AsNoTracking().Include(k => k.Role).FirstOrDefaultAsync(k => k.HashedKey == hash, Context.RequestAborted);
         if (key is null) return AuthenticateResult.Fail("Invalid API key.");
         if (key.RevokedAt is not null) return AuthenticateResult.Fail("This API key has been revoked.");
 
@@ -51,7 +51,8 @@ public sealed class ApiKeyAuthenticationHandler(
         {
             new(ClaimTypes.NameIdentifier, WellKnownIds.ClaudeAgentUserId.ToString()),
             new(ClaimTypes.Name, displayName),
-            new(ClaimTypes.Role, key.Role.ToString()),
+            new(ClaimTypes.Role, key.Role.Name ?? string.Empty),
+            new(OrbitClaims.RoleId, key.RoleId.ToString()),
             new(OrbitClaims.DisplayName, displayName),
             new(OrbitClaims.ActorType, nameof(ActorType.Api)),
             new(OrbitClaims.ApiKeyId, key.Id.ToString())

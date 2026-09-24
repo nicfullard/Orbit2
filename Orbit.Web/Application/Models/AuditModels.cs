@@ -12,6 +12,8 @@ public static class AuditEntity
     public const string Agent = "Agent";
     public const string LdapSettings = "LdapSettings";
     public const string WorkingCalendar = "WorkingCalendar";
+    /// <summary>A role and its grants (spec §6.5).</summary>
+    public const string Role = "Role";
 }
 
 public static class AuditAction

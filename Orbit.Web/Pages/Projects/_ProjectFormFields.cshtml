@@ -16,7 +16,7 @@
     <textarea class="form-control" id="Form_Description" name="Form.Description" rows="4">@form.Description</textarea>
 </div>
 <div class="row g-3">
-    @if (Model.Actor.IsSystemAdmin)
+    @if (Model.CanChooseDepartment)
     {
         <div class="col-md-3">
             <label class="form-label" for="Form_DepartmentId">Department</label>

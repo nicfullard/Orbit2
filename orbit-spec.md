@@ -123,10 +123,20 @@ A Sprint has no `ProjectId` **and no `DepartmentId`** — it's a company-wide pl
 **User**
 - `Id` (Guid) — the `IdentityUser`'s own Id (ASP.NET Core Identity's standard primary key); the app's domain `User`/profile fields can live directly on a class deriving from `IdentityUser`, so there's no separate join needed
 - `DisplayName`, `Email`
-- `DepartmentId` (FK → Department, nullable) — required for `Member` and `DepartmentAdmin`; nullable for `SystemAdmin`, who isn't scoped to one department. A `SystemAdmin` may still be given a home department (e.g. Bob in Project Management); it only serves as the default department for the tasks and projects they create and never limits what they can see or do
-- `Role` (`SystemAdmin`, `DepartmentAdmin`, `Member`) — managed via ASP.NET Core Identity's built-in roles (`AspNetRoles`/`AspNetUserRoles`). See §6.5 for what each role can do.
+- `DepartmentId` (FK → Department, nullable) — required when the user's role has any permission granted at Department scope (§6.5); optional otherwise. A user whose role isn't scoped to a department (e.g. a System Administrator) may still be given a home department (e.g. Bob in Project Management); it only serves as the default department for the tasks and projects they create and never limits what they can see or do
+- Role — one per user, held in ASP.NET Core Identity's `AspNetUserRoles`. Roles are data: see **Role** below and §6.5 for what a role's permissions mean.
 - `AuthSource` (`Local`, `Ldap`) — how this user signs in (§6.13). Defaults to `Local`. An `Ldap` user has **no `PasswordHash`**: Orbit holds nothing that could authenticate them, so a stale local password can never stand in for the directory.
 
+**Role** *(`ApplicationRole`, extending Identity's `AspNetRoles` row — see §6.5)*
+- `Id` (Guid), `Name` (unique), `Description` (optional, ≤ 500)
+- `IsBuiltIn` (bool) — true for exactly one row, the **System Administrator** role (a filtered unique index enforces it): immutable, undeletable, and resolved as every permission at All without storing any grant rows
+- `CreatedAt`, `UpdatedAt`
+- Deleting a role is refused while any user or API key (revoked keys included) still has it
+
+**RolePermission** *(one grant on a role)*
+- `RoleId` (FK → Role, cascade), `Permission` (the catalogue key as a string, e.g. `tasks.edit`, ≤ 100) — composite key
+- `Scope` (`Own`, `Department`, `All`, stored as its name) — the reach of the grant (§6.5)
+- Adding a permission to the catalogue needs no migration; the built-in role holds it from the next release automatically
 **NumberCounter** *(numbering)*
 - `Prefix` (`T` or `P`), `Year` (four-digit) — composite key
 - `Last` — the last counter value handed out for that prefix and year
@@ -177,8 +187,8 @@ A Sprint has no `ProjectId` **and no `DepartmentId`** — it's a company-wide pl
 - `Id` (Guid)
 - `Name` (label for the integration, e.g. "Claude Project")
 - `HashedKey`
-- `Role` (`SystemAdmin`, `DepartmentAdmin`, `Member`) — the same three roles as human users, so an API key is bound to the same permission rules as §6.5
-- `DepartmentId` (FK → Department, nullable) — required when `Role = DepartmentAdmin` or `Member` (scopes the key to that department, same as a human user); nullable when `Role = SystemAdmin`
+- `RoleId` (FK → Role, restrict) — the same roles as human users, so an API key is bound to exactly the same permission rules as §6.5; its grants are resolved from the database on every call
+- `DepartmentId` (FK → Department, nullable) — required when the role has any grant at Department scope (scopes the key to that department, same as a human user); otherwise optional, and then only the key's default department for new work
 - `CreatedAt`
 - `RevokedAt` (nullable)
 
@@ -287,19 +297,19 @@ Rules (all enforced server-side in `TaskService`/`RecurrenceService`, for the UI
 - Audit log entries for such a task are recorded against the task's department, so each department's activity feed shows its own work.
 - In the task form, choosing a project pre-fills the department with the project's; a `SystemAdmin` can then change it, and the assignee picker narrows to that department's people.
 
-> **Assumption flagged:** cross-department filing is deliberately `SystemAdmin`-only, per the request. A `DepartmentAdmin` cannot add their own department's tasks to another department's project, even once that project is shared with them; and the project's own department cannot open another department's tasks on its project (it sees them listed, with aggregate progress). Both are easy to relax if wanted.
+> **Assumption flagged:** cross-department filing deliberately needs `tasks.create` at All departments (the built-in role by default, §6.5), per the request. A `DepartmentAdmin` cannot add their own department's tasks to another department's project, even once that project is shared with them; and the project's own department cannot open another department's tasks on its project (it sees them listed, with aggregate progress). Both are easy to relax if wanted.
 
 ### 6.3 Backlog & Sprints
 
 Sprints are **shared company-wide**, cutting across departments — a single sprint's task list can include tasks from any department. This is why Sprint has no `DepartmentId` (§5.1): it's a level above department scoping, not a peer to it.
 
-- **Backlog view:** all tasks with `SprintId = null` (not yet planned), filterable by project, department, priority, assignee — the pool the team plans from. `DepartmentAdmin`/`Member` see their own department's backlog by default (with the option to widen the filter, since sprint planning is company-wide); `SystemAdmin` sees everything. The backlog's filters, including the widen-to-all-departments choice, are remembered for the browser session like the Tasks list's (§6.2, *Filters that stick*).
+- **Backlog view:** all tasks with `SprintId = null` (not yet planned), filterable by project, department, priority, assignee — the pool the team plans from. It shows the tasks within the viewer's `tasks.view` scope (§6.5): a department-scoped role sees its own department's backlog, a company-wide one every department's (with a department filter). The backlog's filters are remembered for the browser session like the Tasks list's (§6.2, *Filters that stick*).
 - **Sprint list:** all sprints with status (`Planned`/`Active`/`Completed`), dates, and task counts across whichever departments and projects are represented in each sprint.
 - **Create/edit a sprint:** name, goal, start/end dates. No project or department field — a sprint is a company-wide planning window, not scoped to either.
-- **Sprint planning:** from the backlog view, select one or more tasks — regardless of which department or project they belong to, or none — and assign them into a chosen sprint (moves `SprintId`). Tasks can also be pulled back out of a sprint into the backlog. A user can only plan tasks they're allowed to edit (§6.5) into a sprint — a `DepartmentAdmin`/`Member` can plan their own department's tasks; only `SystemAdmin` can freely plan any department's tasks in.
-- **Sprint board:** once a sprint is `Active`, a board view of its tasks grouped by `Status` (Todo / In Progress / Waiting / Blocked / Done), showing each task's department and project as tags since a sprint's tasks can span several — a simple kanban view scoped to that sprint.
+- **Sprint planning:** from the backlog view, select one or more tasks — regardless of which department or project they belong to, or none — and assign them into a chosen sprint (moves `SprintId`). Tasks can also be pulled back out of a sprint into the backlog. A user can only plan tasks within their `tasks.plan` reach (§6.5) — the shipped roles plan their own department's tasks; a role with `tasks.plan` at All plans any department's.
+- **Sprint board:** once a sprint is `Active`, a board view of its tasks grouped by `Status` (Todo / In Progress / Waiting / Blocked / Done), showing each task's department and project as tags since a sprint's tasks can span several — a simple kanban view scoped to that sprint. The sprint page and the board list the sprint's tasks within the viewer's `tasks.view` scope (§6.5); the sprint list's per-department counts are visible to everyone.
 - **Only one `Active` sprint at a time**, company-wide.
-- **Sprint management (create/start/complete) is `SystemAdmin`-only**, since a sprint sits above any single department — a `DepartmentAdmin`'s authority stops at their own department's tasks/projects, and a sprint isn't one.
+- **Sprint management (create/start/complete) needs `sprints.manage`**, a company-wide permission (§6.5), since a sprint sits above any single department — the shipped Department Admin role doesn't have it; a "Sprint manager" role that does is one Admin > Roles entry away.
 - **Start a sprint:** `Planned → Active`. If another sprint is currently `Active`, starting the new one automatically:
   1. Sets the currently active sprint's status to `Completed`.
   2. Moves any of its still-open tasks (`Status` not `Done`/`Cancelled`) onto the newly activated sprint (`SprintId` updated to point at the new sprint) — they don't fall back to the backlog, they roll straight forward, regardless of which department they belong to.
@@ -307,7 +317,7 @@ Sprints are **shared company-wide**, cutting across departments — a single spr
   All three steps happen in one transaction so a sprint is never left partially closed.
 - **Complete a sprint manually** (without starting a new one): `Active → Completed`. Any tasks still open at that point move back to the backlog (`SprintId = null`), since there's no "next sprint" to roll them into.
 
-> **Assumption flagged:** I've made sprint management (create/start/complete) `SystemAdmin`-only rather than also giving `DepartmentAdmin` a role in it, on the reasoning that a sprint spans departments so no single department's admin has full authority over it. If you'd rather `DepartmentAdmin`s be able to start/complete sprints too (just not restricted to their own department's tasks when doing so), say so.
+> **Assumption, now a setting:** sprint management was originally `SystemAdmin`-only on the reasoning that a sprint spans departments, so no single department's admin has full authority over it. With roles as data (§6.5) that is a choice per role: grant `sprints.manage` to whichever role should start and complete sprints.
 
 ### 6.4 Recurring Tasks
 - Create/edit a recurring task definition (title, project, department, recurrence rule, assignee, lead time) — same department scoping as tasks: `Member`/`DepartmentAdmin` create within their own department, `SystemAdmin` anywhere. A `SystemAdmin` may also file a definition under another department's project (§6.2.1); its generated tasks belong to the definition's department, not the project's.
@@ -318,50 +328,82 @@ Sprints are **shared company-wide**, cutting across departments — a single spr
 
 ### 6.5 Roles & Access
 
-Three roles, enforced via ASP.NET Core Identity's role-based authorization (`[Authorize(Roles = "...")]` / policy-based checks) plus a department-scoping check on top for `DepartmentAdmin`/`Member`:
+Access is decided by **permissions**, each granted to a **role** at a **scope**; a user or API key has exactly one role. The permissions are a fixed catalogue defined in code (`Permission` / `PermissionCatalog`, `Orbit.Application`); roles are data, edited under **Admin > Roles**. One built-in **System Administrator** role always holds every permission for all departments — including permissions added by later releases — and cannot be edited or deleted. Orbit ships two ordinary, editable roles whose default grants reproduce the rights the earlier fixed roles had: **Member** and **Department Admin**.
 
-| Capability | Member | Department Admin | System Admin |
-|---|---|---|---|
-| Create tasks/projects (own department) | ✅ | ✅ | ✅ (any department) |
-| Edit tasks/projects | ✅ (own/assigned, own department) | ✅ (any, own department) | ✅ (any, any department) |
-| **Take an unassigned task** (assign an open, unassigned task to yourself) | ✅ (own department) | ✅ (own department) | ✅ (any department) |
-| Attach a file to a task / to a project (§6.18) | ✅ (own department's tasks / own department's projects) | ✅ (own department) | ✅ (any) |
-| Delete an attachment (§6.18) | ✅ (own uploads, or on tasks/projects they can edit) | ✅ (any in own department) | ✅ (any) |
-| Change a task's status (any of the six, including closing it as `Done`/`Cancelled` and reopening it) | ✅ (own/assigned, own department) | ✅ (any, own department) | ✅ (any, any department) |
-| Move tasks between backlog and a sprint | ✅ (own department's tasks) | ✅ (own department's tasks) | ✅ (any department's tasks) |
-| Set a task's parent or start date; add/remove its dependencies (§6.15) | ✅ (tasks they can edit, own department) | ✅ (any, own department) | ✅ (any, any department) |
-| Run a project's critical path analysis (§6.17) | ✅ (projects they own) | ✅ (any, own department) | ✅ (any) |
-| Manage the working calendar (§6.17) | ❌ | ❌ | ✅ |
-| **File a task under a project owned by another department** (§6.2.1) | ❌ | ❌ | ✅ |
-| **Create/start/complete a sprint** | ❌ | ❌ | ✅ |
-| Manage users (create, promote/demote, deactivate, reset password, unlock) | ❌ | ❌ | ✅ |
-| Manage departments (create/edit departments, assign a user's department) | ❌ | ❌ | ✅ |
-| Set a user's sign-in method; manage directory (LDAP) settings and Orbit Agents (§6.13, §6.14) | ❌ | ❌ | ✅ |
-| View Reports (§12) | ❌ | ❌ | ✅ |
+> **Reading the rest of this specification:** wherever it names `Member`, `DepartmentAdmin` or `SystemAdmin`, read "a role with the default grants of that shipped role". The rules are the permissions below; any role that holds them behaves the same, and the shipped roles can be edited or replaced.
 
-A `Member` sees every task in their department, not only their own, and may **take** any open, unassigned one: a *Take* button in the Assignee cell of every task list (and *Take this task* on the task page) assigns it to them without needing edit rights - after which it is theirs and the normal edit rule applies. Nothing else about the task changes; the assignment is audited as an ordinary `Updated` entry, and if two people take the same task at the same moment only the first succeeds (the other is told who got it). Reassigning a task somebody already holds still needs edit rights on it.
+**Scopes.** A grant carries one of `Own` < `Department` < `All`, and a grant at a scope covers the lower ones:
+- *Own* — the user's own objects: tasks assigned to them or created by them, projects they own, their own time entries. Independent of department: a department-less user with `tasks.edit` at Own can edit a task assigned to them anywhere.
+- *Department* — everything in the user's own department (plus, for projects, another department's project that has tasks in the user's department, read-only, §6.2.1).
+- *All* — every department. Also widens the department pickers, the Department column and filter, and lets a user or key go without a department.
 
-> **Assumption flagged:** I've kept user management and Reports as `SystemAdmin`-only, matching what you asked for `DepartmentAdmin` ("manage tasks and projects for their own departments" — nothing about users or reports). If you actually want `DepartmentAdmin` to manage users within their own department (create members, reset their passwords) or see department-scoped reports, that's a straightforward extension of this table, just say which.
+Each permission declares which scopes it allows; organisation-level ones (sprints, calendar, administration) allow only All and render as a plain checkbox in the role editor.
 
-Changing a task's status, including closing it (`Done`/`Cancelled`) and reopening it, follows edit rights: a Member changes the status of tasks they created or are assigned (taking an unassigned task first if they need to), a Department Admin any task in their department, a System Admin any task. The inline status control is shown only where the viewer holds that right — on anyone else's task a Member sees a plain status badge — and the same rule is enforced server-side in `TaskService` (not just hidden client-side) so a direct request can't bypass it. Department scoping is enforced the same way — every task/project query and write is filtered by the caller's `DepartmentId` server-side, not just hidden in the UI. This same rule applies to the Claude API: each API key carries a `Role` and, where relevant, a `DepartmentId` (§5.1, §8), and is bound by exactly the same rules as a human user of that role.
+**No baseline.** A role with no grants sees nothing: `tasks.view` is a permission like any other. Comments, attachments and a task's activity follow `tasks.view` / `projects.view` (whoever can see it can comment on it and attach to it; deleting an attachment stays "uploader, or whoever may edit the parent"). Sprints themselves stay visible to everyone — they are company-wide planning units — but what a user sees *inside* a sprint (the sprint page, the board, the backlog) follows `tasks.view`; the backlog's earlier "show all departments" widening is gone, since a view scope is absolute.
+
+**The catalogue** (19 permissions). M = the shipped Member role's default grant, DA = Department Admin's; the built-in role holds everything at All; `-` = not granted.
+
+| Key | Scopes | Gates | M | DA |
+|---|---|---|:-:|:-:|
+| `tasks.view` | Own / Dept / All | See tasks (and recurring definitions), comment, attach, task activity, every task list. Its scope is also the **dashboard tier** (§6.9) and drives the Department column and filter. | Dept | Dept |
+| `tasks.create` | Dept / All | Create tasks and recurring definitions in that reach. At All it also permits filing a task for another department under a project (§6.2.1) and the department picker on the form. | Dept | Dept |
+| `tasks.edit` | Own / Dept / All | Edit any field, including **every status change** (close and reopen too, §13 item 35), parent, dependencies, reassignment; recurring definitions likewise. | Own | Dept |
+| `tasks.take` | Dept / All | Take an open, unassigned task for yourself without edit rights on it. | Dept | Dept |
+| `tasks.plan` | Own / Dept / All | Backlog ↔ sprint moves and the Today tick (§6.12). | Dept | Dept |
+| `projects.view` | Own / Dept / All | See projects, their files and critical path results; Own = projects you own. | Dept | Dept |
+| `projects.create` | Dept / All | Create projects. | Dept | Dept |
+| `projects.edit` | Own / Dept / All | Edit, archive, run the critical path analysis; moving a project to another department needs All. | Own | Dept |
+| `time.log` | Own / Dept / All | Log, edit and delete time. Own = your own entries on tasks assigned to you; Dept = for anyone in the department. | Own | Dept |
+| `sprints.manage` | All | Create, edit, start and complete sprints. | - | - |
+| `reports.view` | Dept / All | The Reports pages and PDFs; at Dept the department filter is fixed to the user's own. | - | - |
+| `audit.view` | Dept / All | Admin > Activity Log and `list_activity`; at Dept only the department's entries. | - | - |
+| `users.manage` | All, **reserved** | Create users, change role, department and sign-in method, deactivate, unlock, reset passwords. | - | - |
+| `roles.manage` | All, **reserved** | Admin > Roles. | - | - |
+| `api_keys.manage` | All, **reserved** | Issue and revoke API keys. | - | - |
+| `departments.manage` | All | Create, edit and archive departments; the department overview pages. | - | - |
+| `calendar.manage` | All | The working calendar (§6.17). | - | - |
+| `directory.manage` | All | Admin > Directory (§6.13). | - | - |
+| `agents.manage` | All | Orbit Agents (§6.14). | - | - |
+
+**Rules that follow from the catalogue**
+- **Assignees and owners:** a task may be assigned to a user in its department, or to a user whose role has `tasks.view` at All (where this spec says "or a `SystemAdmin`"); a project's owner follows the same rule. The assignee pickers list both.
+- **Cross-department project tasks** (§6.2.1) need `tasks.create` at All; moving a project to another department needs `projects.edit` at All; moving a task or recurring definition into another department needs `tasks.edit` reaching that department. Filing under a project needs `tasks.create` in the project's department.
+- **Time:** `time.log` at Own is the user's own entries on tasks assigned to them; at Department, for anyone in the department (and the "log for someone else" control appears).
+- **Reports and audit:** `reports.view` at Department fixes the report to the user's own department and hides the department picker; `audit.view` at Department likewise. One task's or project's own activity is part of viewing it — whoever may see the task or project sees its activity (the task page, `list_activity` with `entityId`) whatever their `audit.view` scope.
+- **Users directory:** the user pickers and `list_users` cover the caller's own department unless the caller's `tasks.view` is All.
+- Messages never name roles: "You don't have permission to edit this task."
+
+**Safety rules** (`RoleRules`, pure and unit-tested; applied by `RoleService`, `UserAdminService` and `ApiKeyService`)
+1. The built-in role is immutable (name, description, grants) and undeletable.
+2. A grant is validated server-side whatever the form posts: an unknown key, a reserved key or a scope the permission doesn't allow is refused. `users.manage`, `roles.manage` and `api_keys.manage` are **reserved** to the built-in role and can never be put on a custom role, so only System Administrators manage users, roles and keys (relaxing that later is a flag in the catalogue).
+3. A department is required for a user or API key whose role has any grant at Department scope. Changing a role so that it starts requiring a department is refused while any active user or non-revoked key in it has none; the message gives the counts. Any role may still have a home department, which is only the default for new work.
+4. Break-glass unchanged: at least one active local-password user must remain in the built-in role (§8.3).
+5. Only an unused role can be deleted — its users and keys, revoked keys included, keep it alive (FK Restrict); the message names the counts.
+6. Every role change is audited (`Role` entity: Created / Updated / Deleted) with each grant's old and new scope, e.g. `tasks.view: Department -> All`, through the existing `ChangeSet`.
+
+**Data and resolution.** `AspNetRoles` is extended (`ApplicationRole`: `Description`, `IsBuiltIn`, `CreatedAt`, `UpdatedAt`; a filtered unique index keeps exactly one built-in row) and a `RolePermissions` table holds `(RoleId, Permission, Scope)` — the permission as its string key and the scope as its name, so adding a permission needs no migration. Grants are read from the database on every request, never from the cookie (which can lag a role edit by the five-minute stamp interval): a cookie user is re-read with their role and grants, an API key carries its role id as a claim (`orbit:role_id`) and resolves it the same way, and a principal whose role can't be resolved gets no grants. `Actor` carries the role (`RoleRef`) and its grants; `AccessPolicy` is written in terms of them (`Can(permission, departmentId, isOwn)`, `CanInDepartment`, `CanAnywhere`); and every list goes through `Scoping` (tasks, recurring definitions, projects, audit entries), so nothing is merely hidden client-side. Pages are gated by one authorization policy per permission (`permission:<key>` — granted at any scope opens the page, the service applies the scope): Admin > Users needs `users.manage`, Roles `roles.manage`, Departments `departments.manage`, API Keys `api_keys.manage`, Directory `directory.manage`, Agents `agents.manage`, Working Calendar `calendar.manage`, Activity Log `audit.view`, Reports `reports.view`, sprint create/edit `sprints.manage`. The navbar shows the Admin menu when any of those is granted, each item on its own permission, Reports on `reports.view`, and the badge beside the user's name shows their role.
+
+**Admin > Roles.** Lists every role with its description, grant count, users and keys; the built-in one opens view-only. Create / Edit show the catalogue grouped, one row per permission with a scope selector limited to that permission's allowed scopes (None / Own / Department / All as a radio group; All-only permissions as a checkbox), each row carrying its description; reserved permissions are greyed "System Administrator only" and never posted. Delete is on the edit page and only offered while the role is unused. The Users and API keys pages pick from every role, and their department field says whether the chosen role needs one (the "(none)" option is withheld for such a role; the service checks regardless). A role with any grant at All is badged company-wide; the built-in role is badged as such.
+
+**Upgrade.** An existing database is migrated in place (`AddDynamicRoles`): `SystemAdmin` becomes the built-in "System Administrator", `DepartmentAdmin` becomes "Department Admin", `Member` stays, the two migrated roles receive the default grants in the table above, and each API key's `RoleId` is filled from its old role name before that column is dropped — nothing changes for existing users or keys. On a new database `DbInitializer` creates the built-in role and the two shipped roles; it never re-applies the defaults, so an admin's edits stick.
 
 - Sign in via ASP.NET Core Identity's standard Individual Accounts flow (register/login/manage account pages, scaffolded from the default Identity UI or customized as Razor Pages). The one login form serves every user; whether the password typed is checked against Orbit's own hash or against the company directory depends on that user's **sign-in method** (§6.13).
 - **Repeated wrong passwords lock the account**, for both sign-in methods: by default **3 failures lock it for 30 minutes** (`Security:Lockout:MaxFailedAttempts` / `LockoutMinutes`). That is deliberately stricter than Identity's stock 5-and-5, and stricter than a typical Active Directory policy, for a reason specific to directory users: each wrong guess at Orbit is a real failed bind in the directory and counts towards the **directory's own** lockout. If Orbit tolerated as many attempts as the directory does, anyone on the internet who knew a colleague's email could lock that person's *Windows* account, again and again. Because a locked Orbit account is refused **without the directory being contacted** (§6.13), the directory sees at most `MaxFailedAttempts` bad binds per `LockoutMinutes` — so the rule is: *MaxFailedAttempts below the directory's lockout threshold, LockoutMinutes at least the directory's counter-reset interval* (§8.3, `deploy/README.md` §8).
-- **Unlock:** since the lockout is long on purpose, a `SystemAdmin` can end one early. The Users list flags a locked-out account and the user's page has an **Unlock** button (audited as `Unlocked`). For a directory user this clears Orbit's lock only; a lock in the directory is lifted in the directory.
+- **Unlock:** since the lockout is long on purpose, a user manager (`users.manage`) can end one early. The Users list flags a locked-out account and the user's page has an **Unlock** button (audited as `Unlocked`). For a directory user this clears Orbit's lock only; a lock in the directory is lifted in the directory.
 - **Failed sign-ins are also limited per client address** (default 20 failures per 15 minutes, `Security:LoginThrottle:*`), which is what notices one common password being tried across many accounts — something per-account lockout cannot see. Over the limit, that address gets "Too many failed sign-in attempts" (HTTP 429) and nothing is sent to the directory. Detail and limits in §8.3.
-- New accounts default to `Member`, assigned to a department at creation time; a `SystemAdmin` promotes/demotes a user's role and can change their department and sign-in method via a simple admin page.
-- **Break-glass rule:** at least one active `SystemAdmin` must always have a **local** password. If every System Admin signed in through the directory, an outage of the directory or its agent would lock out the only people able to fix it. Orbit refuses any change (switching sign-in method, demoting, deactivating) that would leave none. This supersedes the earlier, weaker rule that merely one active `SystemAdmin` must remain.
-- **Delete a user account:** `SystemAdmin`-only. Implemented as a soft delete/deactivation (`IsActive = false` or Identity's `LockoutEnd` set far in the future) rather than a hard row delete — a hard delete would orphan the user's `AssigneeId`/`CreatedById`/`AuthorId`/`ActorId` references on existing tasks, comments, and audit log entries. A deactivated user can't sign in, disappears from the assignee picker for new tasks, but their historical task/comment/audit attribution stays intact.
+- New accounts are given a role and, when the role needs one, a department at creation time; a user manager changes a user's role, department and sign-in method from the user's page.
+- **Break-glass rule:** at least one active user in the built-in System Administrator role must always have a **local** password. If every System Administrator signed in through the directory, an outage of the directory or its agent would lock out the only people able to fix it. Orbit refuses any change (switching sign-in method, changing role, deactivating) that would leave none. This supersedes the earlier, weaker rule that merely one active administrator must remain.
+- **Delete a user account:** `users.manage`. Implemented as a soft delete/deactivation (`IsActive = false` or Identity's `LockoutEnd` set far in the future) rather than a hard row delete — a hard delete would orphan the user's `AssigneeId`/`CreatedById`/`AuthorId`/`ActorId` references on existing tasks, comments, and audit log entries. A deactivated user can't sign in, disappears from the assignee picker for new tasks, but their historical task/comment/audit attribution stays intact.
 
   > **Assumption flagged:** "delete" is implemented as deactivation for the reasons above, not a literal row removal. Flag if you actually want a hard delete (which would mean deciding what happens to that user's existing tasks/comments — reassign, orphan, or block the delete until reassigned).
-- **Reset a user's password:** `SystemAdmin`-only, **local users only**. Triggers ASP.NET Core Identity's standard password-reset flow (generates a reset token, either emailed via `IEmailSender` per §6.7 or surfaced as a one-time link/temporary password the admin hands to the user directly) — same mechanism as the existing "Create User" first-login flow below, reused here. A directory user's password is changed and reset in the directory; Orbit rejects the attempt and the user's page says so instead of offering the controls.
-- **Self-registration is disabled.** The scaffolded Identity `Register` page/endpoint is removed (or locked behind `[Authorize(Roles = "SystemAdmin")]`) so the public can't create their own accounts. Instead:
-  - `SystemAdmin` has a "Create User" page that creates the `AspNetUsers` row directly — setting `DepartmentId`, `Role` and the **sign-in method**. For a local user it also sets a temporary password (or triggers Identity's password-reset/email-confirmation flow) so the new user sets their own password on first login; for a directory user there is no password to set.
+- **Reset a user's password:** `users.manage`, **local users only**. Triggers ASP.NET Core Identity's standard password-reset flow (generates a reset token, either emailed via `IEmailSender` per §6.7 or surfaced as a one-time link/temporary password the admin hands to the user directly) — same mechanism as the existing "Create User" first-login flow below, reused here. A directory user's password is changed and reset in the directory; Orbit rejects the attempt and the user's page says so instead of offering the controls.
+- **Self-registration is disabled.** The scaffolded Identity `Register` page/endpoint is removed so the public can't create their own accounts. Instead:
+  - Admin > Users (`users.manage`) has a "Create User" page that creates the `AspNetUsers` row directly — setting the role, `DepartmentId` and the **sign-in method**. For a local user it also sets a temporary password (or triggers Identity's password-reset/email-confirmation flow) so the new user sets their own password on first login; for a directory user there is no password to set.
   - Login page remains open; only account creation is gated. This holds for directory users too: having an account in the directory does **not** create or grant an Orbit account (§6.13).
 
 ### 6.6 Departments
-- **Manage departments:** `SystemAdmin`-only — create, rename/edit, and (soft-)archive a department. Archiving a department doesn't cascade-delete its projects/tasks/users; it just stops it from being offered as a choice for new projects/tasks/users going forward.
-- **Department list page:** every department with a headline count (users, active projects, open tasks) — a quick org-wide overview for `SystemAdmin`.
+- **Manage departments:** `departments.manage` (§6.5; company-wide, held by the built-in role by default) — create, rename/edit, and (soft-)archive a department. Archiving a department doesn't cascade-delete its projects/tasks/users; it just stops it from being offered as a choice for new projects/tasks/users going forward.
+- **Department list page:** every department with a headline count (users, active projects, open tasks) — a quick org-wide overview for whoever manages departments.
 - **Department detail page:** the department's users, projects, and open task count, with a way to jump into that department's task/project lists pre-filtered.
 - Assigning a user to a department (or moving them between departments) happens from the user's own edit page (§6.5), not a separate department-membership screen — one place to manage a user's role and department together.
 
@@ -371,33 +413,31 @@ Changing a task's status, including closing it (`Done`/`Cancelled`) and reopenin
 - **v1 note:** only the default `IEmailSender` interface is wired up for now (i.e. the interface and call sites exist); a concrete sending implementation (SMTP, SendGrid, etc.) is deferred to a later stage. Until a real implementation is plugged in, the default no-op/logging sender can stand in.
 
 ### 6.8 Reporting
-- A Reports page (`SystemAdmin`-only for now — see §6.5 assumption flag on department-scoped reports for `DepartmentAdmin`) listing the available reports, each with a date-range filter and an optional project/department filter.
+- A Reports page (`reports.view`, §6.5: at All the reports cover every department with an optional department filter; at Department they are fixed to the viewer's own department and the filter is hidden) listing the available reports, each with a date-range filter and an optional project filter.
 - Reports render on-screen (HTML table/chart) and can be exported to PDF via QuestPDF (§12).
 
 ### 6.9 Dashboard (post-login landing page)
-- Replaces a generic landing page — after sign-in, the user lands on the dashboard for their role instead of a blank home page.
+- Replaces a generic landing page — after sign-in, the user lands on the dashboard for their **tier**, which is their role's `tasks.view` scope (§6.5): Own = the personal dashboard, Department = the department dashboard, All = the company dashboard. One refinement keeps the shipped Member role on the dashboard it always had: a role that sees its department but may only edit its own tasks (`tasks.edit` at Own, or not granted) gets the personal dashboard, since its own work is what it acts on. A role with no `tasks.view` sees an empty dashboard that says so.
 
-**Member dashboard** — focused on their own work:
+**Personal dashboard** — focused on the user's own work (the shipped Member role):
 - **My Tasks widget:** count and quick list of the current user's open tasks, broken out by status (Todo/In Progress/Waiting/Blocked), with overdue ones flagged.
-- **Active sprint widget:** current sprint's name, goal, and the Member's own tasks within it, if a sprint is active.
-- **Projects at a glance:** projects the Member has tasks on (within their own department), with a progress indicator (e.g. `12/20 done`).
-- **Due soon:** the Member's own tasks due in the next few days.
-- **Up for grabs:** open, unassigned tasks in the Member's department, each with a *Take* button (§6.5), linking to the Tasks list filtered to unassigned work.
-- Quick links into "My Tasks," "Backlog," and "All Projects" (no Reports link — Reports stays `SystemAdmin`-only per §6.5).
+- **Active sprint widget:** current sprint's name, goal, and the user's own tasks within it, if a sprint is active.
+- **Projects at a glance:** projects the user has tasks on, within their `projects.view` scope, with a progress indicator (e.g. `12/20 done`).
+- **Due soon:** the user's own tasks due in the next few days.
+- **Up for grabs:** open, unassigned tasks in the user's department, each with a *Take* button (§6.5) — shown when the role has `tasks.take` for the department — linking to the Tasks list filtered to unassigned work.
+- Quick links into "My Tasks," "Backlog," and "All Projects".
 
-**Department Admin dashboard** — adds department-wide visibility on top:
-- Everything in the Member dashboard, but the widgets default to their department's scope rather than "my" scope (e.g. all open tasks in the department by status, not just the Department Admin's own).
+**Department dashboard** (`tasks.view` at Department with `tasks.edit` beyond Own — the shipped Department Admin role) — adds department-wide visibility on top:
+- Everything in the personal dashboard, but the widgets default to the department's scope rather than "my" scope (e.g. all open tasks in the department by status, not just the user's own), plus a separate "My open tasks" card.
 - **Department overview widget:** open task count by assignee within the department.
 - **Department activity feed:** last N tasks created/updated/completed within the department, including a visible tag for API-created ones (`Source = Api`).
-- **Department projects at a glance:** every active project in the department with its progress indicator, not just ones the Department Admin is personally on.
-- Still no Reports link — Reports stays `SystemAdmin`-only (§6.5 assumption flag).
+- **Department projects at a glance:** every active project the user may see, not just ones they are personally on.
 
-**System Admin dashboard** — company-wide visibility across all departments:
-- Everything in the Department Admin dashboard, but scoped company-wide rather than to one department, plus a **by-department breakdown** (open task count and active project count per department, so a System Admin can spot which department is under the most load at a glance).
+**Company dashboard** (`tasks.view` at All — the built-in role, or any role granted it) — company-wide visibility across all departments:
+- Everything in the department dashboard, but scoped company-wide rather than to one department, plus a **by-department breakdown** (open task count and active project count per department, so an administrator can spot which department is under the most load at a glance).
 - **Active sprint widget:** shows the current sprint's overall progress across all departments, with a per-department task-count breakdown, since sprints are shared company-wide (§6.3).
-- Quick links additionally include the Reports and Departments (§6.6) pages.
 
-**All dashboards** also show a **Today's plan** card — planned and done counts for today's day plan (§6.12) within the viewer's scope (own tasks for a Member, department for a Department Admin, company-wide for a System Admin) — linking to the Today page, plus a "Today" quick link beside "My Tasks".
+**All dashboards** show the Reports and Departments quick links when the role has `reports.view` / `departments.manage`, a link from the activity feed to the full Activity Log with `audit.view`, and a **Today's plan** card — planned and done counts for today's day plan (§6.12) within the viewer's tier (own tasks, department, or company-wide) — linking to the Today page, plus a "Today" quick link beside "My Tasks".
 
 ### 6.10 Time Tracking
 - **Estimate:** a task can carry an **estimated effort** (`EstimateMinutes`, §5.1), entered in minutes on the create and edit forms (blank for none) and shown on the task page next to the time logged — *1h 30m logged of 4h estimated* — with an **Over estimate** flag once logged time passes it. The project page and `get_project_status` add the estimates up (cancelled tasks excluded) beside the project's logged total, with the same flag. Estimates are advisory: nothing stops logging past one, and they don't feed the Gantt's durations, which come from the planned dates (§6.16).
@@ -447,7 +487,7 @@ Changing a task's status, including closing it (`Done`/`Cancelled`) and reopenin
   - *The check couldn't be made at all* (no agent online, the agent timed out, the directory is unreachable, the service account's bind failed) → "Sign-in with your company directory account is temporarily unavailable…". This is **not** counted as a failed attempt: an outage must never lock people out.
   - *Locked out or deactivated in Orbit* → refused **without contacting the directory**.
 - **Passwords:** Orbit never stores a directory user's password and never logs any password. A directory user who opens *Manage account > Password* is sent back with a note that their password is managed by the directory; a `SystemAdmin` cannot set or reset one for them (§6.5). Switching a user's sign-in method in either direction **discards any password hash Orbit holds** and signs the user out: switching to the directory must not leave a usable local password behind, and switching back must not revive an old one — the admin sets a new temporary password or reset link.
-- **Admin > Directory** (`SystemAdmin`-only): the directory settings of §5.1 — enable/disable, server, port, SSL, certificate validation, service account (bind DN + password), search base, user filter.
+- **Admin > Directory** (`directory.manage`, §6.5): the directory settings of §5.1 — enable/disable, server, port, SSL, certificate validation, service account (bind DN + password), search base, user filter.
   - The bind password is **write-only**: never rendered back, left blank to keep the stored one, stored encrypted.
   - **Test connection** asks a connected agent to connect, bind as the service account and optionally look up a sample email, and reports each step ("Connected… Bound as… Found CN=…") or the step that failed. It tests **the values in the form, saved or not**, so settings can be proven before they go live. No user password is involved.
   - The page shows whether any agent is connected, and warns when none is.
@@ -464,7 +504,7 @@ Changing a task's status, including closing it (`Done`/`Cancelled`) and reopenin
 
 - **Purpose:** the directory is behind the corporate firewall and Orbit is outside it. Rather than open a port inwards, an **Orbit Agent** — a small service installed on a machine inside the network — connects **outwards** to Orbit and carries out, on Orbit's behalf, the things that can only be done from inside. Today that is checking directory sign-ins (§6.13) and testing the directory settings; the agent is built as a general connector so further capabilities can be added without changing how it is installed or registered.
 - **Practically no settings on the agent.** The agent knows two things: Orbit's URL and the credential Orbit issued it. Both are written by one command. Directory servers, service accounts, filters — everything else — live in Orbit (§5.1 `LdapSettings`) and are sent to the agent with each request, so changing them never involves touching the agent.
-- **Registration, GitHub-runner style** (`SystemAdmin`-only, **Admin > Agents**):
+- **Registration, GitHub-runner style** (`agents.manage`, **Admin > Agents**):
   1. *New agent* → the admin names it. Orbit creates it as `Pending` and shows, **once**, a ready-to-paste command: `Orbit.Agent configure --url https://<orbit> --token <one-time token>`, with the URL filled in from `App:BaseUrl`, plus the run/install-as-a-service commands.
   2. The token is single-use and expires after an hour (`Agents:RegistrationTokenLifetimeMinutes`). *New token* on a still-pending agent issues another.
   3. Running the command on the agent machine redeems the token for the agent's long-lived credential and saves it locally (§8.2). The agent becomes `Active`.
@@ -553,7 +593,7 @@ A deliberate project-management action, run from the project page or the Gantt a
 - **Early completion is not recovery.** An estimate well inside its window is a *potential* early finish; it is a *recovery opportunity* only when it could release downstream critical work, and even then whether the assignee can pick that work up earlier is a management question, not something Orbit knows.
 - Orbit identifies scheduling conditions; the project manager changes the plan.
 
-**Working calendar** (Admin > Working Calendar, `SystemAdmin`-only)
+**Working calendar** (Admin > Working Calendar, `calendar.manage`)
 - The organisation's working week (default Monday–Friday) and dated **exceptions**: public holidays and shutdown days (non-working) or exceptional working days. One organisation-wide calendar; individual availability and leave are out of scope (§3).
 - Used by the analysis — to count spans, float, buffer and lag in working days — for its readiness warnings, and by the Gantt, which shades non-working days (§6.16). Nothing moves because of it: a task planned across a non-working day stays put and is pointed out.
 - Lag stays what §6.15 made it, calendar days; a link constraint that lands on a non-working day rolls forward to the next working day.
@@ -634,7 +674,7 @@ All of these are read-only except `create_task`, `update_task`, `add_comment`, `
 
 ### 7.2 MCP Authentication
 
-The MCP connection authenticates with the same API key scheme as §8 — Streamable HTTP supports custom headers, so the API key travels the same way (`Authorization: Bearer <key>`) as it would on a REST call. The key's `Role` and `DepartmentId` (Member/DepartmentAdmin/SystemAdmin) still govern what its tool calls are allowed to do, exactly as in §6.5.
+The MCP connection authenticates with the same API key scheme as §8 — Streamable HTTP supports custom headers, so the API key travels the same way (`Authorization: Bearer <key>`) as it would on a REST call. The key's role — its permissions and their scopes — and `DepartmentId` govern what its tool calls are allowed to do, exactly as in §6.5: the role id travels as a claim and its grants are resolved from the database on every call, so a role edit applies to the very next call.
 
 ## 8. Authentication (Interactive Users, MCP, Orbit Agents)
 
@@ -644,9 +684,9 @@ Three different populations hit this system, so three different auth schemes mak
 - **Orbit Agents (§8.2):** a long-lived agent secret sent as `Authorization: Bearer <secret>`, handled by its own authentication scheme. An agent principal identifies the agent and carries **no role and no department**, so it can reach the agent hub and nothing else — not a page, not the MCP server.
 - **Claude / machine callers (MCP server, §7):** since Individual Accounts has no external directory to issue machine tokens from, the natural fit is a long-lived **API key** — issued per integration, sent as `Authorization: Bearer <key>` on the MCP connection, validated against a hashed value stored in the `ApiKeys` table (§5.1). This is also the easiest option to wire into a Claude Project's connector config.
 
-  Each key carries a `Role` (`SystemAdmin`, `DepartmentAdmin`, or `Member`) and, for the latter two, a `DepartmentId`, assigned when the key is issued. The same authorization checks that gate role and department scoping for human users (§6.5) apply to the key — e.g. a `Member`-role key can create and edit tasks in its own department but is rejected if it tries to close one or touch another department's data; a `DepartmentAdmin`-role key can close tasks within its own department; a `SystemAdmin`-role key can do both across any department. This means the same policy/handler code path enforces the rule regardless of whether the caller is a signed-in user, an API key on the MCP server, or (if a plain REST surface is ever added later) a REST caller — no separate "is this the API" special case for authorization.
+  Each key carries a role (`RoleId`, one of the same roles users have) and, when that role has any grant at Department scope, a `DepartmentId`, assigned when the key is issued. The same permission checks that gate human users (§6.5) apply to the key — e.g. a key in the shipped Member role can create tasks in its own department and edit (and close) only the ones the Claude user created or is assigned, and is rejected if it touches another department's data; a Department Admin key edits any task in its department; a System Administrator key can do everything across any department. This means the same policy/handler code path enforces the rule regardless of whether the caller is a signed-in user, an API key on the MCP server, or (if a plain REST surface is ever added later) a REST caller — no separate "is this the API" special case for authorization.
 
-  Implement it as a separate ASP.NET Core authentication scheme (e.g. a custom `AuthenticationHandler` for the API key) alongside the Identity cookie scheme, mapping the key's `Role` and `DepartmentId` into the request's claims so the existing `[Authorize(Roles = "...")]`/policy checks work unchanged for MCP callers.
+  Implement it as a separate ASP.NET Core authentication scheme (e.g. a custom `AuthenticationHandler` for the API key) alongside the Identity cookie scheme, mapping the key's role id (`orbit:role_id`), role name and `DepartmentId` into the request's claims; the actor provider then resolves the role's grants per request, exactly as for a signed-in user, so the services' permission checks work unchanged for MCP callers.
 
 Either way, the MCP identity should map to a synthetic `User` row (e.g. "Claude Agent") so `CreatedById`/audit trails have something to point at, distinct from a null value.
 
@@ -700,7 +740,7 @@ Rules the implementation must keep, each of which closes a specific hole:
 - **No second factor is enforced — a known gap, accepted for now.** A directory sign-in is a password-only LDAP bind: it does not pass through whatever MFA or conditional access protects the directory elsewhere, so a phished or reused directory password is enough to get into Orbit. Users can enable Orbit's own authenticator-app two-factor (Identity's standard feature, and it applies to directory users exactly as to local ones, §8.1); making it mandatory, for directory users or for System Admins, is the natural next hardening step (§13, item 29).
 - **Transport encryption is hop by hop, not end to end.** TLS protects browser → Orbit, Orbit → agent and agent → directory separately; the password is in the clear in Orbit's memory and the agent's, which is unavoidable since both must handle it, and on the loopback hop between the reverse proxy and Orbit. A TLS-*inspecting* corporate proxy on the agent's outbound path could read what the agent relays. Such a proxy already sees every other site the organisation's staff sign in to, so it is inside the trust boundary; encrypting each password to a key held by the agent would remove it, and was considered and deferred (§13, item 29).
 - **An agent cannot be used to attack Orbit:** its principal has no role or department and is accepted by the agent hub only. The agent never initiates anything but its connection and its `Hello`.
-- **Break-glass:** at least one `SystemAdmin` always has a local password (§6.5), so Orbit stays administrable when the directory or the agent is down.
+- **Break-glass:** at least one member of the built-in System Administrator role always has a local password (§6.5), so Orbit stays administrable when the directory or the agent is down.
 
 ## 9. Non-Functional Requirements
 
@@ -866,6 +906,7 @@ Earlier open questions, now resolved:
     - **Opportunities are informational.** Early completion (estimate inside window) and recovery (would release a driving successor) are surfaced with the assignee and *requires management confirmation*; nothing is rescheduled.
     - **`Orbit.Tests`** (xunit) was added: the engine, calendar and fingerprint are covered by the §6.17 acceptance cases — the first automated tests in the solution.
 35. **Members may close and reopen their own tasks (§6.5).** Closing (`Done`/`Cancelled`) and reopening used to need a Department Admin or System Admin, so the people doing the work couldn't mark it done. Now a task's status — every one of the six — follows edit rights, the rule that already defines "own": a Member on tasks they created or are assigned, a Department Admin on any task in their department, a System Admin anywhere. Consequences: the inline status control appears only on tasks the viewer may edit (a Member sees a badge on a colleague's task and takes an unassigned one first, where before any open-status move was department-wide); `Done`/`Cancelled` are no longer hidden or disabled for anyone who sees the control; `CanCloseTasks` is gone and `CanChangeStatus` no longer looks at the target status; a `Member`-role API key follows the same rule through `update_task`. The §6.15 gates (dependencies, open subtasks) and department scoping are untouched.
+36. **Dynamic roles with scoped permissions (§5.1, §6.5, §6.9, §7.2, §8).** The three fixed roles (`Member`, `DepartmentAdmin`, `SystemAdmin`) were an enum consulted in some 180 places, and every new feature had to be forced into one of three tiers. Now permissions are a fixed, code-defined catalogue of 19 keys (`tasks.view` … `agents.manage`), **each grant carries a scope** (Own / Department / All, a grant covering the scopes below it), roles are data edited under Admin > Roles, one built-in **System Administrator** role holds everything at All (including permissions added later) and can't be edited or deleted, and the earlier Department Admin and Member are migrated in place as ordinary editable roles whose default grants reproduce their old rights — nothing changes for existing users or keys on upgrade. Decisions taken with the user: one role per user; `users.manage`, `roles.manage` and `api_keys.manage` are reserved to the built-in role; `reports.view` at Department scope is limited to the user's own department; comments, attachments and recurring definitions follow the task and project permissions; status changes stay part of `tasks.edit` (item 35), so there is no separate close permission; keys are `area.action` strings; no new MCP tools. Implementation: `Actor` carries the role and its grants and the old `IsSystemAdmin` / `IsDepartmentAdmin` / `IsMember` / `IsAdminFor` / `CanAccessDepartment` are gone (so the compiler found every call site); `AccessPolicy` is written in terms of `Can(permission, department, isOwn)`; every list goes through `Scoping`; grants are read per request (cookie users re-read, keys via a role-id claim), never from the cookie; pages are gated by one policy per permission. Two behaviour changes worth knowing: the backlog's "show all departments" widening for department-scoped roles is gone and the tasks listed inside a sprint follow `tasks.view`, since a view scope is now absolute; and the dashboard tier is the `tasks.view` scope with one refinement — a role that sees its department but may only edit its own tasks keeps the personal dashboard (§6.9), which is what keeps the shipped Member role's dashboard as it was. Three-layer verification: the `RoleRules` / `Scoping` / catalogue / default-grant unit tests, the migration run against an empty database and against a copy of a real one (users kept their roles, keys kept working, the seed admin still bootstrapped), and the §6.5 table walked in the UI and over MCP with the example roles from the design — "Sprint manager", "Auditor" and "Coordinator".
 
 ## 14. Suggested Build Order
 
@@ -891,3 +932,4 @@ Earlier open questions, now resolved:
 20. Gantt editing and critical path (§6.16): `TaskService.ChangeDatesAsync`; the `Reschedule` handler on the Gantt page and the hidden form it posts; `wwwroot/js/gantt.js` (pointer-event drag with day snapping, edge handles and a date label); the critical-path pass in `GanttChart` with the outline, *CP* mark, heavier driving arrows and header summary; styles and legend entries. Automatic scheduling stays a follow-up.
 21. Task estimates (§6.10): `EstimateMinutes` migration; `TaskInput`/`TaskService` validation (whole minutes, at most a year, 0 clears) and audit; the form field; the task page's *logged of estimated* line and flag; `ProjectStatusSummary.TotalMinutesEstimated` on the project page and `get_project_status`; `estimateMinutes` on `create_task`, `update_task` and task payloads.
 22. Critical path analysis and project buffer (§6.17): `Project.RequiredBufferWorkingDays`, `WorkingCalendar`, `WorkingCalendarException` and `CriticalPathAnalysis` in one migration; `CriticalPathOptions` (`CriticalPath:*`); the pure `WorkDayCalendar`, `CriticalPathEngine` and `ScheduleFingerprint` in `Application/Scheduling` with their `Orbit.Tests` unit tests; `WorkingCalendarService` and Admin > Working Calendar; `CriticalPathService` (run, latest, staleness) with `CanRunCriticalPath`/`CanManageWorkingCalendar` and the `CriticalPathAnalysed` audit action; `GanttChart` reduced to geometry with a `GanttOverlay` from the stored analysis; the Gantt page's Run handler, out-of-date banner, near-critical marks, completion/target lines, buffer shading and result card; the project page's Critical path card and the buffer field on the project form; `get_critical_path` and `run_critical_path_analysis`, `requiredBufferWorkingDays` on the project tools and `criticalPath` on `get_project_status`.
+23. Dynamic roles (§6.5), in four steps that each build and run: (1) the catalogue — `Permission`, `PermissionScope`, `PermissionCatalog`, `DefaultRoles`, `Scoping`, `RoleRef` — and the `Actor` / `AccessPolicy` rewrite that deletes the `Is*` properties so every call site (services, pages, MCP tools) is migrated by the compiler; (2) roles as data — `ApplicationRole`, `RolePermission`, `ApiKey.RoleId`, `IdentityDbContext<ApplicationUser, ApplicationRole, Guid>`, the `AddDynamicRoles` migration with its data steps, `RoleResolver`, the actor provider and API-key handler resolving grants per request, `DbInitializer` seeding the built-in and shipped roles, `UserAdminService` / `ApiKeyService` taking a role id; (3) `RoleRules`, `RoleService`, Admin > Roles (Index / Create / Edit with the grouped scope selector), the `Role` audit entity, the Users / API keys pages on dynamic role dropdowns with the department rule; (4) one authorization policy per permission with `PermissionAuthorizationHandler`, folder and page conventions, the navbar on grants, the dashboard tiers, `reports.view` / `audit.view` scoping, MCP descriptions, and the unit tests (`AccessPolicyTests`, `StatusTests`, `AttachmentTests` rebuilt on grants; `DefaultRolesTests`, `PermissionCatalogTests`, `RoleRulesTests`, `ScopingTests` added).

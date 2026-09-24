@@ -8,8 +8,10 @@ public class ApiKey
     public string HashedKey { get; set; } = string.Empty;
     /// <summary>First few characters of the raw key, for identification in lists.</summary>
     public string Prefix { get; set; } = string.Empty;
-    public OrbitRole Role { get; set; } = OrbitRole.Member;
-    /// <summary>Required when Role is DepartmentAdmin or Member.</summary>
+    /// <summary>The role the key acts with (spec §6.5, §8): its grants apply to every tool call exactly as to a user in that role.</summary>
+    public Guid RoleId { get; set; }
+    public ApplicationRole Role { get; set; } = null!;
+    /// <summary>Required when the role has any grant at Department scope; otherwise the key's default department for new work.</summary>
     public Guid? DepartmentId { get; set; }
     public Department? Department { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

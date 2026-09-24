@@ -21,7 +21,7 @@ public class CreateModel(
     {
         var actor = await actors.GetAsync(ct);
         Form.ProjectId = projectId;
-        // Defaults to the project's department; a System Admin can change that on the form (§6.2.1).
+        // Defaults to the project's department; someone with tasks.create everywhere can change that on the form (§6.2.1).
         Form.DepartmentId = projectId is Guid pid
             ? await projects.GetDepartmentIdAsync(pid, ct) ?? actor.DepartmentId
             : actor.DepartmentId;
@@ -31,7 +31,7 @@ public class CreateModel(
     public async Task<IActionResult> OnPostAsync(CancellationToken ct)
     {
         var actor = await actors.GetAsync(ct);
-        if (!actor.IsSystemAdmin) Form.DepartmentId = actor.DepartmentId;
+        if (!actor.CanAnywhere(Permission.TasksCreate)) Form.DepartmentId = actor.DepartmentId;
         if (ModelState.IsValid)
         {
             try

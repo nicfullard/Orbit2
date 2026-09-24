@@ -1,5 +1,6 @@
 @using Microsoft.AspNetCore.Identity
 @inject SignInManager<ApplicationUser> SignInManager
+@inject IActorProvider Actors
 
 <ul class="navbar-nav align-items-lg-center">
     <li class="nav-item">
@@ -15,10 +16,12 @@
 @if (SignInManager.IsSignedIn(User))
 {
     var displayName = User.FindFirst(OrbitClaims.DisplayName)?.Value ?? User.Identity?.Name;
-    var role = User.IsInRole(Roles.SystemAdmin) ? "System Admin" : User.IsInRole(Roles.DepartmentAdmin) ? "Department Admin" : "Member";
+    // The role name comes from the database (the actor), not the cookie, so a rename or reassignment shows at once.
+    RoleRef? role = null;
+    try { role = (await Actors.GetAsync()).Role; } catch (ForbiddenException) { }
     <li class="nav-item">
         <a class="nav-link" asp-area="Identity" asp-page="/Account/Manage/Index" title="Manage account">
-            @displayName <span class="badge text-bg-secondary ms-1">@role</span>
+            @displayName @if (role is not null) { <span class="badge @Ui.RoleBadge(role) ms-1">@role.Name</span> }
         </a>
     </li>
     <li class="nav-item">

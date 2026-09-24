@@ -5,7 +5,7 @@ using Orbit.Data.Entities;
 
 namespace Orbit.Application.Services;
 
-/// <summary>Company-wide sprints. Reading is open to every signed-in user; create/start/complete is System Admin only.</summary>
+/// <summary>Company-wide sprints. The list is open to every signed-in user; the tasks inside a sprint follow tasks.view; create/start/complete needs sprints.manage.</summary>
 public sealed class SprintService(ApplicationDbContext db, IActorProvider actors, AuditService audit)
 {
     public async Task<IReadOnlyList<SprintListItem>> ListAsync(CancellationToken ct = default)
@@ -43,17 +43,16 @@ public sealed class SprintService(ApplicationDbContext db, IActorProvider actors
             .OrderBy(s => s.Status == SprintStatus.Active ? 0 : 1).ThenBy(s => s.StartDate).ToListAsync(ct);
     }
 
+    /// <summary>The sprint with the tasks in it that the caller may see (tasks.view, §6.5).</summary>
     public async Task<Sprint> GetAsync(Guid id, CancellationToken ct = default)
     {
-        await actors.GetAsync(ct);
-        return await db.Sprints.AsNoTracking()
-            .Include(s => s.Tasks).ThenInclude(t => t.Department)
-            .Include(s => s.Tasks).ThenInclude(t => t.Project)
-            .Include(s => s.Tasks).ThenInclude(t => t.Assignee)
-            .Include(s => s.Tasks).ThenInclude(t => t.ParentTask)
-            .AsSplitQuery()
-            .FirstOrDefaultAsync(s => s.Id == id, ct)
+        var actor = await actors.GetAsync(ct);
+        var sprint = await db.Sprints.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct)
             ?? throw new NotFoundException("Sprint not found.");
+        sprint.Tasks = await Scoping.Tasks(db.Tasks.AsNoTracking().Where(t => t.SprintId == id), actor)
+            .Include(t => t.Department).Include(t => t.Project).Include(t => t.Assignee).Include(t => t.ParentTask)
+            .ToListAsync(ct);
+        return sprint;
     }
 
     public async Task<Sprint?> GetActiveAsync(CancellationToken ct = default)
@@ -192,7 +191,7 @@ public sealed class SprintService(ApplicationDbContext db, IActorProvider actors
     private async Task<Actor> RequireSprintManagerAsync(CancellationToken ct)
     {
         var actor = await actors.GetAsync(ct);
-        AccessPolicy.Require(AccessPolicy.CanManageSprints(actor), "Only a System Admin can manage sprints.");
+        AccessPolicy.Require(AccessPolicy.CanManageSprints(actor), "You don't have permission to manage sprints.");
         return actor;
     }
 

@@ -28,7 +28,7 @@
                 <option value="@o.Value" data-department="@o.DepartmentId" selected="@o.Selected">@o.Text</option>
             }
         </select>
-        @if (Model.Actor.IsSystemAdmin)
+        @if (Model.CanChooseDepartment)
         {
             <div class="form-text">Choosing a project sets the department to the project's own; change it below to file the task for another department.</div>
         }
@@ -37,7 +37,7 @@
             <div class="form-text">A task on a project belongs to that project's department.</div>
         }
     </div>
-    @if (Model.Actor.IsSystemAdmin)
+    @if (Model.CanChooseDepartment)
     {
         <div class="col-md-6">
             <label class="form-label" for="Form_DepartmentId">Department</label>
@@ -75,9 +75,9 @@
                 <option value="@o.Value" data-department="@o.DepartmentId" selected="@o.Selected">@o.Text</option>
             }
         </select>
-        @if (Model.Actor.IsSystemAdmin)
+        @if (Model.CanChooseDepartment)
         {
-            <div class="form-text">Must belong to the task's department (System Admins can be assigned anywhere).</div>
+            <div class="form-text">Must belong to the task's department (people whose role sees every department can be assigned anywhere).</div>
         }
     </div>
     <div class="col-md-3">

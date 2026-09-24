@@ -35,7 +35,7 @@ public class IndexModel(ProjectService projects, DepartmentService departments, 
             return LocalRedirect(Request.Path + remembered);
 
         Projects = await projects.ListAsync(Filter, ct);
-        if (Actor.IsSystemAdmin)
+        if (Actor.CanAnywhere(Permission.ProjectsView))
             DepartmentItems = (await departments.ListAsync(true, ct))
                 .Select(d => new SelectListItem(d.Name, d.Id.ToString(), d.Id == Filter.DepartmentId)).ToList();
         return Page();

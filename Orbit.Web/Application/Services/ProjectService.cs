@@ -8,17 +8,15 @@ namespace Orbit.Application.Services;
 public sealed class ProjectService(NumberingService numbering, ApplicationDbContext db, IActorProvider actors, AuditService audit)
 {
     /// <summary>
-    /// Projects the caller may see: every project for a System Admin; otherwise the caller's own department's
-    /// projects plus any project from another department that has tasks filed in the caller's department (§6.2.1).
+    /// Projects the caller may see (projects.view, §6.5): every project at All; at Department the caller's own department's
+    /// projects plus any project from another department that has tasks filed in the caller's department (§6.2.1); at Own the ones they own.
     /// </summary>
     public async Task<IReadOnlyList<ProjectListItem>> ListAsync(ProjectFilter f, CancellationToken ct = default)
     {
         var actor = await actors.GetAsync(ct);
-        var q = db.Projects.AsNoTracking().Include(p => p.Department).Include(p => p.Owner).AsQueryable();
+        var q = Scoping.Projects(db.Projects.AsNoTracking().Include(p => p.Department).Include(p => p.Owner), actor);
 
-        if (!actor.IsSystemAdmin)
-            q = q.Where(p => p.DepartmentId == actor.DepartmentId || p.Tasks.Any(t => t.DepartmentId == actor.DepartmentId));
-        else if (f.DepartmentId is Guid dept)
+        if (f.DepartmentId is Guid dept)
             q = q.Where(p => p.DepartmentId == dept);
 
         if (f.Status is ProjectStatus status)
@@ -44,17 +42,16 @@ public sealed class ProjectService(NumberingService numbering, ApplicationDbCont
     }
 
     /// <summary>
-    /// Projects the caller may file tasks under (for pickers): any open project for a System Admin, otherwise the
-    /// caller's own department's. <paramref name="includeProjectId"/> adds one specific project regardless, so an
-    /// edit form can keep a task on the project it is already on (e.g. a cross-department task, §6.2.1).
+    /// Open projects within the caller's projects.view scope, for pickers - without the read-only shared ones (§6.2.1),
+    /// which a task can't be filed under anyway. <paramref name="includeProjectId"/> adds one specific project regardless,
+    /// so an edit form can keep a task on the project it is already on (e.g. a cross-department task).
     /// </summary>
     public async Task<IReadOnlyList<Project>> ListOpenForPickerAsync(Guid? departmentId = null, Guid? includeProjectId = null, CancellationToken ct = default)
     {
         var actor = await actors.GetAsync(ct);
-        var q = db.Projects.AsNoTracking().Include(p => p.Department)
-            .Where(p => p.Status != ProjectStatus.Archived);
-        if (!actor.IsSystemAdmin) q = q.Where(p => p.DepartmentId == actor.DepartmentId);
-        else if (departmentId is Guid d) q = q.Where(p => p.DepartmentId == d);
+        var q = Scoping.Projects(db.Projects.AsNoTracking().Include(p => p.Department)
+            .Where(p => p.Status != ProjectStatus.Archived), actor, includeShared: false);
+        if (departmentId is Guid d) q = q.Where(p => p.DepartmentId == d);
         var list = await q.OrderBy(p => p.Department.Name).ThenBy(p => p.Name).ToListAsync(ct);
         if (includeProjectId is Guid keep && list.All(p => p.Id != keep))
         {
@@ -73,8 +70,8 @@ public sealed class ProjectService(NumberingService numbering, ApplicationDbCont
     }
 
     /// <summary>
-    /// Project detail with all of its tasks. Visible to the project's department, to a System Admin, and (read-only)
-    /// to any department that has tasks filed under it. Tasks from other departments are listed but the per-task
+    /// Project detail with all of its tasks. Visible to whoever may view the project (§6.5) and, read-only, to any
+    /// department that has tasks filed under it. Tasks from other departments are listed but the per-task
     /// rules (<see cref="AccessPolicy.CanViewTask"/> etc.) still decide what the caller can open or change.
     /// </summary>
     public async Task<Project> GetAsync(Guid id, CancellationToken ct = default)
@@ -143,8 +140,8 @@ public sealed class ProjectService(NumberingService numbering, ApplicationDbCont
         var actor = await actors.GetAsync(ct);
         var name = RequireName(input.Name);
         var departmentId = input.DepartmentId ?? actor.DepartmentId
-            ?? throw new ValidationException("A department is required (System Admins aren't scoped to one, so choose it explicitly).");
-        AccessPolicy.Require(actor.CanAccessDepartment(departmentId), "You can only create projects in your own department.");
+            ?? throw new ValidationException("A department is required (your role isn't scoped to one, so choose it explicitly).");
+        AccessPolicy.Require(AccessPolicy.CanCreateProjectIn(actor, departmentId), "You don't have permission to create projects in this department.");
         var dept = await db.Departments.AsNoTracking().FirstOrDefaultAsync(d => d.Id == departmentId, ct)
             ?? throw new NotFoundException("Department not found.");
         if (dept.IsArchived) throw new ValidationException($"Department \"{dept.Name}\" is archived.");
@@ -181,13 +178,13 @@ public sealed class ProjectService(NumberingService numbering, ApplicationDbCont
             .FirstOrDefaultAsync(p => p.Id == id, ct)
             ?? throw new NotFoundException("Project not found.");
         AccessPolicy.Require(AccessPolicy.CanViewProject(actor, project), "This project belongs to another department.");
-        AccessPolicy.Require(AccessPolicy.CanEditProject(actor, project), "Members can only edit projects they own.");
+        AccessPolicy.Require(AccessPolicy.CanEditProject(actor, project), "You don't have permission to edit this project.");
 
         var name = RequireName(input.Name);
         var departmentId = input.DepartmentId ?? project.DepartmentId;
         if (departmentId != project.DepartmentId)
         {
-            AccessPolicy.Require(actor.IsSystemAdmin, "Only a System Admin can move a project to another department.");
+            AccessPolicy.Require(AccessPolicy.CanMoveProject(actor), "Moving a project to another department needs the Edit projects permission for all departments.");
             var dept = await db.Departments.AsNoTracking().FirstOrDefaultAsync(d => d.Id == departmentId, ct)
                 ?? throw new NotFoundException("Department not found.");
             if (dept.IsArchived) throw new ValidationException($"Department \"{dept.Name}\" is archived.");
@@ -242,7 +239,7 @@ public sealed class ProjectService(NumberingService numbering, ApplicationDbCont
         var project = await db.Projects.FirstOrDefaultAsync(p => p.Id == id, ct)
             ?? throw new NotFoundException("Project not found.");
         AccessPolicy.Require(AccessPolicy.CanViewProject(actor, project), "This project belongs to another department.");
-        AccessPolicy.Require(AccessPolicy.CanEditProject(actor, project), "Members can only archive projects they own.");
+        AccessPolicy.Require(AccessPolicy.CanEditProject(actor, project), "You don't have permission to archive this project.");
         if (project.Status == ProjectStatus.Archived) return;
 
         var previous = project.Status;
@@ -283,9 +280,8 @@ public sealed class ProjectService(NumberingService numbering, ApplicationDbCont
         if (!owner.IsActive) throw new ValidationException("The owner must be an active user.");
         if (owner.IsSystemAccount) return; // API-created projects default to the Claude agent as owner.
         if (owner.DepartmentId == departmentId) return;
-        var isSystemAdmin = await db.UserRoles.Where(ur => ur.UserId == ownerId)
-            .Join(db.Roles, ur => ur.RoleId, r => r.Id, (ur, r) => r.Name)
-            .AnyAsync(n => n == Roles.SystemAdmin, ct);
-        if (!isSystemAdmin) throw new ValidationException("The owner must belong to the project's department.");
+        // Like an assignee (§6.5): someone whose role sees tasks everywhere may own a project in any department.
+        if (!await RoleResolver.HasScopeAsync(db, ownerId, Permission.TasksView, PermissionScope.All, ct))
+            throw new ValidationException("The owner must belong to the project's department.");
     }
 }

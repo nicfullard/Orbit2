@@ -9,9 +9,9 @@ namespace Orbit.Auth;
 /// <summary>Adds Orbit's display-name / department / actor-type claims to the Identity cookie.</summary>
 public sealed class OrbitClaimsPrincipalFactory(
     UserManager<ApplicationUser> userManager,
-    RoleManager<IdentityRole<Guid>> roleManager,
+    RoleManager<ApplicationRole> roleManager,
     IOptions<IdentityOptions> options)
-    : UserClaimsPrincipalFactory<ApplicationUser, IdentityRole<Guid>>(userManager, roleManager, options)
+    : UserClaimsPrincipalFactory<ApplicationUser, ApplicationRole>(userManager, roleManager, options)
 {
     protected override async Task<ClaimsIdentity> GenerateClaimsAsync(ApplicationUser user)
     {

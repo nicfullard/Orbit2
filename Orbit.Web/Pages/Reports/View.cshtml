@@ -33,13 +33,16 @@
                 <label class="form-label small mb-0">To</label>
                 <input type="date" class="form-control form-control-sm" name="to" value="@Model.To?.ToString("yyyy-MM-dd")" />
             </div>
-            <div class="col-sm-6 col-lg-3">
-                <label class="form-label small mb-0">Department</label>
-                <select class="form-select form-select-sm" name="departmentId">
-                    <option value="">All</option>
-                    @foreach (var i in Model.DepartmentItems) { <option value="@i.Value" selected="@i.Selected">@i.Text</option> }
-                </select>
-            </div>
+            @if (Model.CanChooseDepartment)
+            {
+                <div class="col-sm-6 col-lg-3">
+                    <label class="form-label small mb-0">Department</label>
+                    <select class="form-select form-select-sm" name="departmentId">
+                        <option value="">All</option>
+                        @foreach (var i in Model.DepartmentItems) { <option value="@i.Value" selected="@i.Selected">@i.Text</option> }
+                    </select>
+                </div>
+            }
             <div class="col-sm-6 col-lg-3">
                 <label class="form-label small mb-0">Project</label>
                 <select class="form-select form-select-sm" name="projectId">

@@ -2,7 +2,6 @@
 @model Orbit.Pages.Admin.Users.CreateModel
 @{
     ViewData["Title"] = "Create user";
-    var roleItems = Ui.EnumItems<OrbitRole>(Model.Form.Role, null, r => r.Label());
     var authItems = Ui.EnumItems<AuthSource>(Model.Form.AuthSource, null, a => a.Label());
 }
 
@@ -28,13 +27,19 @@
                     <input class="form-control" id="Form_DisplayName" name="Form.DisplayName" value="@Model.Form.DisplayName" maxlength="200" required />
                 </div>
                 <div class="col-md-4">
-                    <label class="form-label" for="Form_Role">Role</label>
-                    <select class="form-select" id="Form_Role" name="Form.Role" asp-items="roleItems"></select>
+                    <label class="form-label" for="Form_RoleId">Role</label>
+                    <select class="form-select js-role-select" id="Form_RoleId" name="Form.RoleId" data-department-target="#Form_DepartmentId" data-department-hint="#departmentHint">
+                        @foreach (var r in Model.RoleItems)
+                        {
+                            <option value="@r.Id" data-requires-department="@(r.RequiresDepartment ? "true" : "false")" title="@r.Description" selected="@(r.Id == Model.Form.RoleId)">@r.Name</option>
+                        }
+                    </select>
+                    <div class="form-text">What the user may do: <a asp-page="/Admin/Roles/Index">Admin &gt; Roles</a>.</div>
                 </div>
                 <div class="col-md-8">
                     <label class="form-label" for="Form_DepartmentId">Department</label>
                     <select class="form-select" id="Form_DepartmentId" name="Form.DepartmentId" asp-items="Model.DepartmentItems"></select>
-                    <div class="form-text">Required for Members and Department Admins.</div>
+                    <div class="form-text" id="departmentHint">Required for a role with permissions scoped to a department.</div>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label" for="Form_AuthSource">Sign-in method</label>

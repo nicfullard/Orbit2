@@ -6,9 +6,9 @@
     var actor = d.Actor;
     var returnUrl = "/";
     var sprintPct = d.SprintTotal == 0 ? 0 : (int)Math.Round(d.SprintDone * 100.0 / d.SprintTotal);
-    var openVm = new TaskRowsVm { Tasks = d.OpenTasks, Actor = actor, ReturnUrl = returnUrl, ShowDepartment = actor.IsSystemAdmin, EmptyMessage = "Nothing open. Nice.", Today = d.Today };
+    var openVm = new TaskRowsVm { Tasks = d.OpenTasks, Actor = actor, ReturnUrl = returnUrl, ShowDepartment = d.IsCompanyTier, EmptyMessage = "Nothing open. Nice.", Today = d.Today };
     var myVm = new TaskRowsVm { Tasks = d.MyOpenTasks, Actor = actor, ReturnUrl = returnUrl, ShowDepartment = false, ShowAssignee = false, EmptyMessage = "No tasks assigned to you.", Today = d.Today };
-    var sprintVm = new TaskRowsVm { Tasks = d.SprintTasks, Actor = actor, ReturnUrl = returnUrl, ShowDepartment = actor.IsSystemAdmin, EmptyMessage = actor.IsMember ? "None of your tasks are in this sprint." : "No tasks in this sprint yet.", Today = d.Today };
+    var sprintVm = new TaskRowsVm { Tasks = d.SprintTasks, Actor = actor, ReturnUrl = returnUrl, ShowDepartment = d.IsCompanyTier, EmptyMessage = d.IsPersonalTier ? "None of your tasks are in this sprint." : "No tasks in this sprint yet.", Today = d.Today };
     var grabsVm = new TaskRowsVm { Tasks = d.UpForGrabs, Actor = actor, ReturnUrl = returnUrl, ShowDepartment = false, EmptyMessage = "Nothing unassigned in your department right now.", Today = d.Today };
 }
 
@@ -16,7 +16,7 @@
     <div>
         <h1 class="h3 mb-0">Welcome, @actor.DisplayName</h1>
         <div class="text-muted">
-            @actor.Role.Label()@(d.DepartmentName is not null ? $" · {d.DepartmentName}" : "") · @d.Today.ToString("dddd, d MMMM yyyy")
+            @actor.Role.Name@(d.DepartmentName is not null ? $" · {d.DepartmentName}" : "") · @d.Today.ToString("dddd, d MMMM yyyy")
         </div>
     </div>
     <div class="d-flex flex-wrap gap-2">
@@ -25,9 +25,12 @@
         <a class="btn btn-outline-secondary btn-sm" asp-page="/Tasks/My">My Tasks</a>
         <a class="btn btn-outline-secondary btn-sm" asp-page="/Backlog/Index">Backlog</a>
         <a class="btn btn-outline-secondary btn-sm" asp-page="/Projects/Index">All Projects</a>
-        @if (actor.IsSystemAdmin)
+        @if (AccessPolicy.CanViewReports(actor))
         {
             <a class="btn btn-outline-secondary btn-sm" asp-page="/Reports/Index">Reports</a>
+        }
+        @if (AccessPolicy.CanManageDepartments(actor))
+        {
             <a class="btn btn-outline-secondary btn-sm" asp-page="/Admin/Departments/Index">Departments</a>
         }
     </div>
@@ -51,7 +54,7 @@
     </div>
 </div>
 
-@if (actor.IsSystemAdmin && d.ByDepartment.Count > 0)
+@if (d.IsCompanyTier && d.ByDepartment.Count > 0)
 {
     <div class="card mb-3">
         <div class="card-header fw-semibold">By department</div>
@@ -86,7 +89,7 @@
             </div>
         </div>
 
-        @if (actor.IsMember)
+        @if (d.ShowUpForGrabs)
         {
             <div class="card mb-3">
                 <div class="card-header d-flex justify-content-between align-items-center">
@@ -99,7 +102,7 @@
             </div>
         }
 
-        @if (!actor.IsMember)
+        @if (d.ShowsOthersWork)
         {
             <div class="card mb-3">
                 <div class="card-header d-flex justify-content-between align-items-center">
@@ -138,7 +141,7 @@
                             <div class="progress"><div class="progress-bar bg-success" role="progressbar" style="width:@sprintPct%"></div></div>
                         </div>
                     </div>
-                    @if (actor.IsSystemAdmin && d.SprintByDepartment.Count > 0)
+                    @if (d.IsCompanyTier && d.SprintByDepartment.Count > 0)
                     {
                         <div class="d-flex flex-wrap gap-2 mb-2">
                             @foreach (var row in d.SprintByDepartment)
@@ -184,7 +187,7 @@
                     <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
                         <div class="text-truncate">
                             <a asp-page="/Tasks/Details" asp-route-id="@t.Id" class="text-decoration-none @(overdue ? "task-title-overdue" : "")">@t.Title</a>
-                            @if (!actor.IsMember && t.Assignee is not null)
+                            @if (d.ShowsOthersWork && t.Assignee is not null)
                             {
                                 <div class="small text-muted">@t.Assignee.DisplayName</div>
                             }
@@ -203,7 +206,7 @@
             <ul class="list-group list-group-flush">
                 @if (d.Projects.Count == 0)
                 {
-                    <li class="list-group-item text-muted fst-italic">No active projects@(actor.IsMember ? " with your tasks" : "").</li>
+                    <li class="list-group-item text-muted fst-italic">No active projects@(d.IsPersonalTier ? " with your tasks" : "").</li>
                 }
                 @foreach (var p in d.Projects)
                 {
@@ -212,7 +215,7 @@
                             <a asp-page="/Projects/Details" asp-route-id="@p.Project.Id" class="text-decoration-none text-truncate">@p.Project.Name</a>
                             <span class="small text-muted text-nowrap">@p.DoneTasks/@p.TotalTasks done</span>
                         </div>
-                        @if (actor.IsSystemAdmin)
+                        @if (d.IsCompanyTier)
                         {
                             <div class="small text-muted">@p.Project.Department.Name</div>
                         }
@@ -222,7 +225,7 @@
             </ul>
         </div>
 
-        @if (!actor.IsMember)
+        @if (d.ShowsOthersWork)
         {
             <div class="card mb-3">
                 <div class="card-header fw-semibold">Open tasks by assignee</div>
@@ -241,7 +244,7 @@
             <div class="card mb-3">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <span class="fw-semibold">Recent activity</span>
-                    @if (actor.IsSystemAdmin)
+                    @if (AccessPolicy.CanViewAuditLog(actor))
                     {
                         <a class="small" asp-page="/Admin/Activity/Index">All</a>
                     }

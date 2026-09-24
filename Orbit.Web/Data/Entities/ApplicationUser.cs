@@ -10,7 +10,7 @@ public class ApplicationUser : IdentityUser<Guid>
 {
     public string DisplayName { get; set; } = string.Empty;
 
-    /// <summary>Required for Member / DepartmentAdmin; null for SystemAdmin.</summary>
+    /// <summary>Required when the user's role has any grant at Department scope (spec §6.5); otherwise optional - a home department for defaults.</summary>
     public Guid? DepartmentId { get; set; }
     public Department? Department { get; set; }
 

@@ -32,13 +32,16 @@
                     }
                 </select>
             </div>
-            <div class="col-sm-6 col-lg-2">
-                <label class="form-label small mb-0">Department</label>
-                <select class="form-select form-select-sm" name="DepartmentId">
-                    <option value="">All</option>
-                    @foreach (var i in Model.DepartmentItems) { <option value="@i.Value" selected="@i.Selected">@i.Text</option> }
-                </select>
-            </div>
+            @if (Model.CanFilterDepartments)
+            {
+                <div class="col-sm-6 col-lg-2">
+                    <label class="form-label small mb-0">Department</label>
+                    <select class="form-select form-select-sm" name="DepartmentId">
+                        <option value="">All</option>
+                        @foreach (var i in Model.DepartmentItems) { <option value="@i.Value" selected="@i.Selected">@i.Text</option> }
+                    </select>
+                </div>
+            }
             <div class="col-auto">
                 <button class="btn btn-sm btn-outline-primary" type="submit">Filter</button>
                 <a class="btn btn-sm btn-link" asp-page="/Admin/Activity/Index">Reset</a>

@@ -25,7 +25,7 @@ public class IndexModel(
     public static readonly string[] RememberedFilters =
     [
         nameof(TaskFilter.Search), nameof(TaskFilter.DepartmentId), nameof(TaskFilter.ProjectId), nameof(TaskFilter.Priority),
-        nameof(TaskFilter.AssigneeId), nameof(TaskFilter.AllDepartments)
+        nameof(TaskFilter.AssigneeId)
     ];
     private const string MemoryKey = "backlog";
 
@@ -58,17 +58,16 @@ public class IndexModel(
         Waiting = await structure.GetWaitingAsync(Result.Items, ct);
         OpenSprints = await sprints.ListOpenAsync(ct);
 
-        var showAllDepartments = Actor.IsSystemAdmin || Filter.AllDepartments;
-        if (showAllDepartments)
+        if (Actor.CanAnywhere(Permission.TasksView))
         {
             DepartmentItems = (await departments.ListAsync(false, ct))
                 .Select(d => new SelectListItem(d.Name, d.Id.ToString(), d.Id == Filter.DepartmentId)).ToList();
         }
         ProjectItems = (await projects.ListOpenForPickerAsync(Filter.DepartmentId, ct: ct))
-            .Select(p => new SelectListItem(Actor.IsSystemAdmin ? $"{p.Department.Name} / {p.Name}" : p.Name, p.Id.ToString(), p.Id == Filter.ProjectId)).ToList();
-        var people = Actor.IsSystemAdmin
+            .Select(p => new SelectListItem(Actor.CanAnywhere(Permission.TasksView) ? $"{p.Department.Name} / {p.Name}" : p.Name, p.Id.ToString(), p.Id == Filter.ProjectId)).ToList();
+        var people = Actor.CanAnywhere(Permission.TasksView)
             ? await users.ListAsync(null, Filter.DepartmentId, false, ct)
-            : await users.GetAssignableAsync(Actor.DepartmentId!.Value, ct);
+            : Actor.DepartmentId is Guid ownDept ? await users.GetAssignableAsync(ownDept, ct) : [];
         AssigneeItems = people.Select(u => new SelectListItem(u.DisplayName, u.Id.ToString(), u.Id == Filter.AssigneeId)).ToList();
         return Page();
     }
@@ -94,7 +93,7 @@ public class IndexModel(
         }
         return RedirectToPage(new
         {
-            Filter.ProjectId, Filter.DepartmentId, Filter.Priority, Filter.AssigneeId, Filter.AllDepartments, Filter.Search
+            Filter.ProjectId, Filter.DepartmentId, Filter.Priority, Filter.AssigneeId, Filter.Search
         });
     }
 }

@@ -1,12 +1,5 @@
 namespace Orbit.Data.Entities;
 
-public enum OrbitRole
-{
-    Member,
-    DepartmentAdmin,
-    SystemAdmin
-}
-
 public enum ProjectStatus
 {
     Active,
@@ -115,15 +108,6 @@ public enum BufferStatus
     Red
 }
 
-public static class Roles
-{
-    public const string SystemAdmin = nameof(OrbitRole.SystemAdmin);
-    public const string DepartmentAdmin = nameof(OrbitRole.DepartmentAdmin);
-    public const string Member = nameof(OrbitRole.Member);
-
-    public static readonly string[] All = [SystemAdmin, DepartmentAdmin, Member];
-}
-
 public static class TaskStatusExtensions
 {
     public static bool IsClosed(this TaskItemStatus status) =>
@@ -139,13 +123,6 @@ public static class TaskStatusExtensions
     {
         ProjectStatus.OnHold => "On Hold",
         _ => status.ToString()
-    };
-
-    public static string Label(this OrbitRole role) => role switch
-    {
-        OrbitRole.SystemAdmin => "System Admin",
-        OrbitRole.DepartmentAdmin => "Department Admin",
-        _ => role.ToString()
     };
 
     public static string Label(this AuthSource source) => source switch

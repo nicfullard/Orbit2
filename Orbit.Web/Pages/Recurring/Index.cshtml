@@ -26,7 +26,7 @@
                         <tr>
                             <th>Title</th>
                             <th>Project</th>
-                            @if (Model.Actor.IsSystemAdmin) { <th>Department</th> }
+                            @if (Model.Actor.CanAnywhere(Permission.TasksView)) { <th>Department</th> }
                             <th>Rule</th>
                             <th>Next due</th>
                             <th>Lead</th>
@@ -42,7 +42,7 @@
                             <tr>
                                 <td><a asp-page="/Recurring/Details" asp-route-id="@d.Id" class="fw-semibold text-decoration-none">@d.Title</a></td>
                                 <td>@if (d.Project is not null) { <a asp-page="/Projects/Details" asp-route-id="@d.ProjectId" class="text-decoration-none">@d.Project.Name</a> } else { <span class="text-muted">-</span> }</td>
-                                @if (Model.Actor.IsSystemAdmin) { <td><span class="badge text-bg-light border">@d.Department.Name</span></td> }
+                                @if (Model.Actor.CanAnywhere(Permission.TasksView)) { <td><span class="badge text-bg-light border">@d.Department.Name</span></td> }
                                 <td><code>@d.RecurrenceRule</code></td>
                                 <td>@Ui.Day(d.NextRunDate)</td>
                                 <td>@d.LeadTimeDays d</td>

@@ -22,7 +22,7 @@ public class EditModel(
     {
         var actor = await actors.GetAsync(ct);
         Task = await tasks.GetAsync(id, ct);
-        AccessPolicy.Require(AccessPolicy.CanEditTask(actor, Task), "Members can only edit tasks they created or are assigned to.");
+        AccessPolicy.Require(AccessPolicy.CanEditTask(actor, Task), "You don't have permission to edit this task.");
         Form = TaskForm.From(Task);
         Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, structure, Form, Task.Id, ct);
         return Page();
@@ -32,7 +32,7 @@ public class EditModel(
     {
         var actor = await actors.GetAsync(ct);
         Task = await tasks.GetAsync(id, ct);
-        if (!actor.IsSystemAdmin) Form.DepartmentId = Task.DepartmentId;
+        if (!actor.CanAnywhere(Permission.TasksCreate)) Form.DepartmentId = Task.DepartmentId;
         if (ModelState.IsValid)
         {
             try

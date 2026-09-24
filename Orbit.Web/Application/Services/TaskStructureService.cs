@@ -119,19 +119,14 @@ public sealed class TaskStructureService(ApplicationDbContext db, IActorProvider
                 .OrderBy(t => t.Title).Take(500).ToListAsync(ct);
 
     /// <summary>
-    /// Options for the Parent task picker: open tasks the actor can see - everything for a System Admin, otherwise the
-    /// actor's department's tasks plus every task on that department's projects. The form filters them by project client-side.
+    /// Options for the Parent task picker: open tasks within the actor's tasks.view scope (§6.5). The form filters them by project client-side.
     /// </summary>
     public async Task<IReadOnlyList<ParentCandidate>> ListParentCandidatesAsync(Guid? excludeTaskId = null, CancellationToken ct = default)
     {
         var actor = await actors.GetAsync(ct);
         var q = db.Tasks.AsNoTracking()
             .Where(t => t.Status != TaskItemStatus.Done && t.Status != TaskItemStatus.Cancelled);
-        if (!actor.IsSystemAdmin)
-        {
-            var dept = actor.DepartmentId;
-            q = q.Where(t => t.DepartmentId == dept || (t.Project != null && t.Project.DepartmentId == dept));
-        }
+        q = Scoping.Tasks(q, actor);
         if (excludeTaskId is Guid exclude) q = q.Where(t => t.Id != exclude && t.ParentTaskId != exclude);
         var rows = await q
             .OrderBy(t => t.Project == null ? 1 : 0).ThenBy(t => t.Project!.Name).ThenBy(t => t.Title)

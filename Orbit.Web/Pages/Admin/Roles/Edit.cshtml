@@ -1,0 +1,68 @@
+@page "{id:guid}"
+@using Orbit.Pages.Admin.Roles
+@model Orbit.Pages.Admin.Roles.EditModel
+@{
+    var r = Model.Role;
+    ViewData["Title"] = r.Role.Name;
+    var builtIn = r.Role.IsBuiltIn;
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Admin/Roles/Index">Roles</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@r.Role.Name</li>
+    </ol>
+</nav>
+
+<div class="d-flex flex-wrap justify-content-between align-items-start mb-3 gap-2">
+    <div>
+        <h1 class="h3 mb-1">@r.Role.Name <span class="badge @Ui.RoleBadge(r.Ref) fs-6 align-middle">@(builtIn ? "Built-in" : r.Ref.ReachesEverywhere ? "Company-wide" : "Department")</span></h1>
+        <div class="text-muted">@r.UserCount user(s) and @r.KeyCount API key(s) have this role.</div>
+    </div>
+    @if (!builtIn)
+    {
+        <form method="post" asp-page-handler="Delete" asp-route-id="@r.Role.Id" data-confirm="Delete this role? This can't be undone.">
+            <button class="btn btn-outline-danger btn-sm" type="submit" @(Model.InUse ? "disabled" : "") title="@(Model.InUse ? "Move its users and API keys to another role first." : "Delete this role")">Delete</button>
+        </form>
+    }
+</div>
+
+@if (builtIn)
+{
+    <div asp-validation-summary="ModelOnly" class="text-danger mb-2"></div>
+    <div class="alert alert-info">
+        The built-in <strong>@r.Role.Name</strong> role always holds every permission for all departments, including permissions added by later versions of Orbit.
+        It can't be edited or deleted, and only its members may manage users, roles and API keys.
+    </div>
+    <partial name="_RoleFormFields" model="new RoleFormView(Model.Form, true, PermissionCatalog.AllAtScopeAll)" />
+    <a class="btn btn-outline-secondary" asp-page="/Admin/Roles/Index">Back</a>
+}
+else
+{
+    <form method="post" asp-route-id="@r.Role.Id" style="max-width:64rem">
+        <div asp-validation-summary="ModelOnly" class="text-danger mb-2"></div>
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label" for="Form_Name">Name</label>
+                        <input class="form-control" id="Form_Name" name="Form.Name" value="@Model.Form.Name" maxlength="100" required />
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label" for="Form_Description">Description</label>
+                        <input class="form-control" id="Form_Description" name="Form.Description" value="@Model.Form.Description" maxlength="500" />
+                    </div>
+                </div>
+                <div class="form-text mt-2">
+                    A grant at a scope covers the narrower ones: <strong>Own</strong> is the user's own tasks (assigned to or created by them), projects they own and their own time;
+                    <strong>Department</strong> is everything in their department; <strong>All departments</strong> is company-wide. Changes apply to everyone in the role from their next request.
+                </div>
+            </div>
+        </div>
+        <partial name="_RoleFormFields" model="new RoleFormView(Model.Form, false)" />
+        <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">Save</button>
+            <a class="btn btn-outline-secondary" asp-page="/Admin/Roles/Index">Back</a>
+        </div>
+    </form>
+}

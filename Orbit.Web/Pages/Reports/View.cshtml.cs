@@ -1,12 +1,13 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
+using Orbit.Application;
 using Orbit.Application.Models;
 using Orbit.Application.Services;
 using Orbit.Reporting;
 
 namespace Orbit.Pages.Reports;
 
-public class ViewModel(ReportingService reporting, ProjectService projects, DepartmentService departments) : OrbitPageModel
+public class ViewModel(ReportingService reporting, ProjectService projects, DepartmentService departments, IActorProvider actors) : OrbitPageModel
 {
     [BindProperty(SupportsGet = true)] public ReportKind Kind { get; set; }
     [BindProperty(SupportsGet = true)] public DateOnly? From { get; set; }
@@ -14,6 +15,8 @@ public class ViewModel(ReportingService reporting, ProjectService projects, Depa
     [BindProperty(SupportsGet = true)] public Guid? ProjectId { get; set; }
     [BindProperty(SupportsGet = true)] public Guid? DepartmentId { get; set; }
 
+    /// <summary>reports.view at Department scope fixes the department to the viewer's own (§6.5): the picker is hidden.</summary>
+    public bool CanChooseDepartment { get; private set; }
     public ReportDefinition Definition { get; private set; } = null!;
     public IReadOnlyList<PersonCountRow>? CountRows { get; private set; }
     public MeanTimeReport? MeanTime { get; private set; }
@@ -26,8 +29,9 @@ public class ViewModel(ReportingService reporting, ProjectService projects, Depa
         await RunAsync(ct);
         ProjectItems = (await projects.ListOpenForPickerAsync(ct: ct))
             .Select(p => new SelectListItem($"{p.Department.Name} / {p.Name}", p.Id.ToString(), p.Id == ProjectId)).ToList();
-        DepartmentItems = (await departments.ListAsync(true, ct))
-            .Select(d => new SelectListItem(d.Name, d.Id.ToString(), d.Id == DepartmentId)).ToList();
+        if (CanChooseDepartment)
+            DepartmentItems = (await departments.ListAsync(true, ct))
+                .Select(d => new SelectListItem(d.Name, d.Id.ToString(), d.Id == DepartmentId)).ToList();
     }
 
     public async Task<IActionResult> OnGetPdfAsync(CancellationToken ct)
@@ -52,6 +56,10 @@ public class ViewModel(ReportingService reporting, ProjectService projects, Depa
 
     private async Task RunAsync(CancellationToken ct)
     {
+        var actor = await actors.GetAsync(ct);
+        var restricted = ReportingService.RestrictedDepartment(actor);
+        CanChooseDepartment = restricted is null;
+        if (restricted is Guid r) DepartmentId = r == Guid.Empty ? null : r; // the service enforces it either way
         Definition = ReportCatalog.Get(Kind);
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         To ??= today;

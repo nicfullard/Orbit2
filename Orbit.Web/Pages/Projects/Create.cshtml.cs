@@ -15,13 +15,13 @@ public class CreateModel(ProjectService projects, DepartmentService departments,
         var actor = await actors.GetAsync(ct);
         Form.DepartmentId = actor.DepartmentId;
         Form.OwnerId = actor.UserId;
-        Lookups = await ProjectFormLookups.BuildAsync(actor, departments, users, Form, ct);
+        Lookups = await ProjectFormLookups.BuildAsync(actor, departments, users, Form, actor.CanAnywhere(Permission.ProjectsCreate), ct);
     }
 
     public async Task<IActionResult> OnPostAsync(CancellationToken ct)
     {
         var actor = await actors.GetAsync(ct);
-        if (!actor.IsSystemAdmin) Form.DepartmentId = actor.DepartmentId;
+        if (!actor.CanAnywhere(Permission.ProjectsCreate)) Form.DepartmentId = actor.DepartmentId;
         if (ModelState.IsValid)
         {
             try
@@ -35,7 +35,7 @@ public class CreateModel(ProjectService projects, DepartmentService departments,
                 ModelState.AddModelError(string.Empty, ex.Message);
             }
         }
-        Lookups = await ProjectFormLookups.BuildAsync(actor, departments, users, Form, ct);
+        Lookups = await ProjectFormLookups.BuildAsync(actor, departments, users, Form, actor.CanAnywhere(Permission.ProjectsCreate), ct);
         return Page();
     }
 }

@@ -28,6 +28,10 @@ public sealed class AuditService(ApplicationDbContext db, IActorProvider actors)
         return log;
     }
 
+    /// <summary>
+    /// The log within the caller's audit.view scope (§6.5). One task's or project's own activity is instead open to
+    /// whoever may see that task or project, since it is part of viewing it (the task page, get_task callers).
+    /// </summary>
     public async Task<PagedResult<AuditLog>> ListAsync(AuditFilter filter, CancellationToken ct = default)
     {
         var actor = await actors.GetAsync(ct);
@@ -36,10 +40,12 @@ public sealed class AuditService(ApplicationDbContext db, IActorProvider actors)
 
         var q = db.AuditLogs.AsNoTracking().Where(a => a.Timestamp >= from && a.Timestamp <= to);
 
-        if (!actor.IsSystemAdmin)
-            q = q.Where(a => a.DepartmentId == actor.DepartmentId);
-        else if (filter.DepartmentId is Guid dept)
-            q = q.Where(a => a.DepartmentId == dept);
+        if (!(filter.EntityId is Guid id && await CanViewEntityAsync(actor, id, ct)))
+        {
+            q = Scoping.Audit(q, actor);
+            if (filter.DepartmentId is Guid dept)
+                q = q.Where(a => a.DepartmentId == dept);
+        }
 
         if (!string.IsNullOrWhiteSpace(filter.EntityType))
             q = q.Where(a => a.EntityType == filter.EntityType);
@@ -52,6 +58,17 @@ public sealed class AuditService(ApplicationDbContext db, IActorProvider actors)
         var items = await q.OrderByDescending(a => a.Timestamp)
             .Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
         return new PagedResult<AuditLog>(items, page, pageSize, total);
+    }
+
+    /// <summary>A task or project the actor may see: its activity comes with it, whatever their audit.view scope.</summary>
+    private async Task<bool> CanViewEntityAsync(Actor actor, Guid entityId, CancellationToken ct)
+    {
+        var task = await db.Tasks.AsNoTracking().FirstOrDefaultAsync(t => t.Id == entityId, ct);
+        if (task is not null) return AccessPolicy.CanViewTask(actor, task);
+        var project = await db.Projects.AsNoTracking().FirstOrDefaultAsync(p => p.Id == entityId, ct);
+        if (project is null) return false;
+        var shared = actor.DepartmentId is Guid d && await db.Tasks.AnyAsync(t => t.ProjectId == project.Id && t.DepartmentId == d, ct);
+        return AccessPolicy.CanViewProject(actor, project, shared);
     }
 
     public static DateTime? AsUtc(DateTime? value) => value is null ? null

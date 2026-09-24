@@ -1,0 +1,41 @@
+@page
+@using Orbit.Pages.Admin.Roles
+@model Orbit.Pages.Admin.Roles.CreateModel
+@{
+    ViewData["Title"] = "New role";
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Admin/Roles/Index">Roles</a></li>
+        <li class="breadcrumb-item active" aria-current="page">New</li>
+    </ol>
+</nav>
+<h1 class="h3 mb-3">New role</h1>
+
+<form method="post" style="max-width:64rem">
+    <div asp-validation-summary="ModelOnly" class="text-danger mb-2"></div>
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label" for="Form_Name">Name</label>
+                    <input class="form-control" id="Form_Name" name="Form.Name" value="@Model.Form.Name" maxlength="100" required />
+                </div>
+                <div class="col-md-8">
+                    <label class="form-label" for="Form_Description">Description</label>
+                    <input class="form-control" id="Form_Description" name="Form.Description" value="@Model.Form.Description" maxlength="500" />
+                </div>
+            </div>
+            <div class="form-text mt-2">
+                A grant at a scope covers the narrower ones: <strong>Own</strong> is the user's own tasks (assigned to or created by them), projects they own and their own time;
+                <strong>Department</strong> is everything in their department; <strong>All departments</strong> is company-wide. A role with any grant at Department scope needs its users and keys to belong to a department.
+            </div>
+        </div>
+    </div>
+    <partial name="_RoleFormFields" model="new RoleFormView(Model.Form, false)" />
+    <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Create role</button>
+        <a class="btn btn-outline-secondary" asp-page="/Admin/Roles/Index">Cancel</a>
+    </div>
+</form>

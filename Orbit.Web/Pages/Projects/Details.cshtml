@@ -282,7 +282,7 @@
                 <tbody>
                     @foreach (var r in p.RecurringTaskDefinitions.OrderByDescending(x => x.Active).ThenBy(x => x.NextRunDate))
                     {
-                        var canOpen = Model.Actor.CanAccessDepartment(r.DepartmentId);
+                        var canOpen = AccessPolicy.CanViewRecurring(Model.Actor, r);
                         <tr>
                             <td>
                                 @if (canOpen)

@@ -115,6 +115,34 @@ document.addEventListener('DOMContentLoaded', function () {
   document.querySelectorAll('select.js-auth-source').forEach(orbitToggleLocalPassword);
 });
 
+// User and API key forms (Admin): a role with a permission at Department scope needs a department, so "(none)" is
+// withheld while such a role is chosen. The server checks regardless.
+function orbitApplyRoleDepartmentRule(select) {
+  var opt = select.options[select.selectedIndex];
+  var requires = !!opt && opt.dataset.requiresDepartment === 'true';
+  var dept = document.querySelector(select.dataset.departmentTarget || '#Form_DepartmentId');
+  if (!dept) return;
+  Array.prototype.forEach.call(dept.options, function (o) {
+    if (o.value) return;
+    o.hidden = requires;
+    o.disabled = requires;
+  });
+  dept.required = requires;
+  var hint = select.dataset.departmentHint ? document.querySelector(select.dataset.departmentHint) : null;
+  if (hint) {
+    hint.textContent = requires
+      ? 'Required: this role has permissions scoped to a department.'
+      : 'Optional for this role: a home department, used as the default for new work.';
+  }
+}
+document.addEventListener('change', function (e) {
+  var el = e.target;
+  if (el && el.classList && el.classList.contains('js-role-select')) orbitApplyRoleDepartmentRule(el);
+});
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('select.js-role-select').forEach(orbitApplyRoleDepartmentRule);
+});
+
 // Light / dark theme toggle (navbar icon). The chosen theme is stored in localStorage and re-applied by the
 // inline script in _Layout.cshtml before first paint; this just flips it and keeps the button's label current.
 (function () {

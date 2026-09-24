@@ -1,0 +1,69 @@
+@using Orbit.Pages.Admin.Roles
+@model RoleFormView
+@{
+    var index = new Dictionary<string, int>();
+    for (var i = 0; i < Model.Form.Grants.Count; i++)
+    {
+        if (Model.Form.Grants[i].Permission is string key) index[key] = i;
+    }
+    PermissionScope ScopeOf(string key)
+    {
+        if (Model.Fixed is not null) return Model.Fixed.GetValueOrDefault(key);
+        return index.TryGetValue(key, out var i) && Enum.TryParse<PermissionScope>(Model.Form.Grants[i].Scope, true, out var s) ? s : PermissionScope.None;
+    }
+}
+
+@foreach (var group in PermissionCatalog.Groups)
+{
+    <div class="card mb-3">
+        <div class="card-header fw-semibold">@group.Key</div>
+        <table class="table table-sm align-middle mb-0">
+            <thead class="table-light"><tr><th style="width:34%">Permission</th><th>Scope</th></tr></thead>
+            <tbody>
+                @foreach (var p in group)
+                {
+                    var current = ScopeOf(p.Key);
+                    <tr>
+                        <td>
+                            <div class="fw-semibold">@p.Label <code class="small text-muted fw-normal">@p.Key</code></div>
+                            <div class="small text-muted">@p.Description</div>
+                        </td>
+                        <td>
+                            @if (Model.ReadOnly)
+                            {
+                                <span class="badge @(current == PermissionScope.None ? "text-bg-light border" : "text-bg-success")">@current.Label()</span>
+                            }
+                            else if (p.SystemAdministratorOnly)
+                            {
+                                <span class="text-muted fst-italic" title="Reserved to the built-in role; it can't be granted to another role.">System Administrator only</span>
+                            }
+                            else if (index.TryGetValue(p.Key, out var i))
+                            {
+                                <input type="hidden" name="Form.Grants[@i].Permission" value="@p.Key" />
+                                @if (p.AllOnly)
+                                {
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="grant_@i" name="Form.Grants[@i].Scope" value="@PermissionScope.All" checked="@(current == PermissionScope.All)" />
+                                        <label class="form-check-label" for="grant_@i">Granted (company-wide)</label>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="d-flex flex-wrap gap-3">
+                                        @foreach (var s in new[] { PermissionScope.None }.Concat(p.AllowedScopes))
+                                        {
+                                            <div class="form-check form-check-inline m-0">
+                                                <input class="form-check-input" type="radio" id="grant_@(i)_@s" name="Form.Grants[@i].Scope" value="@s" checked="@(current == s)" />
+                                                <label class="form-check-label" for="grant_@(i)_@s">@s.Label()</label>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}

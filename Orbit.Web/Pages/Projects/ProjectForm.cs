@@ -35,24 +35,27 @@ public sealed class ProjectForm
 public sealed class ProjectFormLookups
 {
     public required Actor Actor { get; init; }
+    /// <summary>The department picker: creating anywhere on the create form, moving the project (projects.edit at All) on the edit form.</summary>
+    public bool CanChooseDepartment { get; init; }
     public IReadOnlyList<SelectListItem> Departments { get; init; } = [];
     public IReadOnlyList<SelectListItem> Owners { get; init; } = [];
 
-    public static async Task<ProjectFormLookups> BuildAsync(Actor actor, DepartmentService departments, UserDirectoryService users, ProjectForm form, CancellationToken ct)
+    public static async Task<ProjectFormLookups> BuildAsync(Actor actor, DepartmentService departments, UserDirectoryService users, ProjectForm form, bool canChooseDepartment, CancellationToken ct)
     {
         var deptItems = new List<SelectListItem>();
-        if (actor.IsSystemAdmin)
+        if (canChooseDepartment)
         {
             deptItems.Add(new SelectListItem("- choose -", string.Empty));
             deptItems.AddRange((await departments.ListAsync(false, ct))
                 .Select(d => new SelectListItem(d.Name, d.Id.ToString(), d.Id == form.DepartmentId)));
         }
-        var people = actor.IsSystemAdmin
+        var seesEverywhere = actor.CanAnywhere(Permission.TasksView);
+        var people = seesEverywhere
             ? await users.ListAsync(null, null, false, ct)
-            : await users.GetAssignableAsync(actor.DepartmentId!.Value, ct);
+            : actor.DepartmentId is Guid ownDept ? await users.GetAssignableAsync(ownDept, ct) : [];
         var owners = people.Select(u => new SelectListItem(
-            actor.IsSystemAdmin ? $"{u.DisplayName}{(u.DepartmentName is null ? " (System Admin)" : $" ({u.DepartmentName})")}" : u.DisplayName,
+            seesEverywhere ? $"{u.DisplayName} ({u.DepartmentName ?? u.Role.Name})" : u.DisplayName,
             u.Id.ToString(), u.Id == form.OwnerId)).ToList();
-        return new ProjectFormLookups { Actor = actor, Departments = deptItems, Owners = owners };
+        return new ProjectFormLookups { Actor = actor, CanChooseDepartment = canChooseDepartment, Departments = deptItems, Owners = owners };
     }
 }

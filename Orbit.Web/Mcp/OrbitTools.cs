@@ -14,7 +14,7 @@ namespace Orbit.Mcp;
 
 /// <summary>
 /// The MCP tool surface Claude connects to. Every tool delegates to the same application services the
-/// Razor Pages UI uses; the API key's role and department claims drive the same authorization rules.
+/// Razor Pages UI uses; the API key's role (its permissions and their scopes) and department drive the same authorization rules.
 /// Writes are stamped Source = Api and audited by the services.
 /// </summary>
 [McpServerToolType]
@@ -38,18 +38,18 @@ public sealed class OrbitTools(
     [McpServerTool(Name = "create_task"), Description(
         "Create a task in Orbit. The task lands directly in the backlog with Source = Api. " +
         "Department: defaults to the project's department when projectId is given, otherwise to departmentId, " +
-        "falling back to the API key's own department (a SystemAdmin key may have none, so pass departmentId for standalone tasks). " +
-        "A SystemAdmin key may pass a departmentId that differs from the project's to file a cross-department project task: " +
+        "falling back to the API key's own department (a key whose role isn't scoped to a department may have none, so pass departmentId for standalone tasks). " +
+        "A key whose Create tasks permission covers all departments may pass a departmentId that differs from the project's to file a cross-department project task: " +
         "the task then belongs to, and is worked by, that department while staying on the project. Other keys are rejected for that.")]
     public Task<string> CreateTask(
         [Description("Task title (required).")] string title,
         [Description("Longer description; markdown is fine.")] string? description = null,
         [Description("Project id (GUID) to file the task under. Optional - tasks can be standalone.")] string? projectId = null,
-        [Description("Department id (GUID) the task belongs to. With projectId it defaults to the project's department; a SystemAdmin key may pass another department to file a cross-department project task.")] string? departmentId = null,
+        [Description("Department id (GUID) the task belongs to. With projectId it defaults to the project's department; a key with Create tasks for all departments may pass another department to file a cross-department project task.")] string? departmentId = null,
         [Description("Low, Medium, High or Critical. Default Medium.")] string? priority = null,
         [Description("Meeting, Planning, Task, Training or Audit - what kind of work it is. Default Task.")] string? type = null,
         [Description("Due date as yyyy-MM-dd.")] string? dueDate = null,
-        [Description("Assignee user id (GUID). Must be an active user in the task's department (not necessarily the project's), or a SystemAdmin. Omit to leave unassigned.")] string? assigneeId = null,
+        [Description("Assignee user id (GUID). Must be an active user in the task's department (not necessarily the project's), or a user whose role sees tasks in every department. Omit to leave unassigned.")] string? assigneeId = null,
         [Description("Optional idempotency key. Retrying with the same key returns the already-created task instead of a duplicate.")] string? idempotencyKey = null,
         [Description("Planned start date as yyyy-MM-dd (not after the due date).")] string? startDate = null,
         [Description("Parent task id (GUID) to create this as a subtask. The parent must be on the same project (or, for a standalone task, be a standalone task in the same department) and still open.")] string? parentTaskId = null,
@@ -113,12 +113,12 @@ public sealed class OrbitTools(
     });
 
     [McpServerTool(Name = "list_tasks"), Description(
-        "List tasks with optional filters. Paginated. A Member/DepartmentAdmin key only ever sees its own " +
-        "department; a SystemAdmin key can filter by departmentId or omit it for all departments. " +
+        "List tasks with optional filters. Paginated. The key sees the tasks within its role's View tasks scope - its own tasks, " +
+        "its department, or every department; a key whose scope is all departments can filter by departmentId or omit it for all. " +
         "Pass plannedFor = \"today\" to see the team's day plan - the tasks picked in the morning scrum to work on today.")]
     public Task<string> ListTasks(
         [Description("Filter by project id (GUID).")] string? projectId = null,
-        [Description("Filter by department id (GUID). SystemAdmin keys only.")] string? departmentId = null,
+        [Description("Filter by department id (GUID). Only useful for a key that sees every department.")] string? departmentId = null,
         [Description("Todo, InProgress, Waiting, Blocked, Done or Cancelled.")] string? status = null,
         [Description("Filter by assignee user id (GUID).")] string? assigneeId = null,
         [Description("true = only tasks with no assignee - work nobody has picked up yet. Overrides assigneeId.")] bool? unassigned = null,
@@ -166,8 +166,8 @@ public sealed class OrbitTools(
         "Update any field of a task. Only the arguments you pass change; omit an argument to leave it as is. " +
         "Pass the literal string \"none\" to clear assigneeId, dueDate, startDate, parentTaskId, estimateMinutes, projectId, sprintId or plannedFor (sprintId \"none\" moves the task to the backlog; " +
         "plannedFor \"none\" takes it off the day plan, plannedFor \"today\" puts it on today's plan - closed tasks can't be planned). " +
-        "Member keys can only edit tasks they created or that are assigned to them; that covers every field, including setting status to Done or Cancelled. " +
-        "departmentId moves the task to another department (SystemAdmin keys only); if that differs from the project's department the task " +
+        "A key whose Edit tasks permission is scoped to Own can only edit tasks the Claude user created or is assigned; that covers every field, including setting status to Done or Cancelled. " +
+        "departmentId moves the task to another department (needs Edit tasks for that department); if that differs from the project's department the task " +
         "becomes a cross-department project task. Changing projectId without departmentId moves the task into the new project's department.")]
     public Task<string> UpdateTask(
         [Description("Task id (GUID), or task number such as T-26-00012.")] string taskId,
@@ -180,7 +180,7 @@ public sealed class OrbitTools(
         [Description("Due date yyyy-MM-dd, or \"none\" to clear.")] string? dueDate = null,
         [Description("Project id (GUID), or \"none\" to make the task standalone.")] string? projectId = null,
         [Description("Sprint id (GUID) to plan the task into, or \"none\" for the backlog.")] string? sprintId = null,
-        [Description("Department id (GUID) to move the task to. SystemAdmin keys only. Omit to keep the task's department (it only follows the project when projectId changes).")] string? departmentId = null,
+        [Description("Department id (GUID) to move the task to. Needs the Edit tasks permission for the target department. Omit to keep the task's department (it only follows the project when projectId changes).")] string? departmentId = null,
         [Description("Day-plan date yyyy-MM-dd, \"today\" to put the task on today's plan, or \"none\" to take it off. Anyone in the task's department may plan it; closed tasks can't be planned.")] string? plannedFor = null,
         [Description("Planned start date yyyy-MM-dd (not after the due date), or \"none\" to clear.")] string? startDate = null,
         [Description("Parent task id (GUID) to make this a subtask (same project, or same department for standalone tasks), or \"none\" to detach it. A status change gated by a dependency, or closing a parent with open subtasks, is rejected with the reason.")] string? parentTaskId = null,
@@ -348,7 +348,7 @@ public sealed class OrbitTools(
     // ------------------------------------------------------------- projects
 
     [McpServerTool(Name = "create_project"), Description(
-        "Create a project. departmentId defaults to the key's own department (required for a SystemAdmin key). " +
+        "Create a project. departmentId defaults to the key's own department (required for a key that has none). " +
         "ownerId defaults to the Claude agent user; pass a real user's id to make them accountable.")]
     public Task<string> CreateProject(
         [Description("Project name (required).")] string name,
@@ -376,7 +376,7 @@ public sealed class OrbitTools(
 
     [McpServerTool(Name = "get_project"), Description(
         "Get a project's detail including all of its tasks, each with its department. A project can hold tasks for several departments " +
-        "(crossDepartment = true). Visible to the project's department, to SystemAdmin keys, and to any department that has tasks filed under it; " +
+        "(crossDepartment = true). Visible within the key's View projects scope, and to any department that has tasks filed under it; " +
         "the key's department scoping still applies per task when you go on to get_task / update_task.")]
     public Task<string> GetProject(
         [Description("Project id (GUID), or project number such as P-26-00003.")] string projectId,
@@ -423,7 +423,7 @@ public sealed class OrbitTools(
         "List projects with open/total task counts. Same department scoping as list_tasks, plus other departments' projects that have " +
         "tasks filed for the key's department (shared, read-only). Archived projects are excluded unless includeArchived is true.")]
     public Task<string> ListProjects(
-        [Description("Filter by department id (GUID). SystemAdmin keys only.")] string? departmentId = null,
+        [Description("Filter by department id (GUID). Only useful for a key that sees every department.")] string? departmentId = null,
         [Description("Active, OnHold, Completed or Archived.")] string? status = null,
         [Description("Include archived projects.")] bool? includeArchived = null,
         [Description("Free-text search over the name.")] string? search = null,
@@ -452,7 +452,7 @@ public sealed class OrbitTools(
 
     [McpServerTool(Name = "update_project"), Description(
         "Edit a project: name, description, status, owner, target date, required project buffer. Only passed arguments change. " +
-        "Member keys can only edit projects owned by the Claude agent user; DepartmentAdmin keys any project in their department.")]
+        "A key whose Edit projects permission is scoped to Own can only edit projects owned by the Claude agent user; at Department scope, any project in its department.")]
     public Task<string> UpdateProject(
         [Description("Project id (GUID), or project number such as P-26-00003.")] string projectId,
         [Description("New name.")] string? name = null,
@@ -517,7 +517,8 @@ public sealed class OrbitTools(
 
     [McpServerTool(Name = "list_activity"), Description(
         "Read the audit log: every task/project/comment write, who or what made it, and when. " +
-        "Defaults to the last 24 hours when from/to are omitted. Scoped to the key's department unless SystemAdmin.")]
+        "Defaults to the last 24 hours when from/to are omitted. Needs the View activity log permission: the key's own department, or every department. " +
+        "One task's or project's own activity (entityId) is open to whoever may see that task or project.")]
     public Task<string> ListActivity(
         [Description("Start of the window, ISO 8601 date-time (UTC assumed if no offset). Default: now - 24h.")] string? from = null,
         [Description("End of the window, ISO 8601 date-time. Default: now.")] string? to = null,
@@ -545,11 +546,11 @@ public sealed class OrbitTools(
     });
 
     [McpServerTool(Name = "list_users"), Description(
-        "List users (id, displayName, email, role, departmentId). Optional name/email fragment filter, e.g. \"Bob\". " +
-        "A Member/DepartmentAdmin key sees only its own department's users; a SystemAdmin key can pass departmentId or omit it for everyone.")]
+        "List users (id, displayName, email, role, departmentId, canBeAssignedAnywhere). Optional name/email fragment filter, e.g. \"Bob\". " +
+        "A key that sees every department can pass departmentId or omit it for everyone; any other key sees only its own department's users.")]
     public Task<string> ListUsers(
         [Description("Name or email fragment to match (case-insensitive).")] string? query = null,
-        [Description("Filter by department id (GUID). SystemAdmin keys only.")] string? departmentId = null,
+        [Description("Filter by department id (GUID). Only useful for a key that sees every department.")] string? departmentId = null,
         CancellationToken ct = default) => Run(async () =>
     {
         var list = await users.ListAsync(query, ParseGuid(departmentId, "departmentId"), includeInactive: false, ct);
@@ -557,14 +558,14 @@ public sealed class OrbitTools(
         {
             items = list.Select(u => new
             {
-                id = u.Id, displayName = u.DisplayName, email = u.Email, role = u.Role,
-                departmentId = u.DepartmentId, department = u.DepartmentName
+                id = u.Id, displayName = u.DisplayName, email = u.Email, role = u.Role.Name,
+                departmentId = u.DepartmentId, department = u.DepartmentName, canBeAssignedAnywhere = u.CanViewAllTasks
             }).ToList(),
             totalCount = list.Count
         };
     });
 
-    [McpServerTool(Name = "list_departments"), Description("List all (non-archived) departments: id, name, description. Available to every role.")]
+    [McpServerTool(Name = "list_departments"), Description("List all (non-archived) departments: id, name, description. Available to every key.")]
     public Task<string> ListDepartments(CancellationToken ct = default) => Run(async () =>
     {
         var list = await departments.ListAsync(includeArchived: false, ct);

@@ -56,22 +56,21 @@ public class IndexModel(
         else if (Filter.ParentTaskId is null && FilterMemory.Recall(Request, MemoryKey, Actor.UserId) is string remembered)
             return LocalRedirect(Request.Path + remembered);
 
-        Filter.AllDepartments = false;
         Filter.BacklogOnly = false;
         Filter.PageSize = 50;
         Result = await tasks.ListAsync(Filter, ct);
         Waiting = await structure.GetWaitingAsync(Result.Items, ct);
 
-        if (Actor.IsSystemAdmin)
+        if (Actor.CanAnywhere(Permission.TasksView))
         {
             DepartmentItems = (await departments.ListAsync(true, ct))
                 .Select(d => new SelectListItem(d.Name, d.Id.ToString(), d.Id == Filter.DepartmentId)).ToList();
         }
         ProjectItems = (await projects.ListOpenForPickerAsync(Filter.DepartmentId, ct: ct))
-            .Select(p => new SelectListItem(Actor.IsSystemAdmin ? $"{p.Department.Name} / {p.Name}" : p.Name, p.Id.ToString(), p.Id == Filter.ProjectId)).ToList();
-        var people = Actor.IsSystemAdmin
+            .Select(p => new SelectListItem(Actor.CanAnywhere(Permission.TasksView) ? $"{p.Department.Name} / {p.Name}" : p.Name, p.Id.ToString(), p.Id == Filter.ProjectId)).ToList();
+        var people = Actor.CanAnywhere(Permission.TasksView)
             ? await users.ListAsync(null, Filter.DepartmentId, false, ct)
-            : await users.GetAssignableAsync(Actor.DepartmentId!.Value, ct);
+            : Actor.DepartmentId is Guid ownDept ? await users.GetAssignableAsync(ownDept, ct) : [];
         AssigneeItems = people.Select(u => new SelectListItem(u.DisplayName, u.Id.ToString(), u.Id == Filter.AssigneeId)).ToList();
         // The filter list may be narrowed to one department; the inline control needs candidates for every listed task.
         QuickEditAssignees = await users.GetQuickEditCandidatesAsync(ct);

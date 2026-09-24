@@ -28,11 +28,6 @@ public sealed class TaskFilter
     /// <summary>Only tasks on today's day plan (UTC date). Ignored when <see cref="PlannedFor"/> is set.</summary>
     public bool PlannedToday { get; set; }
     public string? Search { get; set; }
-    /// <summary>
-    /// Widen a backlog or sprint view to every department. Only honoured for those company-wide
-    /// planning views; the normal task list stays scoped to the caller's department.
-    /// </summary>
-    public bool AllDepartments { get; set; }
     public int Page { get; set; } = 1;
     public int PageSize { get; set; } = 50;
 }
@@ -46,7 +41,7 @@ public sealed class TaskInput
     /// <summary>
     /// The task's department. Null = the project's department when ProjectId is set (or, on update, the task's
     /// current department while it stays on the same project); otherwise the caller's own department.
-    /// A System Admin may pass a department other than the project's to file a cross-department project task (§6.2.1).
+    /// A caller with tasks.create everywhere may pass a department other than the project's to file a cross-department project task (§6.2.1).
     /// </summary>
     public Guid? DepartmentId { get; set; }
     public TaskPriority Priority { get; set; } = TaskPriority.Medium;

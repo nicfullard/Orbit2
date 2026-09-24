@@ -9,7 +9,7 @@ using Orbit.Data.Entities;
 namespace Orbit.Application.Services;
 
 /// <summary>
-/// System Admin management of on-premises Orbit Agents, plus the two operations an agent performs on itself
+/// Management of on-premises Orbit Agents (agents.manage), plus the two operations an agent performs on itself
 /// (redeeming its registration token, removing its own registration). See spec §6.14 and §8.2.
 /// </summary>
 public sealed class AgentService(
@@ -159,7 +159,7 @@ public sealed class AgentService(
     private async Task<Actor> RequireAdminAsync(CancellationToken ct)
     {
         var actor = await actors.GetAsync(ct);
-        AccessPolicy.Require(actor.IsSystemAdmin, "Only a System Admin can manage agents.");
+        AccessPolicy.Require(AccessPolicy.CanManageAgents(actor), "You don't have permission to manage agents.");
         return actor;
     }
 }

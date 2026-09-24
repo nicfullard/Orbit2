@@ -8,7 +8,7 @@ namespace Orbit.Application.Services;
 
 /// <summary>
 /// The organisation working calendar (spec §6.17): the working week, a single row that exists once saved, plus dated
-/// exceptions. Edited under Admin &gt; Working Calendar by a System Admin; read without an actor by the analysis,
+/// exceptions. Edited under Admin &gt; Working Calendar (calendar.manage); read without an actor by the analysis,
 /// which is run by whoever may edit the project.
 /// </summary>
 public sealed class WorkingCalendarService(ApplicationDbContext db, IActorProvider actors, AuditService audit)
@@ -95,7 +95,7 @@ public sealed class WorkingCalendarService(ApplicationDbContext db, IActorProvid
     private async Task<Actor> RequireAdminAsync(CancellationToken ct)
     {
         var actor = await actors.GetAsync(ct);
-        AccessPolicy.Require(AccessPolicy.CanManageWorkingCalendar(actor), "Only a System Admin can manage the working calendar.");
+        AccessPolicy.Require(AccessPolicy.CanManageWorkingCalendar(actor), "You don't have permission to manage the working calendar.");
         return actor;
     }
 }

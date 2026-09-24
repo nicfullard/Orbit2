@@ -5,7 +5,7 @@ using Orbit.Data.Entities;
 
 namespace Orbit.Application.Services;
 
-public sealed class DepartmentService(ApplicationDbContext db, IActorProvider actors, AuditService audit, UserDirectoryService users)
+public sealed class DepartmentService(ApplicationDbContext db, IActorProvider actors, AuditService audit)
 {
     /// <summary>Read-only listing, available to every role (pickers, filters, the list_departments tool).</summary>
     public async Task<IReadOnlyList<Department>> ListAsync(bool includeArchived = false, CancellationToken ct = default)
@@ -40,7 +40,9 @@ public sealed class DepartmentService(ApplicationDbContext db, IActorProvider ac
         await RequireManagerAsync(ct);
         var dept = await db.Departments.AsNoTracking().FirstOrDefaultAsync(d => d.Id == id, ct)
             ?? throw new NotFoundException("Department not found.");
-        var members = await users.ListAsync(null, id, includeInactive: true, ct);
+        var users = await db.Users.AsNoTracking().Include(u => u.Department)
+            .Where(u => !u.IsSystemAccount && u.DepartmentId == id).OrderBy(u => u.DisplayName).ToListAsync(ct);
+        var members = await UserDirectoryService.ToSummariesAsync(db, users, ct);
         var projects = await db.Projects.AsNoTracking().Include(p => p.Owner).Include(p => p.Department)
             .Where(p => p.DepartmentId == id).OrderBy(p => p.Status).ThenBy(p => p.Name)
             .Select(p => new
@@ -102,7 +104,7 @@ public sealed class DepartmentService(ApplicationDbContext db, IActorProvider ac
     private async Task<Actor> RequireManagerAsync(CancellationToken ct)
     {
         var actor = await actors.GetAsync(ct);
-        AccessPolicy.Require(AccessPolicy.CanManageDepartments(actor), "Only a System Admin can manage departments.");
+        AccessPolicy.Require(AccessPolicy.CanManageDepartments(actor), "You don't have permission to manage departments.");
         return actor;
     }
 

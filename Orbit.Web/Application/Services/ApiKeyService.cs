@@ -10,7 +10,7 @@ public sealed class ApiKeyService(ApplicationDbContext db, IActorProvider actors
     public async Task<IReadOnlyList<ApiKey>> ListAsync(CancellationToken ct = default)
     {
         await RequireAdminAsync(ct);
-        return await db.ApiKeys.AsNoTracking().Include(k => k.Department)
+        return await db.ApiKeys.AsNoTracking().Include(k => k.Department).Include(k => k.Role).ThenInclude(r => r.Permissions)
             .OrderBy(k => k.RevokedAt != null).ThenByDescending(k => k.CreatedAt).ToListAsync(ct);
     }
 
@@ -20,10 +20,12 @@ public sealed class ApiKeyService(ApplicationDbContext db, IActorProvider actors
         var actor = await RequireAdminAsync(ct);
         var name = input.Name?.Trim();
         if (string.IsNullOrEmpty(name)) throw new ValidationException("Name is required.");
-        if (input.Role != OrbitRole.SystemAdmin && input.DepartmentId is null)
-            throw new ValidationException("Member and Department Admin keys must be scoped to a department.");
-        Guid? departmentId = input.Role == OrbitRole.SystemAdmin ? null : input.DepartmentId;
-        if (departmentId is Guid d)
+        var role = await RoleResolver.ForRoleAsync(db, input.RoleId, ct)
+            ?? throw new ValidationException("Choose a role.");
+        // A role with any grant at Department scope only makes sense for a key in a department (spec §6.5).
+        if (role.RequiresDepartment && input.DepartmentId is null)
+            throw new ValidationException($"The {role.Name} role has permissions scoped to a department, so the key must be scoped to one.");
+        if (input.DepartmentId is Guid d)
         {
             var dept = await db.Departments.AsNoTracking().FirstOrDefaultAsync(x => x.Id == d, ct)
                 ?? throw new NotFoundException("Department not found.");
@@ -36,14 +38,16 @@ public sealed class ApiKeyService(ApplicationDbContext db, IActorProvider actors
             Name = name,
             HashedKey = ApiKeyHasher.Hash(raw),
             Prefix = raw[..Math.Min(12, raw.Length)],
-            Role = input.Role,
-            DepartmentId = departmentId,
+            RoleId = role.Id,
+            DepartmentId = input.DepartmentId,
             CreatedById = actor.UserId,
             CreatedAt = DateTime.UtcNow
         };
         db.ApiKeys.Add(key);
-        audit.Add(actor, AuditEntity.ApiKey, key.Id, AuditAction.Created, departmentId, key.Name, new { key.Role, key.DepartmentId, key.Prefix });
+        audit.Add(actor, AuditEntity.ApiKey, key.Id, AuditAction.Created, key.DepartmentId, key.Name, new { role = role.Name, key.RoleId, key.DepartmentId, key.Prefix });
         await db.SaveChangesAsync(ct);
+        await db.Entry(key).Reference(k => k.Role).LoadAsync(ct);
+        await db.Entry(key).Reference(k => k.Department).LoadAsync(ct);
         return new CreatedApiKey(key, raw);
     }
 
@@ -61,7 +65,7 @@ public sealed class ApiKeyService(ApplicationDbContext db, IActorProvider actors
     private async Task<Actor> RequireAdminAsync(CancellationToken ct)
     {
         var actor = await actors.GetAsync(ct);
-        AccessPolicy.Require(actor.IsSystemAdmin, "Only a System Admin can manage API keys.");
+        AccessPolicy.Require(AccessPolicy.CanManageApiKeys(actor), "You don't have permission to manage API keys.");
         return actor;
     }
 }

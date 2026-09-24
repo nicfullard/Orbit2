@@ -48,7 +48,7 @@ public sealed class TimeEntryService(ApplicationDbContext db, IActorProvider act
 
         var userId = input.UserId ?? actor.UserId ?? throw new ValidationException("A user is required.");
         AccessPolicy.Require(AccessPolicy.CanLogTimeFor(actor, task, userId),
-            "You can only log time on tasks assigned to you. Department Admins can log time for anyone in their department.");
+            "You can only log time on tasks assigned to you, unless your role may log time for the whole department.");
         if (userId != actor.UserId) await ValidateTargetUserAsync(userId, task.DepartmentId, actor, ct);
         Validate(input);
 
@@ -226,7 +226,7 @@ public sealed class TimeEntryService(ApplicationDbContext db, IActorProvider act
         var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct)
             ?? throw new NotFoundException("User not found.");
         if (!user.IsActive || user.IsSystemAccount) throw new ValidationException("Time can only be logged for active users.");
-        if (!actor.IsSystemAdmin && user.DepartmentId != departmentId)
+        if (!actor.CanAnywhere(Permission.TimeLog) && user.DepartmentId != departmentId)
             throw new ValidationException("You can only log time for users in your own department.");
     }
 

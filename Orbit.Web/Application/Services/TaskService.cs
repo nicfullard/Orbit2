@@ -6,8 +6,8 @@ using Orbit.Data.Entities;
 namespace Orbit.Application.Services;
 
 /// <summary>
-/// All task reads and writes for both the Razor Pages UI and the MCP tools. Department scoping and
-/// the Member/DepartmentAdmin/SystemAdmin close rule are enforced here, not in the UI.
+/// All task reads and writes for both the Razor Pages UI and the MCP tools. View scoping and the permission
+/// rules (§6.5) are enforced here, not in the UI.
 /// </summary>
 public sealed class TaskService(
     ApplicationDbContext db,
@@ -69,17 +69,11 @@ public sealed class TaskService(
         return new PagedResult<TaskItem>(items, page, pageSize, total);
     }
 
-    /// <summary>Department scoping. Non-admins only widen to all departments on the company-wide backlog/sprint views.</summary>
+    /// <summary>The actor's tasks.view scope (§6.5), then the optional department filter within it.</summary>
     private static IQueryable<TaskItem> Scope(IQueryable<TaskItem> q, Actor actor, TaskFilter f)
     {
-        if (actor.IsSystemAdmin)
-            return f.DepartmentId is Guid d ? q.Where(t => t.DepartmentId == d) : q;
-
-        var companyWideView = f.AllDepartments && (f.BacklogOnly || f.SprintId != null);
-        if (companyWideView)
-            return f.DepartmentId is Guid d ? q.Where(t => t.DepartmentId == d) : q;
-
-        return q.Where(t => t.DepartmentId == actor.DepartmentId);
+        q = Scoping.Tasks(q, actor);
+        return f.DepartmentId is Guid d ? q.Where(t => t.DepartmentId == d) : q;
     }
 
     public async Task<TaskItem> GetAsync(Guid id, CancellationToken ct = default)
@@ -114,7 +108,7 @@ public sealed class TaskService(
         }
 
         var departmentId = await ResolveDepartmentAsync(input.ProjectId, input.DepartmentId, actor, existing: null, ct);
-        AccessPolicy.Require(actor.CanAccessDepartment(departmentId), "You can only create tasks in your own department.");
+        AccessPolicy.Require(AccessPolicy.CanCreateTaskIn(actor, departmentId), "You don't have permission to create tasks in this department.");
         await RequireOpenDepartmentAsync(departmentId, ct);
 
         var assignee = await ValidateAssigneeAsync(input.AssigneeId, departmentId, ct);
@@ -169,14 +163,13 @@ public sealed class TaskService(
         var task = await WithIncludes(db.Tasks).FirstOrDefaultAsync(t => t.Id == id, ct)
             ?? throw new NotFoundException("Task not found.");
         AccessPolicy.Require(AccessPolicy.CanViewTask(actor, task), "This task belongs to another department.");
-        AccessPolicy.Require(AccessPolicy.CanEditTask(actor, task),
-            "Members can only edit tasks they created or are assigned to.");
+        AccessPolicy.Require(AccessPolicy.CanEditTask(actor, task), "You don't have permission to edit this task.");
 
         var title = RequireTitle(input.Title);
         var departmentId = await ResolveDepartmentAsync(input.ProjectId, input.DepartmentId, actor, task, ct);
         if (departmentId != task.DepartmentId)
         {
-            AccessPolicy.Require(actor.CanAccessDepartment(departmentId), "You can't move a task to another department.");
+            AccessPolicy.Require(AccessPolicy.CanMoveTaskTo(actor, departmentId), "You don't have permission to move tasks into that department.");
             await RequireOpenDepartmentAsync(departmentId, ct);
         }
 
@@ -266,8 +259,7 @@ public sealed class TaskService(
         var task = await db.Tasks.FirstOrDefaultAsync(t => t.Id == id, ct)
             ?? throw new NotFoundException("Task not found.");
         AccessPolicy.Require(AccessPolicy.CanViewTask(actor, task), "This task belongs to another department.");
-        AccessPolicy.Require(AccessPolicy.CanChangeStatus(actor, task),
-            "Members can only change the status of tasks they created or are assigned to.");
+        AccessPolicy.Require(AccessPolicy.CanChangeStatus(actor, task), "You don't have permission to change this task's status.");
         if (task.Status == status) return task;
         await structure.EnsureStatusChangeAllowedAsync(task, status, ct);
 
@@ -289,10 +281,9 @@ public sealed class TaskService(
         var task = await db.Tasks.Include(t => t.Assignee).FirstOrDefaultAsync(t => t.Id == id, ct)
             ?? throw new NotFoundException("Task not found.");
         AccessPolicy.Require(AccessPolicy.CanViewTask(actor, task), "This task belongs to another department.");
-        // A Member may also take an unassigned task in their department for themselves (§6.5) without edit rights.
+        // Taking an unassigned task for yourself (§6.5) needs no edit rights, only tasks.take in its department.
         var taking = assigneeId is not null && assigneeId == actor.UserId && AccessPolicy.CanTakeTask(actor, task);
-        AccessPolicy.Require(taking || AccessPolicy.CanEditTask(actor, task),
-            "Members can only edit tasks they created or are assigned to.");
+        AccessPolicy.Require(taking || AccessPolicy.CanEditTask(actor, task), "You don't have permission to edit this task.");
         if (task.AssigneeId == assigneeId) return task;
 
         var assignee = await ValidateAssigneeAsync(assigneeId, task.DepartmentId, ct);
@@ -309,8 +300,8 @@ public sealed class TaskService(
     }
 
     /// <summary>
-    /// Take an unassigned task (§6.5): assign an open, unassigned task in the actor's department to the actor - the one
-    /// assignee change a Member may make on a task they can't otherwise edit. First come, first served: the update only
+    /// Take an unassigned task (§6.5): assign an open, unassigned task within the actor's tasks.take reach to the actor - the
+    /// one assignee change someone may make on a task they can't otherwise edit. First come, first served: the update only
     /// lands while the task is still unassigned, so two people taking it at the same moment can't both win.
     /// </summary>
     public async Task<TaskItem> TakeAsync(Guid id, CancellationToken ct = default)
@@ -324,7 +315,7 @@ public sealed class TaskService(
         if (task.AssigneeId is not null)
             throw new ValidationException($"\"{task.Title}\" is already assigned to {task.Assignee!.DisplayName}.");
         if (!task.IsOpen) throw new ValidationException("A closed task can't be taken.");
-        AccessPolicy.Require(AccessPolicy.CanTakeTask(actor, task), "You can only take unassigned tasks in your own department.");
+        AccessPolicy.Require(AccessPolicy.CanTakeTask(actor, task), "You don't have permission to take tasks in this department.");
         await ValidateAssigneeAsync(me, task.DepartmentId, ct);
 
         var now = DateTime.UtcNow;
@@ -350,7 +341,7 @@ public sealed class TaskService(
         var task = await db.Tasks.FirstOrDefaultAsync(t => t.Id == id, ct)
             ?? throw new NotFoundException("Task not found.");
         AccessPolicy.Require(AccessPolicy.CanViewTask(actor, task), "This task belongs to another department.");
-        AccessPolicy.Require(AccessPolicy.CanEditTask(actor, task), "Members can only edit tasks they created or are assigned to.");
+        AccessPolicy.Require(AccessPolicy.CanEditTask(actor, task), "You don't have permission to edit this task.");
         if (task.DueDate == dueDate) return task;
         DependencyRules.RequireDatesInOrder(task.StartDate, dueDate);
 
@@ -373,7 +364,7 @@ public sealed class TaskService(
         var task = await db.Tasks.FirstOrDefaultAsync(t => t.Id == id, ct)
             ?? throw new NotFoundException("Task not found.");
         AccessPolicy.Require(AccessPolicy.CanViewTask(actor, task), "This task belongs to another department.");
-        AccessPolicy.Require(AccessPolicy.CanEditTask(actor, task), "Members can only edit tasks they created or are assigned to.");
+        AccessPolicy.Require(AccessPolicy.CanEditTask(actor, task), "You don't have permission to edit this task.");
         DependencyRules.RequireDatesInOrder(startDate, dueDate);
 
         var changes = new ChangeSet()
@@ -437,7 +428,7 @@ public sealed class TaskService(
         return moved;
     }
 
-    /// <summary>The day plan for one date, department-scoped like <see cref="ListAsync"/> (a System Admin may narrow to one department).</summary>
+    /// <summary>The day plan for one date, scoped like <see cref="ListAsync"/> (someone who sees every department may narrow to one).</summary>
     public async Task<DayPlan> GetDayPlanAsync(DateOnly date, Guid? departmentId = null, CancellationToken ct = default)
     {
         var actor = await actors.GetAsync(ct);
@@ -520,10 +511,10 @@ public sealed class TaskService(
     /// <item>Standalone: the requested department, else the task's current one, else the caller's own.</item>
     /// <item>On a project: defaults to the project's department. A task already on that project keeps its own
     /// department when none is requested, so an edit never moves it silently.</item>
-    /// <item>A department other than the project's makes it a cross-department project task. Only a System Admin
-    /// may introduce that pairing; once filed, that department works the task like any other of theirs.</item>
+    /// <item>A department other than the project's makes it a cross-department project task. Introducing that pairing
+    /// needs tasks.create everywhere; once filed, that department works the task like any other of theirs.</item>
     /// </list>
-    /// Non-admins may only file tasks under their own department's projects.
+    /// Filing a task under a project needs tasks.create in the project's department.
     /// </summary>
     private async Task<Guid> ResolveDepartmentAsync(
         Guid? projectId, Guid? requestedDepartmentId, Actor actor, TaskItem? existing, CancellationToken ct)
@@ -531,7 +522,7 @@ public sealed class TaskService(
         if (projectId is not Guid pid)
         {
             return requestedDepartmentId ?? existing?.DepartmentId ?? actor.DepartmentId
-                ?? throw new ValidationException("A department is required (System Admins aren't scoped to one, so choose it explicitly).");
+                ?? throw new ValidationException("A department is required (your role isn't scoped to one, so choose it explicitly).");
         }
 
         var project = await db.Projects.AsNoTracking().FirstOrDefaultAsync(p => p.Id == pid, ct)
@@ -542,7 +533,7 @@ public sealed class TaskService(
             if (project.Status == ProjectStatus.Archived)
                 throw new ValidationException("Tasks can't be added to an archived project.");
             AccessPolicy.Require(AccessPolicy.CanAddTaskToProject(actor, project),
-                "You can only add tasks to projects in your own department.");
+                "You don't have permission to add tasks to this project.");
         }
 
         var departmentId = requestedDepartmentId ?? (sameProject ? existing!.DepartmentId : project.DepartmentId);
@@ -551,7 +542,7 @@ public sealed class TaskService(
         var alreadyFiledThere = sameProject && existing!.DepartmentId == departmentId;
         if (!alreadyFiledThere)
             AccessPolicy.Require(AccessPolicy.CanFileCrossDepartmentTask(actor),
-                "Only a System Admin can file a task under a project owned by another department.");
+                "Filing a task for another department under this project needs the Create tasks permission for all departments.");
         return departmentId;
     }
 
@@ -562,7 +553,7 @@ public sealed class TaskService(
         if (dept.IsArchived) throw new ValidationException($"Department \"{dept.Name}\" is archived.");
     }
 
-    /// <summary>Assignees must be active users in the task's department (System Admins, who have no department, are always assignable).</summary>
+    /// <summary>Assignees must be active users in the task's department, or users whose role sees tasks everywhere (tasks.view at All).</summary>
     private async Task<ApplicationUser?> ValidateAssigneeAsync(Guid? assigneeId, Guid departmentId, CancellationToken ct)
     {
         if (assigneeId is not Guid id) return null;
@@ -570,7 +561,7 @@ public sealed class TaskService(
             ?? throw new NotFoundException("Assignee not found.");
         if (!user.IsActive || user.IsSystemAccount)
             throw new ValidationException("The assignee must be an active user.");
-        if (user.DepartmentId != departmentId && !await IsSystemAdminAsync(user.Id, ct))
+        if (user.DepartmentId != departmentId && !await RoleResolver.HasScopeAsync(db, user.Id, Permission.TasksView, PermissionScope.All, ct))
             throw new ValidationException("A task can't be assigned to a user outside its own department.");
         return user;
     }
@@ -584,9 +575,4 @@ public sealed class TaskService(
             throw new ValidationException("Tasks can't be planned into a completed sprint.");
         return sprint;
     }
-
-    private Task<bool> IsSystemAdminAsync(Guid userId, CancellationToken ct) =>
-        db.UserRoles.Where(ur => ur.UserId == userId)
-            .Join(db.Roles, ur => ur.RoleId, r => r.Id, (ur, r) => r.Name)
-            .AnyAsync(name => name == Roles.SystemAdmin, ct);
 }

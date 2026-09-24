@@ -23,7 +23,7 @@ public class EditModel(
     {
         var actor = await actors.GetAsync(ct);
         Definition = await recurrence.GetAsync(id, ct);
-        AccessPolicy.Require(AccessPolicy.CanEditRecurring(actor, Definition), "Members can only edit recurring tasks they created or are assigned to.");
+        AccessPolicy.Require(AccessPolicy.CanEditRecurring(actor, Definition), "You don't have permission to edit this recurring task.");
         Form = RecurringForm.From(Definition);
         Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, Form.AsTaskForm(), ct);
         return Page();
@@ -33,7 +33,7 @@ public class EditModel(
     {
         var actor = await actors.GetAsync(ct);
         Definition = await recurrence.GetAsync(id, ct);
-        if (!actor.IsSystemAdmin) Form.DepartmentId = Definition.DepartmentId;
+        if (!actor.CanAnywhere(Permission.TasksCreate)) Form.DepartmentId = Definition.DepartmentId;
         if (ModelState.IsValid)
         {
             try

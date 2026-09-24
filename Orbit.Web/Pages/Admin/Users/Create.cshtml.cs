@@ -1,20 +1,23 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
+using Orbit.Application.Models;
 using Orbit.Application.Services;
 using Orbit.Data.Entities;
 using ValidationException = Orbit.Application.ValidationException;
 
 namespace Orbit.Pages.Admin.Users;
 
-public class CreateModel(UserAdminService users, DepartmentService departments, LdapSettingsService ldapSettings) : OrbitPageModel
+public class CreateModel(UserAdminService users, DepartmentService departments, RoleService roles, LdapSettingsService ldapSettings) : OrbitPageModel
 {
     [BindProperty] public UserForm Form { get; set; } = new();
     public IReadOnlyList<SelectListItem> DepartmentItems { get; private set; } = [];
+    public IReadOnlyList<RolePickerItem> RoleItems { get; private set; } = [];
     public bool DirectoryEnabled { get; private set; }
 
     public async Task OnGetAsync(CancellationToken ct)
     {
         await LoadLookupsAsync(ct);
+        Form.RoleId = UserForm.DefaultRole(RoleItems);
     }
 
     public async Task<IActionResult> OnPostAsync(CancellationToken ct)
@@ -38,6 +41,7 @@ public class CreateModel(UserAdminService users, DepartmentService departments, 
     private async Task LoadLookupsAsync(CancellationToken ct)
     {
         DepartmentItems = await UserForm.DepartmentItemsAsync(departments, Form.DepartmentId, ct);
+        RoleItems = await roles.ListForPickerAsync(ct);
         DirectoryEnabled = await ldapSettings.IsEnabledAsync(ct);
     }
 }

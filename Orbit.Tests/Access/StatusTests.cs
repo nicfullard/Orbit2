@@ -6,7 +6,7 @@ namespace Orbit.Tests.Access;
 
 /// <summary>
 /// Task status rules (spec §6.2, §6.5): every status - including Done/Cancelled and reopening - is open to whoever may edit
-/// the task (a Member on their own or assigned tasks, an admin within their reach), and Waiting is an open, started status.
+/// the task (tasks.edit at Own for their own or assigned tasks, at Department or All for the wider reach), and Waiting is an open, started status.
 /// </summary>
 public class StatusTests
 {
@@ -15,9 +15,6 @@ public class StatusTests
 
     private static readonly TaskItemStatus[] AllStatuses =
         [TaskItemStatus.Todo, TaskItemStatus.InProgress, TaskItemStatus.Waiting, TaskItemStatus.Blocked, TaskItemStatus.Done, TaskItemStatus.Cancelled];
-
-    private static Actor User(OrbitRole role, Guid? department) =>
-        new(Guid.NewGuid(), role.ToString(), role, department, ActorType.User, Guid.NewGuid());
 
     private static TaskItem Task(Guid department, TaskItemStatus status = TaskItemStatus.Todo, Guid? assignee = null, Guid? createdBy = null) =>
         new() { DepartmentId = department, Status = status, AssigneeId = assignee, CreatedById = createdBy ?? Guid.NewGuid() };
@@ -39,7 +36,7 @@ public class StatusTests
     [InlineData(TaskItemStatus.Cancelled)]
     public void An_assignee_may_set_any_status_including_close_and_reopen(TaskItemStatus current)
     {
-        var member = User(OrbitRole.Member, It);
+        var member = TestActors.Member(It);
         var task = Task(It, current, assignee: member.UserId);
 
         Assert.True(AccessPolicy.CanChangeStatus(member, task));
@@ -49,7 +46,7 @@ public class StatusTests
     [Fact]
     public void The_creator_may_close_and_reopen_their_task()
     {
-        var member = User(OrbitRole.Member, It);
+        var member = TestActors.Member(It);
         Assert.True(AccessPolicy.CanChangeStatus(member, Task(It, TaskItemStatus.InProgress, createdBy: member.UserId)));
         Assert.True(AccessPolicy.CanChangeStatus(member, Task(It, TaskItemStatus.Done, createdBy: member.UserId)));
     }
@@ -57,7 +54,7 @@ public class StatusTests
     [Fact]
     public void A_member_cannot_change_status_of_a_colleagues_task()
     {
-        var member = User(OrbitRole.Member, It);
+        var member = TestActors.Member(It);
         var colleagues = Task(It, TaskItemStatus.InProgress, assignee: Guid.NewGuid());
 
         Assert.False(AccessPolicy.CanChangeStatus(member, colleagues));
@@ -67,7 +64,7 @@ public class StatusTests
     [Fact]
     public void An_unassigned_task_is_taken_first_and_then_its_status_opens_up()
     {
-        var member = User(OrbitRole.Member, It);
+        var member = TestActors.Member(It);
         var task = Task(It);
 
         Assert.False(AccessPolicy.CanChangeStatus(member, task));
@@ -82,9 +79,9 @@ public class StatusTests
     {
         var somebodyElses = Task(It, TaskItemStatus.Done, assignee: Guid.NewGuid());
 
-        Assert.True(AccessPolicy.CanChangeStatus(User(OrbitRole.DepartmentAdmin, It), somebodyElses));
-        Assert.False(AccessPolicy.CanChangeStatus(User(OrbitRole.DepartmentAdmin, Marketing), somebodyElses));
-        Assert.True(AccessPolicy.CanChangeStatus(User(OrbitRole.SystemAdmin, null), somebodyElses));
+        Assert.True(AccessPolicy.CanChangeStatus(TestActors.DepartmentAdmin(It), somebodyElses));
+        Assert.False(AccessPolicy.CanChangeStatus(TestActors.DepartmentAdmin(Marketing), somebodyElses));
+        Assert.True(AccessPolicy.CanChangeStatus(TestActors.SystemAdmin(), somebodyElses));
     }
 
     [Fact]

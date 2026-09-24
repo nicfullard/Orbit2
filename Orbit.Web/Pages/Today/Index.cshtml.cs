@@ -21,7 +21,7 @@ public class IndexModel(
     /// <summary>A working day in minutes (CriticalPath:HoursPerWorkingDay, §6.17): more open estimate than this on one person is an overload.</summary>
     public int WorkingDayMinutes => Math.Max(1, criticalPath.Value.HoursPerWorkingDay) * 60;
     public IReadOnlyDictionary<Guid, WaitingSummary> Waiting { get; private set; } = new Dictionary<Guid, WaitingSummary>();
-    /// <summary>System Admins may narrow the plan to one department; ignored for everyone else.</summary>
+    /// <summary>Someone who sees every department may narrow the plan to one; ignored for everyone else.</summary>
     [BindProperty(SupportsGet = true)] public Guid? DepartmentId { get; set; }
 
     public Actor Actor { get; private set; } = null!;
@@ -45,7 +45,7 @@ public class IndexModel(
     {
         Actor = await actors.GetAsync(ct);
         Today = DateOnly.FromDateTime(DateTime.UtcNow);
-        if (!Actor.IsSystemAdmin) DepartmentId = null;
+        if (!Actor.CanAnywhere(Permission.TasksView)) DepartmentId = null;
         Plan = await tasks.GetDayPlanAsync(Today, DepartmentId, ct);
         Waiting = await structure.GetWaitingAsync(Plan.Planned.Concat(Plan.Unfinished), ct);
         Groups = Plan.Planned
@@ -54,7 +54,7 @@ public class IndexModel(
             .OrderBy(g => g.AssigneeId is null).ThenBy(g => g.Name)
             .ToList();
         QuickEditAssignees = await users.GetQuickEditCandidatesAsync(ct);
-        if (Actor.IsSystemAdmin)
+        if (Actor.CanAnywhere(Permission.TasksView))
         {
             DepartmentItems = (await departments.ListAsync(false, ct))
                 .Select(d => new SelectListItem(d.Name, d.Id.ToString(), d.Id == DepartmentId)).ToList();
@@ -75,7 +75,7 @@ public class IndexModel(
     public async Task<IActionResult> OnPostCarryOverAllAsync(CancellationToken ct)
     {
         var actor = await actors.GetAsync(ct);
-        var plan = await tasks.GetDayPlanAsync(DateOnly.FromDateTime(DateTime.UtcNow), actor.IsSystemAdmin ? DepartmentId : null, ct);
+        var plan = await tasks.GetDayPlanAsync(DateOnly.FromDateTime(DateTime.UtcNow), actor.CanAnywhere(Permission.TasksView) ? DepartmentId : null, ct);
         return await CarryOverAsync(plan.Unfinished.Select(t => t.Id).ToList(), ct);
     }
 

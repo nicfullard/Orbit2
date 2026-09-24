@@ -14,7 +14,7 @@ public class EditModel(SprintService sprints, IActorProvider actors) : OrbitPage
     public async Task<IActionResult> OnGetAsync(Guid id, CancellationToken ct)
     {
         var actor = await actors.GetAsync(ct);
-        AccessPolicy.Require(AccessPolicy.CanManageSprints(actor), "Only a System Admin can manage sprints.");
+        AccessPolicy.Require(AccessPolicy.CanManageSprints(actor), "You don't have permission to manage sprints.");
         Sprint = await sprints.GetAsync(id, ct);
         Form = SprintForm.From(Sprint);
         return Page();

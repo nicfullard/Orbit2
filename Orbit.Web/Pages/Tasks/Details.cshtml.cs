@@ -38,7 +38,7 @@ public class DetailsModel(
     public IReadOnlyList<UserSummary> TimeUsers { get; private set; } = [];
     public int TotalMinutes => TimeEntries.Sum(e => e.DurationMinutes);
     public bool CanEdit { get; private set; }
-    /// <summary>An open, unassigned task in the actor's department: they may take it for themselves (§6.5).</summary>
+    /// <summary>An open, unassigned task within the actor's tasks.take reach: they may take it for themselves (§6.5).</summary>
     public bool CanTake { get; private set; }
     public bool CanLogTime { get; private set; }
     public bool CanLogForOthers { get; private set; }
@@ -237,7 +237,7 @@ public class DetailsModel(
         Activity = (await audit.ListAsync(new AuditFilter { EntityId = id, From = Task.CreatedAt.AddSeconds(-1), To = DateTime.UtcNow.AddMinutes(1), PageSize = 30 }, ct)).Items;
         CanEdit = AccessPolicy.CanEditTask(Actor, Task);
         CanTake = AccessPolicy.CanTakeTask(Actor, Task);
-        CanLogForOthers = Actor.IsAdminFor(Task.DepartmentId);
+        CanLogForOthers = AccessPolicy.CanLogTimeForOthers(Actor, Task);
         CanLogTime = Actor.UserId is Guid me && AccessPolicy.CanLogTimeFor(Actor, Task, me) || CanLogForOthers;
         Statuses = Ui.AllowedStatuses(Actor, Task);
         if (CanLogForOthers) TimeUsers = await users.GetAssignableAsync(Task.DepartmentId, ct);
@@ -245,7 +245,7 @@ public class DetailsModel(
         Structure = await structure.GetStructureAsync(Task, ct);
         CanLink = CanEdit && Task.ProjectId is not null; // dependencies need a project (§6.15)
         CanAddSubtask = Task.IsOpen && (Task.Project is null
-            ? Actor.CanAccessDepartment(Task.DepartmentId)
+            ? AccessPolicy.CanCreateTaskIn(Actor, Task.DepartmentId)
             : Task.Project.Status != ProjectStatus.Archived && AccessPolicy.CanAddTaskToProject(Actor, Task.Project));
         if (CanLink) LinkCandidates = await structure.ListLinkCandidatesAsync(Task, ct);
 

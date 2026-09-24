@@ -54,7 +54,7 @@
                             {
                                 <tr class="@(u.IsActive ? "" : "text-muted")">
                                     <td>@u.DisplayName <div class="small text-muted">@u.Email</div></td>
-                                    <td><span class="badge @Ui.RoleBadge(u.Role)">@u.Role.Label()</span></td>
+                                    <td><span class="badge @Ui.RoleBadge(u.Role)">@u.Role.Name</span></td>
                                     <td>@(u.IsActive ? "Active" : "Deactivated")</td>
                                     <td class="text-end"><a asp-page="/Admin/Users/Edit" asp-route-id="@u.Id" class="small">Manage</a></td>
                                 </tr>
