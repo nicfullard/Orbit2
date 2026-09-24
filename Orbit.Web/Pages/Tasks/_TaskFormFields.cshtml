@@ -91,11 +91,7 @@
     {
         <div class="col-md-3">
             <label class="form-label" for="Form_Status">Status</label>
-            <select class="form-select" id="Form_Status" name="Form.Status" asp-items="Model.StatusItems(existing, form.Status)"></select>
-            @if (existing is not null && !Model.Actor.IsAdminFor(existing.DepartmentId))
-            {
-                <div class="form-text">Only a Department Admin or System Admin can set Done or Cancelled.</div>
-            }
+            <select class="form-select" id="Form_Status" name="Form.Status" asp-items="Ui.EnumItems<TaskItemStatus>(form.Status, label: s => s.Label())"></select>
         </div>
     }
     else

@@ -121,8 +121,6 @@ public sealed class TaskService(
         await ValidateSprintAsync(input.SprintId, ct);
 
         var status = input.Status ?? TaskItemStatus.Todo;
-        AccessPolicy.Require(!status.IsClosed() || actor.IsAdminFor(departmentId),
-            "Only a Department Admin or System Admin can close a task.");
         DependencyRules.RequireDatesInOrder(input.StartDate, input.DueDate);
         var parent = await structure.ValidateParentAsync(null, input.ParentTaskId, input.ProjectId, departmentId, childOpen: !status.IsClosed(), ct);
 
@@ -183,10 +181,7 @@ public sealed class TaskService(
         }
 
         var assignee = await ValidateAssigneeAsync(input.AssigneeId, departmentId, ct);
-        var newStatus = input.Status ?? task.Status;
-        if (newStatus != task.Status)
-            AccessPolicy.Require(AccessPolicy.CanChangeStatus(actor, task, newStatus),
-                "Only a Department Admin or System Admin can close or reopen a task.");
+        var newStatus = input.Status ?? task.Status; // any status: the §6.5 status rule is the edit right required above
         if (input.SprintId != task.SprintId)
         {
             AccessPolicy.Require(AccessPolicy.CanPlanTask(actor, task), "You can't plan tasks from another department.");
@@ -271,8 +266,8 @@ public sealed class TaskService(
         var task = await db.Tasks.FirstOrDefaultAsync(t => t.Id == id, ct)
             ?? throw new NotFoundException("Task not found.");
         AccessPolicy.Require(AccessPolicy.CanViewTask(actor, task), "This task belongs to another department.");
-        AccessPolicy.Require(AccessPolicy.CanChangeStatus(actor, task, status),
-            "Only a Department Admin or System Admin can close or reopen a task.");
+        AccessPolicy.Require(AccessPolicy.CanChangeStatus(actor, task),
+            "Members can only change the status of tasks they created or are assigned to.");
         if (task.Status == status) return task;
         await structure.EnsureStatusChangeAllowedAsync(task, status, ct);
 

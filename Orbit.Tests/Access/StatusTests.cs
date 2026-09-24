@@ -1,42 +1,90 @@
 using Orbit.Application;
 using Orbit.Data.Entities;
+using Orbit.Helpers;
 
 namespace Orbit.Tests.Access;
 
-/// <summary>The Waiting status (spec §6.2): an open, started status that anyone in the department may use, distinct from Blocked.</summary>
+/// <summary>
+/// Task status rules (spec §6.2, §6.5): every status - including Done/Cancelled and reopening - is open to whoever may edit
+/// the task (a Member on their own or assigned tasks, an admin within their reach), and Waiting is an open, started status.
+/// </summary>
 public class StatusTests
 {
     private static readonly Guid It = Guid.NewGuid();
+    private static readonly Guid Marketing = Guid.NewGuid();
 
-    private static Actor Member() => new(Guid.NewGuid(), "member", OrbitRole.Member, It, ActorType.User, Guid.NewGuid());
+    private static readonly TaskItemStatus[] AllStatuses =
+        [TaskItemStatus.Todo, TaskItemStatus.InProgress, TaskItemStatus.Waiting, TaskItemStatus.Blocked, TaskItemStatus.Done, TaskItemStatus.Cancelled];
 
-    private static TaskItem Task(TaskItemStatus status) => new() { DepartmentId = It, Status = status };
+    private static Actor User(OrbitRole role, Guid? department) =>
+        new(Guid.NewGuid(), role.ToString(), role, department, ActorType.User, Guid.NewGuid());
+
+    private static TaskItem Task(Guid department, TaskItemStatus status = TaskItemStatus.Todo, Guid? assignee = null, Guid? createdBy = null) =>
+        new() { DepartmentId = department, Status = status, AssigneeId = assignee, CreatedById = createdBy ?? Guid.NewGuid() };
 
     [Fact]
     public void Waiting_is_open_and_sits_between_in_progress_and_blocked()
     {
         Assert.False(TaskItemStatus.Waiting.IsClosed());
         Assert.Equal("Waiting", TaskItemStatus.Waiting.Label());
-        Assert.Equal([TaskItemStatus.Todo, TaskItemStatus.InProgress, TaskItemStatus.Waiting, TaskItemStatus.Blocked, TaskItemStatus.Done, TaskItemStatus.Cancelled],
-            Enum.GetValues<TaskItemStatus>());
+        Assert.Equal(AllStatuses, Enum.GetValues<TaskItemStatus>());
     }
 
     [Theory]
-    [InlineData(TaskItemStatus.Todo, TaskItemStatus.Waiting)]
-    [InlineData(TaskItemStatus.InProgress, TaskItemStatus.Waiting)]
-    [InlineData(TaskItemStatus.Waiting, TaskItemStatus.InProgress)]
-    [InlineData(TaskItemStatus.Waiting, TaskItemStatus.Blocked)]
-    [InlineData(TaskItemStatus.Waiting, TaskItemStatus.Todo)]
-    public void A_member_may_move_into_and_out_of_waiting(TaskItemStatus from, TaskItemStatus to)
+    [InlineData(TaskItemStatus.Todo)]
+    [InlineData(TaskItemStatus.InProgress)]
+    [InlineData(TaskItemStatus.Waiting)]
+    [InlineData(TaskItemStatus.Blocked)]
+    [InlineData(TaskItemStatus.Done)]
+    [InlineData(TaskItemStatus.Cancelled)]
+    public void An_assignee_may_set_any_status_including_close_and_reopen(TaskItemStatus current)
     {
-        Assert.True(AccessPolicy.CanChangeStatus(Member(), Task(from), to));
+        var member = User(OrbitRole.Member, It);
+        var task = Task(It, current, assignee: member.UserId);
+
+        Assert.True(AccessPolicy.CanChangeStatus(member, task));
+        Assert.Equal(AllStatuses, Ui.AllowedStatuses(member, task));
     }
 
     [Fact]
-    public void A_member_still_cannot_close_a_waiting_task()
+    public void The_creator_may_close_and_reopen_their_task()
     {
-        Assert.False(AccessPolicy.CanChangeStatus(Member(), Task(TaskItemStatus.Waiting), TaskItemStatus.Done));
-        Assert.False(AccessPolicy.CanChangeStatus(Member(), Task(TaskItemStatus.Waiting), TaskItemStatus.Cancelled));
+        var member = User(OrbitRole.Member, It);
+        Assert.True(AccessPolicy.CanChangeStatus(member, Task(It, TaskItemStatus.InProgress, createdBy: member.UserId)));
+        Assert.True(AccessPolicy.CanChangeStatus(member, Task(It, TaskItemStatus.Done, createdBy: member.UserId)));
+    }
+
+    [Fact]
+    public void A_member_cannot_change_status_of_a_colleagues_task()
+    {
+        var member = User(OrbitRole.Member, It);
+        var colleagues = Task(It, TaskItemStatus.InProgress, assignee: Guid.NewGuid());
+
+        Assert.False(AccessPolicy.CanChangeStatus(member, colleagues));
+        Assert.Equal(new[] { TaskItemStatus.InProgress }, Ui.AllowedStatuses(member, colleagues));
+    }
+
+    [Fact]
+    public void An_unassigned_task_is_taken_first_and_then_its_status_opens_up()
+    {
+        var member = User(OrbitRole.Member, It);
+        var task = Task(It);
+
+        Assert.False(AccessPolicy.CanChangeStatus(member, task));
+        Assert.True(AccessPolicy.CanTakeTask(member, task));
+
+        task.AssigneeId = member.UserId;
+        Assert.True(AccessPolicy.CanChangeStatus(member, task));
+    }
+
+    [Fact]
+    public void Admins_may_change_status_within_their_reach()
+    {
+        var somebodyElses = Task(It, TaskItemStatus.Done, assignee: Guid.NewGuid());
+
+        Assert.True(AccessPolicy.CanChangeStatus(User(OrbitRole.DepartmentAdmin, It), somebodyElses));
+        Assert.False(AccessPolicy.CanChangeStatus(User(OrbitRole.DepartmentAdmin, Marketing), somebodyElses));
+        Assert.True(AccessPolicy.CanChangeStatus(User(OrbitRole.SystemAdmin, null), somebodyElses));
     }
 
     [Fact]

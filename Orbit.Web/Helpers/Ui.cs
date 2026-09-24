@@ -166,9 +166,9 @@ public static class Ui
     public static string ProjectStatusLabel(ProjectStatus s) => s.Label();
     public static string RoleLabel(OrbitRole r) => r.Label();
 
-    /// <summary>Status options the actor may pick for this task in an inline control.</summary>
+    /// <summary>Status options the actor may pick for this task in an inline control: every status if they may change it (§6.5), otherwise only the current one.</summary>
     public static IReadOnlyList<TaskItemStatus> AllowedStatuses(Actor actor, TaskItem task) =>
-        Enum.GetValues<TaskItemStatus>().Where(s => s == task.Status || AccessPolicy.CanChangeStatus(actor, task, s)).ToList();
+        AccessPolicy.CanChangeStatus(actor, task) ? Enum.GetValues<TaskItemStatus>() : [task.Status];
 
     /// <summary>Options for the dependency type picker (§6.15): "FS - Finish-to-Start" and so on.</summary>
     public static IEnumerable<SelectListItem> DependencyTypeItems(DependencyType selected) =>

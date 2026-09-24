@@ -166,8 +166,7 @@ public sealed class OrbitTools(
         "Update any field of a task. Only the arguments you pass change; omit an argument to leave it as is. " +
         "Pass the literal string \"none\" to clear assigneeId, dueDate, startDate, parentTaskId, estimateMinutes, projectId, sprintId or plannedFor (sprintId \"none\" moves the task to the backlog; " +
         "plannedFor \"none\" takes it off the day plan, plannedFor \"today\" puts it on today's plan - closed tasks can't be planned). " +
-        "Setting status to Done or Cancelled requires a DepartmentAdmin or SystemAdmin key; a Member key is rejected. " +
-        "Member keys can only edit tasks they created or that are assigned to them. " +
+        "Member keys can only edit tasks they created or that are assigned to them; that covers every field, including setting status to Done or Cancelled. " +
         "departmentId moves the task to another department (SystemAdmin keys only); if that differs from the project's department the task " +
         "becomes a cross-department project task. Changing projectId without departmentId moves the task into the new project's department.")]
     public Task<string> UpdateTask(

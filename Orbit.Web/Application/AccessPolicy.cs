@@ -24,15 +24,11 @@ public static class AccessPolicy
     public static bool CanTakeTask(Actor a, TaskItem t) =>
         a.UserId is not null && t.IsOpen && t.AssigneeId is null && a.CanAccessDepartment(t.DepartmentId);
 
-    /// <summary>Anyone in the department may move between Todo/InProgress/Waiting/Blocked; closing or reopening needs an admin.</summary>
-    public static bool CanChangeStatus(Actor a, TaskItem t, TaskItemStatus to)
-    {
-        if (!a.CanAccessDepartment(t.DepartmentId)) return false;
-        var touchesClosed = to.IsClosed() || t.Status.IsClosed();
-        return !touchesClosed || a.IsAdminFor(t.DepartmentId);
-    }
-
-    public static bool CanCloseTasks(Actor a, Guid departmentId) => a.IsAdminFor(departmentId);
+    /// <summary>
+    /// Changing a task's status, including closing it (Done/Cancelled) and reopening it, follows edit rights:
+    /// a Member on tasks they created or are assigned, a Department Admin on any task in their department, a System Admin anywhere.
+    /// </summary>
+    public static bool CanChangeStatus(Actor a, TaskItem t) => CanEditTask(a, t);
 
     /// <summary>Backlog &lt;-&gt; sprint moves: own department's tasks (System Admin: any).</summary>
     public static bool CanPlanTask(Actor a, TaskItem t) => a.CanAccessDepartment(t.DepartmentId);

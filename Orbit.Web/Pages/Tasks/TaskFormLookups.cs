@@ -94,17 +94,4 @@ public sealed class TaskFormLookups
             Parents = parents
         };
     }
-
-    public IEnumerable<SelectListItem> StatusItems(TaskItem? existing, TaskItemStatus selected)
-    {
-        var deptId = existing?.DepartmentId ?? Actor.DepartmentId ?? Guid.Empty;
-        var canClose = existing is null ? Actor.IsAdminFor(deptId) || Actor.IsSystemAdmin : Actor.IsAdminFor(existing.DepartmentId);
-        foreach (var s in Enum.GetValues<TaskItemStatus>())
-        {
-            var closed = s.IsClosed();
-            var allowed = !closed || canClose || (existing is not null && existing.Status == s);
-            if (!allowed) continue;
-            yield return new SelectListItem(s.Label(), s.ToString(), s == selected);
-        }
-    }
 }
