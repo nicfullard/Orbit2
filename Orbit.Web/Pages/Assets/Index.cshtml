@@ -24,6 +24,7 @@
     };
     var holder = Model.Holder?.Trim().ToLowerInvariant();
     var canConfigure = actor.Has(Permission.AssetsConfigure);
+    var canCheck = actor.Has(Permission.AssetsCheck);
 }
 
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
@@ -39,6 +40,10 @@
         {
             <a class="btn btn-outline-secondary btn-sm" asp-page="/AssetTypes/Index">Asset types</a>
             <a class="btn btn-outline-secondary btn-sm" asp-page="/AssetLocations/Index">Locations</a>
+        }
+        @if (canCheck)
+        {
+            <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#quick-check">Quick check</button>
         }
         @if (actor.Has(Permission.AssetsCreate))
         {
@@ -201,3 +206,35 @@
         </div>
     }
 </div>
+
+@if (canCheck)
+{
+    @* Quick check (§6.19): scan one asset after another; each Enter posts in the background (site.js) and the box is ready again. *@
+    <div class="modal fade" id="quick-check" tabindex="-1" aria-labelledby="quick-check-title" aria-hidden="true" data-bs-backdrop="static">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title h5" id="quick-check-title">Quick check</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form method="post" asp-page-handler="QuickCheck" class="js-quick-check mb-2">
+                        <label class="form-label" for="quick-check-scan">Serial number</label>
+                        <input class="form-control form-control-lg font-monospace js-quick-check-input" id="quick-check-scan" name="scanned"
+                               autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="100" aria-describedby="quick-check-help" />
+                        <div class="form-text" id="quick-check-help">
+                            Scan or type a serial number (or ERP asset number) and press Enter. Each one records today's OK check on the asset;
+                            to record an issue, use the asset's own page.
+                        </div>
+                    </form>
+                    <div class="small text-muted mb-2 js-quick-check-summary">Nothing scanned yet.</div>
+                    <div class="visually-hidden js-quick-check-status" role="status" aria-live="polite"></div>
+                    <ol class="list-group js-quick-check-log" style="max-height:50vh; overflow-y:auto"></ol>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Done</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}

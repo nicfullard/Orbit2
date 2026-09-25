@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Orbit.Application;
+using Orbit.Application.Assets;
 using Orbit.Application.Models;
 using Orbit.Application.Services;
 using Orbit.Helpers;
@@ -71,6 +72,30 @@ public class IndexModel(AssetService assets, DepartmentService departments, IAct
                 .Select(d => new SelectListItem(d.Name, d.Id.ToString(), d.Id == DepartmentId)).ToList();
         ShowDepartment = everywhere || Result.Items.Any(i => i.Asset.DepartmentId != Actor.DepartmentId);
         return Page();
+    }
+
+    /// <summary>
+    /// Quick check (§6.19): the dialog posts each scan (or, for a serial on several assets, the one chosen) here and gets JSON back,
+    /// so scanning carries on without a page load. Refusals come back as an Error with the message, not as a flash and redirect.
+    /// </summary>
+    public async Task<IActionResult> OnPostQuickCheckAsync(string? scanned, Guid? assetId, CancellationToken ct)
+    {
+        try
+        {
+            var result = assetId is Guid id ? await assets.QuickCheckAssetAsync(id, ct) : await assets.QuickCheckAsync(scanned, ct);
+            return new JsonResult(new
+            {
+                status = result.Status.ToString(),
+                assets = result.Assets.Select(a => new
+                {
+                    id = a.Id, label = AssetRules.Label(a.AssetNumber, a.Name), url = Url.Page("/Assets/Details", new { id = a.Id })
+                })
+            });
+        }
+        catch (OrbitException ex)
+        {
+            return new JsonResult(new { status = "Error", message = ex.Message });
+        }
     }
 
     /// <summary>A filter option's label: its department too when that isn't the viewer's own (a held asset, or company-wide scope).</summary>

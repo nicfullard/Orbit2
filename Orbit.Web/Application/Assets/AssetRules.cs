@@ -1,3 +1,4 @@
+using Orbit.Application.Models;
 using Orbit.Data.Entities;
 
 namespace Orbit.Application.Assets;
@@ -89,6 +90,33 @@ public static class AssetRules
             throw new ValidationException("Describe the issue found in the notes.");
         return n;
     }
+
+    /// <summary>A quick-check scan (§6.19): a serial number or ERP asset number, trimmed; blank is refused.</summary>
+    public static string CleanScan(string? scanned) =>
+        Clean(scanned, 100, "The serial number") ?? throw new ValidationException("Scan or type a serial number.");
+
+    /// <summary>
+    /// The assets a quick-check scan names (§6.19), from the matches within the caller's assets.check reach: the ones that aren't
+    /// disposed, by name. One is checked at once; several are offered to choose from. None, or only disposed ones, is refused.
+    /// </summary>
+    public static IReadOnlyList<QuickCheckCandidate> QuickCheckTargets(IReadOnlyList<QuickCheckCandidate> matches, string scanned)
+    {
+        if (matches.Count == 0)
+            throw new ValidationException($"No asset you can check has the serial number or asset number \"{scanned}\".");
+        var live = matches.Where(m => m.Status != AssetStatus.Disposed).OrderBy(m => m.Name).ThenBy(m => m.AssetNumber).ToList();
+        if (live.Count == 0)
+            throw new ValidationException(matches.Count == 1
+                ? $"\"{Label(matches[0].AssetNumber, matches[0].Name)}\" is disposed, so it can't be checked."
+                : $"Every asset with \"{scanned}\" is disposed, so none can be checked.");
+        return live;
+    }
+
+    /// <summary>
+    /// Whether this person already recorded an OK check on the asset today, so a repeat quick-check scan records nothing (§6.19).
+    /// Someone else's check, or one with another outcome, doesn't count: an asset not found this morning still gets its check.
+    /// </summary>
+    public static bool CheckedOkToday(IEnumerable<AssetCheck> checks, Guid? userId, DateOnly today) =>
+        userId is Guid me && checks.Any(c => c.CheckedById == me && c.CheckDate == today && c.Outcome == AssetCheckOutcome.Ok);
 
     /// <summary>Why an asset can't be deleted, or null when it can: only an asset with no history - no checks - may be; otherwise dispose of it.</summary>
     public static string? DeleteBlocker(int checkCount) => checkCount > 0

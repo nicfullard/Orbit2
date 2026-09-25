@@ -97,8 +97,27 @@ public sealed class AssetCheckInput
 /// <summary>The dashboard's Asset checks card (spec §6.19): counts within the viewer's assets.check reach.</summary>
 public sealed record AssetCheckSummary(PermissionScope Scope, int Overdue, int DueSoon, int NotOk, int Held);
 
-/// <summary>Another asset that looks like the same item: same manufacturer and serial number (spec §6.19).</summary>
+/// <summary>
+/// An asset by name: another asset that looks like the same item (same manufacturer and serial number), or the asset a quick
+/// check found (spec §6.19).
+/// </summary>
 public sealed record AssetRef(Guid Id, string? AssetNumber, string Name);
+
+/// <summary>An asset a quick-check scan matched, before disposed ones are set aside (spec §6.19).</summary>
+public sealed record QuickCheckCandidate(Guid Id, string? AssetNumber, string Name, AssetStatus Status);
+
+public enum QuickCheckStatus
+{
+    /// <summary>Today's OK check was recorded.</summary>
+    Recorded,
+    /// <summary>The caller had already recorded an OK check on it today, so nothing was recorded (a repeat scan).</summary>
+    AlreadyChecked,
+    /// <summary>The serial number is on several assets the caller can check: nothing was recorded, the caller chooses.</summary>
+    ChooseAsset
+}
+
+/// <summary>A quick check's outcome: the asset checked (or already checked), or the assets to choose from.</summary>
+public sealed record QuickCheckResult(QuickCheckStatus Status, IReadOnlyList<AssetRef> Assets);
 
 /// <summary>A type or location found among the assets a viewer can see, for the list filters.</summary>
 public sealed record AssetFilterOption(Guid Id, string Name, string? Group, Guid DepartmentId, string DepartmentName);

@@ -12,4 +12,6 @@ public class TimeEntry
     public int DurationMinutes { get; set; }
     public string? Note { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    /// <summary>Set by an MCP <c>log_time</c> call so a retry returns this entry instead of logging the time twice (§7.1).</summary>
+    public string? IdempotencyKey { get; set; }
 }

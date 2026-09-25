@@ -496,3 +496,153 @@ document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('.js-person-picker').forEach(setup);
   });
 })();
+
+// Quick check on the Assets list (spec §6.19): scan or type a serial number and press Enter (a scanner sends it). The scan is
+// posted in the background and its result added to the log, newest first, while the box is cleared and keeps focus for the
+// next one. Posts go one at a time, in scan order, so a double scan's second post sees the first check ("Already checked
+// today"). A serial on several assets offers "Check this one" for each. A failure or a choice sounds a short tone; closing the
+// dialog after recording anything reloads the list so its check badges are current.
+(function () {
+  var root = document.getElementById('quick-check');
+  if (!root) return;
+  var form = root.querySelector('form.js-quick-check');
+  var input = root.querySelector('.js-quick-check-input');
+  var log = root.querySelector('.js-quick-check-log');
+  var summary = root.querySelector('.js-quick-check-summary');
+  var status = root.querySelector('.js-quick-check-status');
+  var queue = Promise.resolve();
+  var recordedAny = false;
+  var audio = null;
+
+  function el(tag, className, value) {
+    var e = document.createElement(tag);
+    if (className) e.className = className;
+    if (value) e.textContent = value;
+    return e;
+  }
+  function say(message) { status.textContent = message; }
+  function count(state) { return log.querySelectorAll('li[data-state="' + state + '"]').length; }
+  function updateSummary() {
+    var parts = [count('recorded') + ' recorded'];
+    var already = count('already'), choose = count('choose'), errors = count('error'), pending = count('pending');
+    if (already) parts.push(already + ' already checked');
+    if (choose) parts.push(choose + ' to choose');
+    if (errors) parts.push(errors + (errors === 1 ? ' problem' : ' problems'));
+    if (pending) parts.push(pending + ' checking');
+    summary.textContent = parts.join(' · ');
+  }
+  function beep() {
+    try {
+      var Context = window.AudioContext || window.webkitAudioContext;
+      if (!Context) return;
+      audio = audio || new Context();
+      if (audio.state === 'suspended') audio.resume();
+      var tone = audio.createOscillator();
+      var gain = audio.createGain();
+      tone.type = 'square';
+      tone.frequency.value = 220;
+      gain.gain.value = 0.08;
+      tone.connect(gain);
+      gain.connect(audio.destination);
+      tone.start();
+      tone.stop(audio.currentTime + 0.3);
+    } catch (err) { /* no audio: the log still shows it */ }
+  }
+  function assetLink(a) {
+    var link = el('a', 'fw-semibold text-decoration-none', a.label);
+    link.href = a.url;
+    link.target = '_blank'; // keep the scanning session open
+    link.rel = 'noopener';
+    return link;
+  }
+  // An entry's first line: a badge, what was scanned and a message. Returns the line, for a link to be added to it.
+  function fill(li, state, badgeClass, badgeText, message) {
+    li.dataset.state = state;
+    li.innerHTML = '';
+    var line = el('div', 'd-flex flex-wrap align-items-center gap-2');
+    line.appendChild(el('span', 'badge ' + badgeClass, badgeText));
+    line.appendChild(el('span', 'font-monospace', li.dataset.scanned));
+    if (message) line.appendChild(el('span', 'text-muted', message));
+    li.appendChild(line);
+    return line;
+  }
+  function show(li, result) {
+    var assets = result.assets || [];
+    if (result.status === 'Recorded') {
+      recordedAny = true;
+      fill(li, 'recorded', 'text-bg-success', 'OK', 'check recorded:').appendChild(assetLink(assets[0]));
+      say('Checked ' + assets[0].label + '.');
+    } else if (result.status === 'AlreadyChecked') {
+      fill(li, 'already', 'text-bg-secondary', 'Already checked today', null).appendChild(assetLink(assets[0]));
+      say(assets[0].label + ' was already checked today.');
+    } else if (result.status === 'ChooseAsset') {
+      fill(li, 'choose', 'text-bg-warning', 'Choose', assets.length + ' assets have this serial number. Which one did you scan?');
+      var choices = el('ul', 'list-unstyled mb-0 mt-1 ms-3');
+      assets.forEach(function (a) {
+        var item = el('li', 'd-flex flex-wrap align-items-center gap-2 mt-1');
+        item.appendChild(assetLink(a));
+        var button = el('button', 'btn btn-sm btn-outline-primary py-0 js-quick-check-choose', 'Check this one');
+        button.type = 'button';
+        button.dataset.assetId = a.id;
+        item.appendChild(button);
+        choices.appendChild(item);
+      });
+      li.appendChild(choices);
+      say(assets.length + ' assets have the serial number ' + li.dataset.scanned + '. Choose one.');
+      beep();
+    } else {
+      fill(li, 'error', 'text-bg-danger', 'Not checked', result.message || 'Something went wrong.');
+      say('Not checked: ' + (result.message || li.dataset.scanned));
+      beep();
+    }
+    updateSummary();
+  }
+  function post(data) {
+    return fetch(form.action, { method: 'POST', body: data, credentials: 'same-origin', headers: { Accept: 'application/json' } })
+      .then(function (r) {
+        // A lapsed sign-in follows a redirect to the login page (HTML); a stale form gets a 400.
+        if (!r.ok || (r.headers.get('Content-Type') || '').indexOf('application/json') < 0) throw new Error('unexpected reply');
+        return r.json();
+      })
+      .catch(function () {
+        return { status: 'Error', message: "Couldn't record the check - your session may have expired. Reload the page and try again." };
+      });
+  }
+  function enqueue(li, data) {
+    queue = queue
+      .then(function () { return post(data); })
+      .then(function (result) { show(li, result); })
+      .catch(function () { /* keep the queue going */ });
+  }
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var scanned = input.value.trim();
+    var data = new FormData(form);
+    input.value = '';
+    input.focus();
+    if (!scanned) return;
+    data.set('scanned', scanned);
+    var li = el('li', 'list-group-item small');
+    li.dataset.scanned = scanned;
+    fill(li, 'pending', 'text-bg-light border', 'Checking…', null);
+    log.insertBefore(li, log.firstChild);
+    updateSummary();
+    enqueue(li, data);
+  });
+  log.addEventListener('click', function (e) {
+    var button = e.target.closest('.js-quick-check-choose');
+    if (!button) return;
+    var li = button.closest('li[data-state]');
+    li.querySelectorAll('.js-quick-check-choose').forEach(function (b) { b.disabled = true; });
+    var data = new FormData(form);
+    data.delete('scanned');
+    data.set('assetId', button.dataset.assetId);
+    enqueue(li, data);
+    input.focus();
+  });
+  root.addEventListener('shown.bs.modal', function () { input.focus(); });
+  root.addEventListener('hidden.bs.modal', function () {
+    queue.then(function () { if (recordedAny) location.reload(); });
+  });
+})();

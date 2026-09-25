@@ -10,6 +10,8 @@ public sealed class TimeEntryInput
     public DateOnly Date { get; set; }
     public int DurationMinutes { get; set; }
     public string? Note { get; set; }
+    /// <summary>MCP <c>log_time</c> only: a retry with the same key returns the entry already logged.</summary>
+    public string? IdempotencyKey { get; set; }
 }
 
 public sealed record MyTimeSummary(IReadOnlyList<TimeEntry> Entries, int TotalMinutes, DateOnly From, DateOnly To)

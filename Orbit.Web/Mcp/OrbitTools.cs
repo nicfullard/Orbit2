@@ -8,6 +8,7 @@ using ModelContextProtocol.Server;
 using Orbit.Application;
 using Orbit.Application.Models;
 using Orbit.Application.Services;
+using Orbit.Data;
 using Orbit.Data.Entities;
 
 namespace Orbit.Mcp;
@@ -32,7 +33,8 @@ public sealed class OrbitTools(
     IOptions<AttachmentOptions> attachmentOptions,
     AssetService assets,
     AssetTypeService assetTypes,
-    AssetLocationService assetLocations)
+    AssetLocationService assetLocations,
+    TimeEntryService time)
 {
     private const string Clear = "none";
 
@@ -255,6 +257,52 @@ public sealed class OrbitTools(
         if (hasTask == hasAsset) throw new McpException("Pass exactly one of taskId or assetId.");
         return hasTask ? (true, await TaskIdAsync(taskId, ct)) : (false, Guid.Empty);
     }
+
+    // ---------------------------------------------------------------- time (§6.10)
+
+    [McpServerTool(Name = "log_time"), Description(
+        "Log time a person worked on a task - a date, a duration in minutes and an optional note, like a manual entry on the task page. " +
+        "userId is the person who did the work (list_users finds them), never Claude. Needs the key's Log time permission at Department scope " +
+        "for the task's department (the person must then be in that department), or at All scope for anyone anywhere. " +
+        "One entry is 1 to 1440 minutes; the date defaults to today (UTC) and can't be in the future. " +
+        "Pass an idempotencyKey so a retry returns the entry already logged instead of logging the time twice. " +
+        "Returns the entry and the task's total logged time against its estimate.")]
+    public Task<string> LogTime(
+        [Description("Task id (GUID), or task number such as T-26-00012.")] string taskId,
+        [Description("User id (GUID) of the person whose time this is; list_users finds them.")] string userId,
+        [Description("Duration in minutes, e.g. 90 for an hour and a half (1-1440).")] int durationMinutes,
+        [Description("The day the work was done, yyyy-MM-dd, or \"today\". Default today.")] string? date = null,
+        [Description("Optional note, e.g. what was done (up to 1000 characters).")] string? note = null,
+        [Description("Optional idempotency key. Retrying with the same key returns the entry already logged instead of a duplicate.")] string? idempotencyKey = null,
+        CancellationToken ct = default) => Run(async () =>
+    {
+        var id = await TaskIdAsync(taskId, ct);
+        var person = RequireGuid(userId, "userId");
+        // An API key acts as the Claude user, whose own "time" would mean nothing in the task's totals or anyone's reports.
+        if (person == WellKnownIds.ClaudeAgentUserId)
+            throw new McpException("Time is logged for a person: pass the userId of whoever did the work (list_users finds them), not the Claude user.");
+        var entry = await time.AddAsync(new TimeEntryInput
+        {
+            TaskId = id,
+            UserId = person,
+            Date = ParsePlanDate(date, "date") ?? DateOnly.FromDateTime(DateTime.UtcNow),
+            DurationMinutes = durationMinutes,
+            Note = note,
+            IdempotencyKey = idempotencyKey
+        }, ct);
+        var logged = (await time.ListForTaskAsync(entry.TaskId, ct)).Sum(e => e.DurationMinutes);
+        var task = entry.Task;
+        return new
+        {
+            entry = TimeEntryDto(entry),
+            task = new
+            {
+                id = task.Id, number = task.Number, title = task.Title,
+                totalMinutesLogged = logged, totalLogged = TimeFormat.Minutes(logged),
+                estimateMinutes = task.EstimateMinutes, overEstimate = task.EstimateMinutes is int estimate && logged > estimate
+            }
+        };
+    });
 
     // ---------------------------------------------------------------- attachments
 
@@ -1089,6 +1137,20 @@ public sealed class OrbitTools(
         author = c.Author is null ? "Claude" : c.Author.IsSystemAccount ? "Claude" : c.Author.DisplayName,
         body = c.Body,
         createdAt = c.CreatedAt
+    };
+
+    /// <summary>A time entry (§6.10) as log_time returns it.</summary>
+    private static object TimeEntryDto(TimeEntry e) => new
+    {
+        id = e.Id,
+        taskId = e.TaskId,
+        userId = e.UserId,
+        user = e.User?.DisplayName,
+        date = e.Date,
+        durationMinutes = e.DurationMinutes,
+        duration = TimeFormat.Minutes(e.DurationMinutes),
+        note = e.Note,
+        createdAt = e.CreatedAt
     };
 
     private static object ProjectDto(Project p, bool includeTasks, IReadOnlyList<TaskDependency>? dependencies = null, IReadOnlyList<Attachment>? attachments = null)

@@ -42,6 +42,13 @@ public sealed class TimeEntryService(ApplicationDbContext db, IActorProvider act
     public async Task<TimeEntry> AddAsync(TimeEntryInput input, CancellationToken ct = default)
     {
         var actor = await actors.GetAsync(ct);
+        // A retried log_time with the same key gets the entry it already logged (§7.1), not the hours twice.
+        var idempotencyKey = Clean(input.IdempotencyKey);
+        if (idempotencyKey?.Length > MaxIdempotencyKeyLength)
+            throw new ValidationException($"The idempotency key can't exceed {MaxIdempotencyKeyLength} characters.");
+        if (idempotencyKey is not null && await FindByKeyAsync(idempotencyKey, ct) is Guid already)
+            return await GetAsync(already, ct);
+
         var task = await db.Tasks.FirstOrDefaultAsync(t => t.Id == input.TaskId, ct)
             ?? throw new NotFoundException("Task not found.");
         AccessPolicy.Require(AccessPolicy.CanViewTask(actor, task), "This task belongs to another department.");
@@ -59,15 +66,29 @@ public sealed class TimeEntryService(ApplicationDbContext db, IActorProvider act
             Date = input.Date,
             DurationMinutes = input.DurationMinutes,
             Note = Clean(input.Note),
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            IdempotencyKey = idempotencyKey
         };
         db.TimeEntries.Add(entry);
         audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.TimeLogged, task.DepartmentId, task.Title,
             new { timeEntryId = entry.Id, entry.UserId, entry.Date, entry.DurationMinutes });
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException) when (idempotencyKey is not null)
+        {
+            // A concurrent call with the same key saved first (the unique index refused this one): return its entry.
+            db.ChangeTracker.Clear();
+            if (await FindByKeyAsync(idempotencyKey, ct) is Guid raced) return await GetAsync(raced, ct);
+            throw;
+        }
         await db.Entry(entry).Reference(e => e.User).LoadAsync(ct);
         return entry;
     }
+
+    private Task<Guid?> FindByKeyAsync(string key, CancellationToken ct) =>
+        db.TimeEntries.AsNoTracking().Where(e => e.IdempotencyKey == key).Select(e => (Guid?)e.Id).FirstOrDefaultAsync(ct);
 
     public async Task<TimeEntry> UpdateAsync(Guid id, TimeEntryInput input, CancellationToken ct = default)
     {
@@ -214,11 +235,15 @@ public sealed class TimeEntryService(ApplicationDbContext db, IActorProvider act
         return new ClockStopResult(task, entry, minutes);
     }
 
+    private const int MaxNoteLength = 1000;
+    private const int MaxIdempotencyKeyLength = 200;
+
     private static void Validate(TimeEntryInput input)
     {
         if (input.DurationMinutes <= 0) throw new ValidationException("Duration must be at least one minute.");
         if (input.DurationMinutes > 24 * 60) throw new ValidationException("A single entry can't exceed 24 hours.");
         if (input.Date > DateOnly.FromDateTime(DateTime.UtcNow).AddDays(1)) throw new ValidationException("The date can't be in the future.");
+        if (Clean(input.Note)?.Length > MaxNoteLength) throw new ValidationException($"The note can't exceed {MaxNoteLength} characters.");
     }
 
     private async Task ValidateTargetUserAsync(Guid userId, Guid departmentId, Actor actor, CancellationToken ct)

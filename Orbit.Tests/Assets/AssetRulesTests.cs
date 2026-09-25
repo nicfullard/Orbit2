@@ -1,5 +1,6 @@
 using Orbit.Application;
 using Orbit.Application.Assets;
+using Orbit.Application.Models;
 using Orbit.Data.Entities;
 using Orbit.Tests.Access;
 
@@ -66,6 +67,50 @@ public class AssetRulesTests
         Assert.Equal("Cracked screen", AssetRules.ValidateCheck(AssetStatus.Active, AssetCheckOutcome.IssueFound, Today, " Cracked screen ", Today));
         Assert.Null(AssetRules.ValidateCheck(AssetStatus.Active, AssetCheckOutcome.NotFound, Today.AddDays(-30), null, Today));
         Assert.Throws<ValidationException>(() => AssetRules.ValidateCheck(AssetStatus.Active, AssetCheckOutcome.Ok, Today.AddDays(1), null, Today));
+    }
+
+    /// <summary>
+    /// AST-021: a quick-check scan is trimmed and required; it names the matches that aren't disposed, by name - one to check, several
+    /// to choose from - and none, or only disposed ones, is refused.
+    /// </summary>
+    [Fact]
+    public void Quick_check_scan_names_the_assets_that_can_be_checked()
+    {
+        Assert.Equal("SN-123", AssetRules.CleanScan("  SN-123 "));
+        Assert.Throws<ValidationException>(() => AssetRules.CleanScan("   "));
+        Assert.Throws<ValidationException>(() => AssetRules.CleanScan(null));
+        Assert.Throws<ValidationException>(() => AssetRules.CleanScan(new string('9', 101)));
+
+        var laptop = new QuickCheckCandidate(Guid.NewGuid(), "FA-1", "Reception laptop", AssetStatus.Active);
+        var spare = new QuickCheckCandidate(Guid.NewGuid(), null, "Laptop spare", AssetStatus.InStorage);
+        var scrapped = new QuickCheckCandidate(Guid.NewGuid(), "FA-2", "Old laptop", AssetStatus.Disposed);
+        var lost = new QuickCheckCandidate(Guid.NewGuid(), null, "Missing laptop", AssetStatus.Lost);
+
+        Assert.Throws<ValidationException>(() => AssetRules.QuickCheckTargets([], "SN-123"));
+        Assert.Equal([laptop], AssetRules.QuickCheckTargets([laptop], "SN-123"));
+        Assert.Equal([laptop], AssetRules.QuickCheckTargets([scrapped, laptop], "SN-123"));
+        // A lost asset can be checked: finding it is a check.
+        Assert.Equal([lost], AssetRules.QuickCheckTargets([lost], "SN-123"));
+        Assert.Equal([spare, laptop], AssetRules.QuickCheckTargets([laptop, scrapped, spare], "SN-123"));
+        var disposed = Assert.Throws<ValidationException>(() => AssetRules.QuickCheckTargets([scrapped], "SN-123"));
+        Assert.Contains("FA-2 - Old laptop\" is disposed", disposed.Message);
+        Assert.Contains("is disposed", Assert.Throws<ValidationException>(() => AssetRules.QuickCheckTargets([scrapped, scrapped with { Id = Guid.NewGuid() }], "SN-123")).Message);
+    }
+
+    /// <summary>AST-021: a repeat scan records nothing only when the same person already recorded an OK check on the asset today.</summary>
+    [Fact]
+    public void Quick_check_skips_only_my_own_ok_check_today()
+    {
+        var me = Guid.NewGuid();
+        AssetCheck Check(Guid by, DateOnly on, AssetCheckOutcome outcome) => new() { CheckedById = by, CheckDate = on, Outcome = outcome };
+
+        Assert.True(AssetRules.CheckedOkToday([Check(me, Today, AssetCheckOutcome.Ok)], me, Today));
+        Assert.False(AssetRules.CheckedOkToday([], me, Today));
+        Assert.False(AssetRules.CheckedOkToday([Check(me, Today, AssetCheckOutcome.NotFound)], me, Today));
+        Assert.False(AssetRules.CheckedOkToday([Check(me, Today, AssetCheckOutcome.IssueFound)], me, Today));
+        Assert.False(AssetRules.CheckedOkToday([Check(Guid.NewGuid(), Today, AssetCheckOutcome.Ok)], me, Today));
+        Assert.False(AssetRules.CheckedOkToday([Check(me, Today.AddDays(-1), AssetCheckOutcome.Ok)], me, Today));
+        Assert.False(AssetRules.CheckedOkToday([Check(me, Today, AssetCheckOutcome.Ok)], null, Today));
     }
 
     [Fact]

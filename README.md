@@ -155,7 +155,7 @@ one-off: nothing is kept in step with AD afterwards.
 - Endpoint: `https://<host>/mcp` (Streamable HTTP, stateless)
 - Auth: `Authorization: Bearer <api key>` - keys are issued under **Admin > API Keys** with a role and
   department, and are shown once.
-- Tools: `create_task`, `get_task`, `list_tasks`, `update_task`, `add_comment`, `list_comments`, `get_attachment`,
+- Tools: `create_task`, `get_task`, `list_tasks`, `update_task`, `add_comment`, `list_comments`, `log_time`, `get_attachment`,
   `add_dependency`, `remove_dependency`, `create_project`, `get_project`, `get_project_status`,
   `list_projects`, `update_project`, `list_activity`, `list_users`, `list_departments`, `get_critical_path`, `run_critical_path_analysis`,
   `list_assets`, `get_asset`, `create_asset`, `update_asset`, `record_asset_check`, `list_asset_types`, `list_asset_locations`,
@@ -173,6 +173,10 @@ one-off: nothing is kept in step with AD afterwards.
 - Files attached to tasks and projects (spec §6.18) are listed by `get_task` / `get_project` and read with
   `get_attachment` - text as text, images as images, anything else as base64 - up to `Attachments:MaxMcpFileSizeMb`
   (default 5 MB); uploading is web-UI only.
+- `log_time` logs time on a task (spec §6.10) for a named person (`userId` from `list_users`, never the Claude user):
+  a duration in minutes (1-1440), a date (default today) and a note. The key's role needs **Log time** at Department
+  scope for the task's department, or All; an `idempotencyKey` makes a retry return the entry already logged. It
+  returns the entry and the task's total logged time against its estimate. Editing and deleting entries is web-UI only.
 
 Every API write is stamped `Source = Api`, attributed to the `Claude` user and written to the audit log.
 `create_task` accepts an `idempotencyKey` so retries do not create duplicates.
@@ -192,6 +196,8 @@ when given); it can be held by any number of people in any department, and carri
 and warranty details, periodic **checks** (OK / issue found / not found - a check never changes the asset's
 status), comments and files. Overdue checks, last checks that weren't OK, expiring warranties and assets still
 held by deactivated users are flagged and filterable; disposing of an asset removes its holders.
+**Quick check** on the Assets list is for an audit walk with a barcode scanner: scan one serial number (or ERP asset
+number) after another, and each records today's OK check on the asset without leaving the scan box.
 
 ## Configuration
 

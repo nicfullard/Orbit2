@@ -174,12 +174,14 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
         builder.Entity<TimeEntry>(b =>
         {
             b.Property(t => t.Note).HasMaxLength(1000);
+            b.Property(t => t.IdempotencyKey).HasMaxLength(200);
             b.HasOne(t => t.Task).WithMany(x => x.TimeEntries)
                 .HasForeignKey(t => t.TaskId).OnDelete(DeleteBehavior.Cascade);
             b.HasOne(t => t.User).WithMany(u => u.TimeEntries)
                 .HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(t => t.TaskId);
             b.HasIndex(t => new { t.UserId, t.Date });
+            b.HasIndex(t => t.IdempotencyKey).IsUnique().HasFilter("\"IdempotencyKey\" IS NOT NULL");
         });
 
         builder.Entity<RunningClock>(b =>

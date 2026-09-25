@@ -450,8 +450,57 @@ public sealed class AssetService(ApplicationDbContext db, IActorProvider actors,
     public async Task<AssetCheck> RecordCheckAsync(Guid assetId, AssetCheckInput input, CancellationToken ct = default)
     {
         var actor = await actors.GetAsync(ct);
-        var asset = await db.Assets.Include(a => a.Assignments).Include(a => a.Checks).FirstOrDefaultAsync(a => a.Id == assetId, ct)
+        return await RecordCheckAsync(actor, await CheckableAsync(assetId, ct), input, ct);
+    }
+
+    /// <summary>"Confirm I have it": the holder's own OK check, dated today.</summary>
+    public Task<AssetCheck> ConfirmHeldAsync(Guid assetId, CancellationToken ct = default) =>
+        RecordCheckAsync(assetId, new AssetCheckInput { Outcome = AssetCheckOutcome.Ok, Notes = "Confirmed by the holder." }, ct);
+
+    /// <summary>
+    /// Quick check (§6.19): today's OK check on the asset a scanned serial number names - or, when no asset the caller can check has
+    /// that serial, the one with that ERP asset number. A serial on several such assets returns them to choose from, recording nothing.
+    /// </summary>
+    public async Task<QuickCheckResult> QuickCheckAsync(string? scanned, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        AccessPolicy.Require(actor.Has(Permission.AssetsCheck), "You don't have permission to record asset checks.");
+        var value = AssetRules.CleanScan(scanned);
+        var lower = value.ToLowerInvariant();
+        var reach = Scoping.Assets(db.Assets.AsNoTracking(), actor, Permission.AssetsCheck);
+        var matches = await reach.Where(a => a.SerialNumber != null && a.SerialNumber.ToLower() == lower)
+            .Select(a => new QuickCheckCandidate(a.Id, a.AssetNumber, a.Name, a.Status)).ToListAsync(ct);
+        if (matches.Count == 0)
+            matches = await reach.Where(a => a.AssetNumber != null && a.AssetNumber.ToLower() == lower)
+                .Select(a => new QuickCheckCandidate(a.Id, a.AssetNumber, a.Name, a.Status)).ToListAsync(ct);
+        var targets = AssetRules.QuickCheckTargets(matches, value);
+        return targets.Count == 1
+            ? await QuickCheckAssetAsync(targets[0].Id, ct)
+            : new QuickCheckResult(QuickCheckStatus.ChooseAsset, targets.Select(t => new AssetRef(t.Id, t.AssetNumber, t.Name)).ToList());
+    }
+
+    /// <summary>
+    /// Quick check of one asset (§6.19) - a scan's single match, or the one chosen among several: today's OK check, unless the caller
+    /// already recorded one today, when nothing is recorded (a repeat scan).
+    /// </summary>
+    public async Task<QuickCheckResult> QuickCheckAssetAsync(Guid assetId, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        var asset = await CheckableAsync(assetId, ct);
+        AccessPolicy.Require(AccessPolicy.CanViewAsset(actor, asset, AccessPolicy.IsAssigned(actor, asset)), CantSee);
+        var found = new AssetRef(asset.Id, asset.AssetNumber, asset.Name);
+        if (AssetRules.CheckedOkToday(asset.Checks, actor.UserId, Today)) return new QuickCheckResult(QuickCheckStatus.AlreadyChecked, [found]);
+        await RecordCheckAsync(actor, asset, new AssetCheckInput { Outcome = AssetCheckOutcome.Ok, Notes = "Quick check (scanned)." }, ct);
+        return new QuickCheckResult(QuickCheckStatus.Recorded, [found]);
+    }
+
+    /// <summary>An asset with what recording or removing a check needs: its holders and checks.</summary>
+    private async Task<Asset> CheckableAsync(Guid assetId, CancellationToken ct) =>
+        await db.Assets.Include(a => a.Assignments).Include(a => a.Checks).FirstOrDefaultAsync(a => a.Id == assetId, ct)
             ?? throw new NotFoundException("Asset not found.");
+
+    private async Task<AssetCheck> RecordCheckAsync(Actor actor, Asset asset, AssetCheckInput input, CancellationToken ct)
+    {
         var assigned = AccessPolicy.IsAssigned(actor, asset);
         AccessPolicy.Require(AccessPolicy.CanViewAsset(actor, asset, assigned), CantSee);
         var today = Today;
@@ -472,16 +521,11 @@ public sealed class AssetService(ApplicationDbContext db, IActorProvider actors,
         return check;
     }
 
-    /// <summary>"Confirm I have it": the holder's own OK check, dated today.</summary>
-    public Task<AssetCheck> ConfirmHeldAsync(Guid assetId, CancellationToken ct = default) =>
-        RecordCheckAsync(assetId, new AssetCheckInput { Outcome = AssetCheckOutcome.Ok, Notes = "Confirmed by the holder." }, ct);
-
     /// <summary>Remove a check recorded in error: whoever recorded it, or anyone who may edit the asset.</summary>
     public async Task RemoveCheckAsync(Guid assetId, Guid checkId, CancellationToken ct = default)
     {
         var actor = await actors.GetAsync(ct);
-        var asset = await db.Assets.Include(a => a.Assignments).Include(a => a.Checks).FirstOrDefaultAsync(a => a.Id == assetId, ct)
-            ?? throw new NotFoundException("Asset not found.");
+        var asset = await CheckableAsync(assetId, ct);
         AccessPolicy.Require(AccessPolicy.CanViewAsset(actor, asset, AccessPolicy.IsAssigned(actor, asset)), CantSee);
         var check = asset.Checks.FirstOrDefault(c => c.Id == checkId) ?? throw new NotFoundException("Check not found.");
         AccessPolicy.Require(AccessPolicy.CanRemoveCheck(actor, check, asset), "Only whoever recorded a check, or someone who may edit the asset, can remove it.");
