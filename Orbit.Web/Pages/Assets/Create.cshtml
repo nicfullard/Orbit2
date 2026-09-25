@@ -1,4 +1,5 @@
 @page
+@using Orbit.Application.Assets
 @model Orbit.Pages.Assets.CreateModel
 @{
     ViewData["Title"] = "Register asset";
@@ -12,6 +13,13 @@
     </ol>
 </nav>
 <h1 class="h3 mb-3">Register asset</h1>
+@if (Model.CopiedFrom is { } source)
+{
+    <div class="alert alert-info small py-2">
+        Copied from <a asp-page="/Assets/Details" asp-route-id="@source.Id">@AssetRules.Label(source.AssetNumber, source.Name)</a>.
+        Enter this item's own ERP asset number and serial number. Holders, checks, comments and files aren't copied.
+    </div>
+}
 <div class="card">
     <div class="card-body">
         <form method="post" class="js-asset-form"

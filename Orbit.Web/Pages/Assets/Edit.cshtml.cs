@@ -26,7 +26,7 @@ public class EditModel(
         var actor = await actors.GetAsync(ct);
         await LoadAsync(actor, id, ct);
         Form = AssetForm.From(Asset);
-        Lookups = await BuildAsync(actor, postedBack: false, ct);
+        Lookups = await BuildAsync(actor, propertiesFromForm: false, ct);
         return Page();
     }
 
@@ -49,7 +49,7 @@ public class EditModel(
                 ModelState.AddModelError(string.Empty, ex.Message);
             }
         }
-        Lookups = await BuildAsync(actor, postedBack: true, ct);
+        Lookups = await BuildAsync(actor, propertiesFromForm: true, ct);
         return Page();
     }
 
@@ -88,7 +88,7 @@ public class EditModel(
         CanDelete = AssetRules.DeleteBlocker(Asset.Checks.Count) is null;
     }
 
-    private Task<AssetFormLookups> BuildAsync(Actor actor, bool postedBack, CancellationToken ct) =>
-        AssetFormLookups.BuildAsync(actor, Form, Asset, actor.CanAnywhere(Permission.AssetsEdit), postedBack,
+    private Task<AssetFormLookups> BuildAsync(Actor actor, bool propertiesFromForm, CancellationToken ct) =>
+        AssetFormLookups.BuildAsync(actor, Form, Asset, actor.CanAnywhere(Permission.AssetsEdit), propertiesFromForm,
             departments, types, locations, users, assets, ct);
 }

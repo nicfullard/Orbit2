@@ -66,6 +66,25 @@ public sealed class AssetForm
         Properties = a.PropertyValues.ToDictionary(v => v.AssetTypePropertyId.ToString(), v => (string?)v.Value)
     };
 
+    /// <summary>
+    /// A new asset's form filled from <paramref name="source"/> (the asset page's Copy, §6.19): every detail and property value
+    /// except what belongs to the one item - its ERP asset number, serial number and holders. A copy of a disposed asset is its
+    /// replacement, so it starts Active.
+    /// </summary>
+    public static AssetForm CopyOf(Asset source)
+    {
+        var form = From(source);
+        form.AssetNumber = null;
+        form.SerialNumber = null;
+        form.AssigneeIds = [];
+        if (form.Status == AssetStatus.Disposed)
+        {
+            form.Status = AssetStatus.Active;
+            form.DisposedOn = null;
+        }
+        return form;
+    }
+
     /// <summary>A money amount as typed: spaces ignored, a lone comma read as the decimal point.</summary>
     public static decimal? ParseValue(string? text)
     {
@@ -170,8 +189,11 @@ public sealed class AssetFormLookups
         locations = (await locations.ListForDepartmentAsync(departmentId, ct: ct)).Select(l => new { id = l.Id, name = l.Name }).ToList()
     };
 
+    /// <param name="propertiesFromForm">
+    /// The property fields show the form's values (a redisplayed or copied form) rather than <paramref name="asset"/>'s.
+    /// </param>
     public static async Task<AssetFormLookups> BuildAsync(
-        Actor actor, AssetForm form, Asset? asset, bool canChooseDepartment, bool postedBack,
+        Actor actor, AssetForm form, Asset? asset, bool canChooseDepartment, bool propertiesFromForm,
         DepartmentService departments, AssetTypeService types, AssetLocationService locations, UserDirectoryService users, AssetService assets,
         CancellationToken ct)
     {
@@ -202,7 +224,7 @@ public sealed class AssetFormLookups
             Locations = locationList,
             Holders = await users.FindManyAsync(form.AssigneeIds, ct),
             Suggestions = await assets.SuggestionsAsync(ct),
-            PropertyFields = AssetPropertyFieldsVm.For(chosenType, asset, postedBack ? form.Properties : null)
+            PropertyFields = AssetPropertyFieldsVm.For(chosenType, asset, propertiesFromForm ? form.Properties : null)
         };
     }
 }

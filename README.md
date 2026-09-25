@@ -198,6 +198,8 @@ status), comments and files. Overdue checks, last checks that weren't OK, expiri
 held by deactivated users are flagged and filterable; disposing of an asset removes its holders.
 **Quick check** on the Assets list is for an audit walk with a barcode scanner: scan one serial number (or ERP asset
 number) after another, and each records today's OK check on the asset without leaving the scan box.
+**Copy** on an asset's page opens the Register form filled from that asset, for a batch of identical items: the ERP
+asset number, serial number and holders are left blank, and a copy of a disposed asset starts Active.
 
 ## Configuration
 

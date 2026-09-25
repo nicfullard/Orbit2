@@ -33,6 +33,8 @@ public class DetailsModel(
     public IReadOnlyList<AuditLog> Activity { get; private set; } = [];
     public bool IsAssigned { get; private set; }
     public bool CanEdit { get; private set; }
+    /// <summary>Register a copy (§6.19): assets.create reaching the asset's department, whose types and locations the copy uses.</summary>
+    public bool CanCopy { get; private set; }
     /// <summary>Change who holds it right here (§6.19): assets.edit, and not disposed.</summary>
     public bool CanAssign { get; private set; }
     public bool CanCheck { get; private set; }
@@ -55,6 +57,7 @@ public class DetailsModel(
         Schedule = assets.Item(Asset);
         IsAssigned = AccessPolicy.IsAssigned(Actor, Asset);
         CanEdit = AccessPolicy.CanEditAsset(Actor, Asset);
+        CanCopy = AccessPolicy.CanCreateAssetIn(Actor, Asset.DepartmentId);
         CanAssign = CanEdit && Asset.Status != AssetStatus.Disposed;
         CanCheck = AccessPolicy.CanCheckAsset(Actor, Asset, IsAssigned);
         ConfirmOnly = CanCheck && IsAssigned && Actor.ScopeOf(Permission.AssetsCheck) == PermissionScope.Own;

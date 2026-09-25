@@ -51,9 +51,19 @@
             </div>
         }
     </div>
-    @if (Model.CanEdit)
+    @if (Model.CanEdit || Model.CanCopy)
     {
-        <a class="btn btn-outline-primary btn-sm" asp-page="/Assets/Edit" asp-route-id="@a.Id">Edit</a>
+        <div class="d-flex gap-2">
+            @if (Model.CanEdit)
+            {
+                <a class="btn btn-outline-primary btn-sm" asp-page="/Assets/Edit" asp-route-id="@a.Id">Edit</a>
+            }
+            @if (Model.CanCopy)
+            {
+                <a class="btn btn-outline-secondary btn-sm" asp-page="/Assets/Create" asp-route-copyFrom="@a.Id"
+                   title="Register a new asset with these details; the ERP asset number and serial number are left blank">Copy</a>
+            }
+        </div>
     }
 </div>
 

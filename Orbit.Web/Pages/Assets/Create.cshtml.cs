@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Orbit.Application;
 using Orbit.Application.Services;
+using Orbit.Data.Entities;
 using ValidationException = Orbit.Application.ValidationException;
 
 namespace Orbit.Pages.Assets;
@@ -15,12 +16,25 @@ public class CreateModel(
 {
     [BindProperty] public AssetForm Form { get; set; } = new();
     public AssetFormLookups Lookups { get; private set; } = null!;
+    /// <summary>The asset the form was copied from (the asset page's Copy, §6.19); null for a blank form.</summary>
+    public Asset? CopiedFrom { get; private set; }
 
-    public async Task OnGetAsync(Guid? departmentId, CancellationToken ct)
+    public async Task OnGetAsync(Guid? departmentId, Guid? copyFrom, CancellationToken ct)
     {
         var actor = await actors.GetAsync(ct);
-        Form.DepartmentId = actor.CanAnywhere(Permission.AssetsCreate) ? departmentId ?? actor.DepartmentId : actor.DepartmentId;
-        Lookups = await BuildAsync(actor, postedBack: false, ct);
+        if (copyFrom is Guid sourceId)
+        {
+            // A copy stays in the source's department: its type and location belong to it.
+            CopiedFrom = await assets.GetAsync(sourceId, ct);
+            AccessPolicy.Require(AccessPolicy.CanCreateAssetIn(actor, CopiedFrom.DepartmentId),
+                "You don't have permission to register assets in this asset's department.");
+            Form = AssetForm.CopyOf(CopiedFrom);
+        }
+        else
+        {
+            Form.DepartmentId = actor.CanAnywhere(Permission.AssetsCreate) ? departmentId ?? actor.DepartmentId : actor.DepartmentId;
+        }
+        Lookups = await BuildAsync(actor, propertiesFromForm: CopiedFrom is not null, ct);
     }
 
     public async Task<IActionResult> OnPostAsync(CancellationToken ct)
@@ -41,7 +55,7 @@ public class CreateModel(
                 ModelState.AddModelError(string.Empty, ex.Message);
             }
         }
-        Lookups = await BuildAsync(actor, postedBack: true, ct);
+        Lookups = await BuildAsync(actor, propertiesFromForm: true, ct);
         return Page();
     }
 
@@ -56,7 +70,7 @@ public class CreateModel(
     public async Task<IActionResult> OnGetChoicesAsync(Guid departmentId, CancellationToken ct) =>
         new JsonResult(await AssetFormLookups.ChoicesAsync(departmentId, types, locations, ct));
 
-    private Task<AssetFormLookups> BuildAsync(Actor actor, bool postedBack, CancellationToken ct) =>
-        AssetFormLookups.BuildAsync(actor, Form, null, actor.CanAnywhere(Permission.AssetsCreate), postedBack,
+    private Task<AssetFormLookups> BuildAsync(Actor actor, bool propertiesFromForm, CancellationToken ct) =>
+        AssetFormLookups.BuildAsync(actor, Form, null, actor.CanAnywhere(Permission.AssetsCreate), propertiesFromForm,
             departments, types, locations, users, assets, ct);
 }
