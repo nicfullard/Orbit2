@@ -7,7 +7,7 @@ Built on ASP.NET Core Razor Pages (.NET 10), EF Core + PostgreSQL, ASP.NET Core 
 
 ## Solution layout
 
-`Orbit.slnx` holds three projects, side by side at the root:
+`Orbit.slnx` holds four projects, side by side at the root:
 
 | Project | What it is |
 |---|---|
@@ -28,7 +28,7 @@ Inside `Orbit.Web/`, folders stand in for the layers of spec §11, and namespace
 | `Application/` | Services (`TaskService`, `ProjectService`, `RoleService`, ...), the permission catalogue, `Actor` + `AccessPolicy` + `Scoping` (the §6.5 rules), `RoleRules`, models |
 | `Auth/` | API-key and Orbit Agent authentication schemes, `OrbitSignInManager` (directory sign-in), claims factory, actor resolution, page filters |
 | `Agents/` | Server side of the Orbit Agent: the SignalR hub agents connect to, the registry of connected agents, the register/de-register endpoints |
-| `Mcp/` | `OrbitTools` - the 26 MCP tools, mapped onto the same services the UI uses |
+| `Mcp/` | `OrbitTools` - the 32 MCP tools, mapped onto the same services the UI uses |
 | `Jobs/` | Quartz.NET jobs: recurring-task generation and due-date notifications, cron-scheduled from `Jobs:*` |
 | `Reporting/` | QuestPDF report rendering |
 | `Pages/` | Razor Pages UI (dashboard, tasks, projects, backlog, sprints, recurring, time, assets, admin, reports) |
@@ -36,7 +36,7 @@ Inside `Orbit.Web/`, folders stand in for the layers of spec §11, and namespace
 | `Migrations/` | EF Core migrations |
 
 ```
-dotnet build Orbit.slnx                              # all three projects
+dotnet build Orbit.slnx                              # all four projects
 dotnet run --project Orbit.Web                       # the web app
 dotnet test Orbit.slnx                               # the unit tests
 dotnet ef migrations add <Name> --project Orbit.Web  # from the solution root (dotnet tool restore first)
@@ -46,12 +46,11 @@ dotnet ef migrations add <Name> --project Orbit.Web  # from the solution root (d
 
 1. `Orbit.Web/appsettings.Development.json` (gitignored) points at the local Postgres `orbit` database and seeds a
    first System Admin (`admin@orbit.local`). Change the seed values if you like.
-2. Scaffold the initial migration in the Package Manager Console:
-   `Add-Migration InitialCreate`
-3. Run the app. On startup it applies pending migrations, creates the built-in **System Administrator** role and
+2. Run the app. On startup it applies the migrations in `Orbit.Web/Migrations/` (creating the schema in an empty
+   database), creates the built-in **System Administrator** role and
    the shipped **Member** and **Department Admin** roles (once; later edits to them stick), the synthetic
    `Claude` user, and the seed admin if nobody holds the built-in role yet.
-4. Sign in as the seed admin, then under **Admin** create departments, users and an API key, and adjust or add
+3. Sign in as the seed admin, then under **Admin** create departments, users and an API key, and adjust or add
    roles under **Admin > Roles**.
 
 Self-registration is disabled: accounts are created under **Admin > Users**.
