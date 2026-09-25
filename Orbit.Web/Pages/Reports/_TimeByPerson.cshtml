@@ -1,0 +1,104 @@
+@model TimeByPersonReport
+@using Orbit.Pages.Reports
+@{
+    string VarianceClass(int v) => v > 0 ? "text-warning-emphasis" : v < 0 ? "text-success-emphasis" : "";
+}
+
+@if (Model.Rows.Count == 0)
+{
+    <p class="text-muted fst-italic p-3 mb-0">No data for the selected filters.</p>
+}
+else
+{
+    var max = Model.Rows.Max(r => r.LoggedMinutes);
+    <table class="table table-sm align-middle mb-0">
+        <thead class="table-light">
+            <tr>
+                <th style="width:22%">Person</th>
+                <th style="width:10%" class="text-end">Logged</th>
+                <th></th>
+                <th style="width:12%" class="text-end">Tasks</th>
+                <th style="width:10%" class="text-end" title="The estimates of the tasks they worked on that have one (cancelled tasks aside)">Estimated</th>
+                <th style="width:12%" class="text-end" title="All time logged on those estimated tasks to date, by anyone">Actual to date</th>
+                <th style="width:15%" class="text-end">Variance</th>
+            </tr>
+        </thead>
+        <tbody>
+            @for (var i = 0; i < Model.Rows.Count; i++)
+            {
+                var r = Model.Rows[i];
+                var id = $"time-person-{i}";
+                var pct = max == 0 ? 0 : (int)Math.Round(r.LoggedMinutes * 100.0 / max);
+                <tr>
+                    <td>@r.Name</td>
+                    <td class="text-end fw-semibold">@TimeFormat.Minutes(r.LoggedMinutes)</td>
+                    <td><div class="progress"><div class="progress-bar" role="progressbar" style="width:@pct%"></div></div></td>
+                    <td class="text-end">
+                        <a href="#@id" data-bs-toggle="collapse" role="button" aria-expanded="false" aria-controls="@id" title="Show the tasks">@r.TaskCount</a>
+                        @if (r.UnestimatedTasks > 0) { <div class="small text-muted">@r.UnestimatedTasks unestimated</div> }
+                    </td>
+                    <td class="text-end">@ViewModel.Estimated(r.Estimate)</td>
+                    <td class="text-end">@ViewModel.Actual(r.Estimate)</td>
+                    <td class="text-end @VarianceClass(r.Estimate.VarianceMinutes)">@ViewModel.Variance(r.Estimate)</td>
+                </tr>
+                <tr class="collapse" id="@id">
+                    <td colspan="7" class="p-0">
+                        <table class="table table-sm small mb-0">
+                            <thead>
+                                <tr class="text-muted">
+                                    <th class="ps-4">Task</th>
+                                    <th>Status</th>
+                                    <th class="text-end">Estimate</th>
+                                    <th class="text-end" title="@r.Name's time on the task in the period">Logged</th>
+                                    <th class="text-end" title="All time logged on the task to date, by anyone">Actual to date</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var t in r.Tasks)
+                                {
+                                    <tr>
+                                        <td class="ps-4"><a asp-page="/Tasks/Details" asp-route-id="@t.TaskId" class="text-decoration-none">@t.Number</a> @t.Title</td>
+                                        <td><span class="badge @Ui.StatusBadge(t.Status)">@t.Status.Label()</span></td>
+                                        <td class="text-end">@ViewModel.Estimate(t.EstimateMinutes)</td>
+                                        <td class="text-end">@TimeFormat.Minutes(t.LoggedMinutes)</td>
+                                        <td class="text-end">@TimeFormat.Minutes(t.TotalMinutes)</td>
+                                        <td>
+                                            @if (t.IsOver)
+                                            {
+                                                <span class="badge text-bg-warning" title="More time has been logged than was estimated">Over estimate</span>
+                                            }
+                                            else if (ViewModel.Marker(t.Status, t.EstimateMinutes, t.IsOver) is { Length: > 0 } note)
+                                            {
+                                                <span class="text-muted">@note</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </td>
+                </tr>
+            }
+        </tbody>
+        <tfoot>
+            <tr class="table-light">
+                <th>Total</th>
+                <th class="text-end">@TimeFormat.Minutes(Model.TotalLoggedMinutes)</th>
+                <th></th>
+                <th class="text-end">
+                    @Model.TotalTasks
+                    @if (Model.TotalUnestimatedTasks > 0) { <div class="small text-muted fw-normal">@Model.TotalUnestimatedTasks unestimated</div> }
+                </th>
+                <th class="text-end">@ViewModel.Estimated(Model.Total)</th>
+                <th class="text-end">@ViewModel.Actual(Model.Total)</th>
+                <th class="text-end @VarianceClass(Model.Total.VarianceMinutes)">@ViewModel.Variance(Model.Total)</th>
+            </tr>
+        </tfoot>
+    </table>
+    <div class="small text-muted px-3 py-2 border-top">
+        Logged is each person's time in the period. Estimated, actual and variance compare the estimated tasks they worked on
+        (cancelled tasks aside) with all time logged on them to date, by anyone. A task several people worked on shows under
+        each of them but counts once in the total. Click a task count to see the tasks.
+    </div>
+}

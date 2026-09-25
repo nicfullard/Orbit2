@@ -30,6 +30,14 @@ public static class TimeFormat
         var m = minutes % 60;
         return h == 0 ? $"{m}m" : m == 0 ? $"{h}h" : $"{h}h {m}m";
     }
+
+    /// <summary>A variance: "+5h 30m" over, "-4h" under, "0m" on the nose.</summary>
+    public static string Signed(int minutes) => minutes switch
+    {
+        > 0 => "+" + Minutes(minutes),
+        < 0 => "-" + Minutes(-minutes),
+        _ => "0m"
+    };
 }
 
 /// <summary>Outcome of stopping a running clock. <see cref="Entry"/> is null when too little time elapsed to log anything.</summary>

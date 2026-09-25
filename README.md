@@ -201,6 +201,19 @@ number) after another, and each records today's OK check on the asset without le
 **Copy** on an asset's page opens the Register form filled from that asset, for a batch of identical items: the ERP
 asset number, serial number and holders are left blank, and a copy of a disposed asset starts Active.
 
+## Reports
+
+**Reports** (spec §12, needs **View reports**; at Department scope it is fixed to your own department) takes a date
+range and optional project and department filters, shows each report on screen and exports it to PDF:
+*Closed count by person*, *Created count by person*, *Mean time to respond*, *Mean time to resolve*, and two time
+reports:
+
+- **Time by person** - the time each person logged in the period, and for the tasks they worked on, each task's
+  estimate against all time logged on it to date (cancelled tasks aside). Expand a person to see their tasks, with
+  the ones over estimate flagged. A task several people worked on shows under each of them but counts once in the total.
+- **Estimate accuracy** - tasks completed in the period, grouped by assignee: estimated against actual time, the
+  variance, and how many ran over. Expand a row to see its tasks, largest overrun first.
+
 ## Configuration
 
 See `Orbit.Web/appsettings.json` for defaults and `deploy/orbit.env.example` for the production environment

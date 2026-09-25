@@ -84,6 +84,42 @@ public sealed class ReportingService(ApplicationDbContext db, IActorProvider act
             overallCount, overall);
     }
 
+    /// <summary>
+    /// Time logged in the period (by entry date) per person, with each task's estimate against all time logged on it
+    /// to date. Scoped by the task's project and department, like time logging itself (§6.2.1).
+    /// </summary>
+    public async Task<TimeByPersonReport> TimeByPersonAsync(ReportFilter f, CancellationToken ct = default)
+    {
+        var actor = await RequireReportsAsync(ct);
+        var from = DateOnly.FromDateTime(f.FromUtc);
+        var to = DateOnly.FromDateTime(f.ToUtc);
+        var logged = await Apply(db.TimeEntries.AsNoTracking(), f, actor)
+            .Where(e => e.Date >= from && e.Date < to)
+            .GroupBy(e => new { e.UserId, e.TaskId })
+            .Select(g => new LoggedTime(g.Key.UserId, g.Key.TaskId, g.Sum(e => e.DurationMinutes)))
+            .ToListAsync(ct);
+        var taskIds = logged.Select(l => l.TaskId).Distinct().ToList();
+        var tasks = taskIds.Count == 0 ? new Dictionary<Guid, TaskTimeFacts>()
+            : await Facts(db.Tasks.AsNoTracking().Where(t => taskIds.Contains(t.Id))).ToDictionaryAsync(t => t.Id, ct);
+        var names = await NamesAsync(logged.Select(l => (Guid?)l.UserId), ct);
+        return TimeReportRules.TimeByPerson(logged, tasks, id => Name(id, names, "Unknown"));
+    }
+
+    /// <summary>Tasks set to Done in the period, grouped by assignee: the estimate against all time logged on them.</summary>
+    public async Task<EstimateAccuracyReport> EstimateAccuracyAsync(ReportFilter f, CancellationToken ct = default)
+    {
+        var actor = await RequireReportsAsync(ct);
+        var done = await Facts(Apply(db.Tasks.AsNoTracking(), f, actor)
+                .Where(t => t.Status == TaskItemStatus.Done && t.CompletedAt >= f.FromUtc && t.CompletedAt < f.ToUtc))
+            .ToListAsync(ct);
+        var names = await NamesAsync(done.Select(t => t.AssigneeId), ct);
+        return TimeReportRules.EstimateAccuracy(done, id => Name(id, names, "Unassigned"));
+    }
+
+    private static IQueryable<TaskTimeFacts> Facts(IQueryable<TaskItem> q) =>
+        q.Select(t => new TaskTimeFacts(t.Id, t.Number, t.Title, t.Status, t.AssigneeId, t.EstimateMinutes,
+            t.TimeEntries.Sum(e => (int?)e.DurationMinutes) ?? 0));
+
     private async Task<Actor> RequireReportsAsync(CancellationToken ct)
     {
         var actor = await actors.GetAsync(ct);
@@ -100,6 +136,15 @@ public sealed class ReportingService(ApplicationDbContext db, IActorProvider act
         var departmentId = RestrictedDepartment(actor) ?? f.DepartmentId;
         if (f.ProjectId is Guid p) q = q.Where(t => t.ProjectId == p);
         if (departmentId is Guid d) q = q.Where(t => t.DepartmentId == d);
+        return q;
+    }
+
+    /// <summary>Time entries take their project and department from their task.</summary>
+    private static IQueryable<TimeEntry> Apply(IQueryable<TimeEntry> q, ReportFilter f, Actor actor)
+    {
+        var departmentId = RestrictedDepartment(actor) ?? f.DepartmentId;
+        if (f.ProjectId is Guid p) q = q.Where(e => e.Task.ProjectId == p);
+        if (departmentId is Guid d) q = q.Where(e => e.Task.DepartmentId == d);
         return q;
     }
 

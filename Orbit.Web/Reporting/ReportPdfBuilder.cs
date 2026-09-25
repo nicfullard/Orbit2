@@ -7,7 +7,9 @@ namespace Orbit.Reporting;
 /// <summary>Renders a report's rows as a simple tabular PDF via QuestPDF (Community licence).</summary>
 public static class ReportPdfBuilder
 {
-    public sealed record Table(IReadOnlyList<string> Headers, IReadOnlyList<IReadOnlyList<string>> Rows, string? Caption = null);
+    /// <summary>A captioned table. <paramref name="Widths"/> gives each column a relative width; omitted, the columns share the page equally.</summary>
+    public sealed record Table(
+        IReadOnlyList<string> Headers, IReadOnlyList<IReadOnlyList<string>> Rows, string? Caption = null, IReadOnlyList<float>? Widths = null);
 
     public static byte[] Build(string title, string subtitle, IReadOnlyList<Table> tables)
     {
@@ -46,7 +48,8 @@ public static class ReportPdfBuilder
                             {
                                 t.ColumnsDefinition(cd =>
                                 {
-                                    foreach (var _ in table.Headers) cd.RelativeColumn();
+                                    for (var i = 0; i < table.Headers.Count; i++)
+                                        cd.RelativeColumn(table.Widths is { } w && i < w.Count ? w[i] : 1);
                                 });
                                 t.Header(h =>
                                 {

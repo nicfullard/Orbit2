@@ -114,5 +114,13 @@
                 </table>
             }
         }
+        else if (Model.TimeByPerson is not null)
+        {
+            <partial name="_TimeByPerson" model="Model.TimeByPerson" />
+        }
+        else if (Model.EstimateAccuracy is not null)
+        {
+            <partial name="_EstimateAccuracy" model="Model.EstimateAccuracy" />
+        }
     </div>
 </div>
