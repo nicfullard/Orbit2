@@ -7,7 +7,8 @@ using Orbit.Application.Models;
 namespace Orbit.Application.Services;
 
 /// <summary>
-/// Checks a directory (LDAP / Active Directory) password by asking a connected Orbit Agent to do it (spec §8.1).
+/// Checks a directory (LDAP / Active Directory) password by asking a connected Orbit Agent to do it (spec §8.1), and
+/// carries the agent's other directory commands: Test connection, and listing users for the directory import (§6.13).
 /// Orbit can't reach the directory itself - it sits behind the corporate firewall - so the request travels down the
 /// connection the agent opened to Orbit, and the answer comes back the same way.
 /// The password is passed through and never logged or stored.
@@ -43,7 +44,7 @@ public sealed class DirectoryAuthService(
         var request = new LdapAuthRequest { Settings = ldap, Username = username.Trim(), Password = password };
         foreach (var agent in agents)
         {
-            var result = await InvokeAsync<LdapAuthResult>(agent, AgentMethods.Authenticate, request, ct);
+            var result = await InvokeAsync<LdapAuthResult>(agent, AgentMethods.Authenticate, request, TimeSpan.FromSeconds(TimeoutSeconds), ct);
             if (result is null) continue;
 
             switch (result.Status)
@@ -76,26 +77,56 @@ public sealed class DirectoryAuthService(
             return new DirectoryTestOutcome(null, null, "No Orbit Agent is connected, so there is nothing inside the network to run the test.");
 
         var request = new LdapTestRequest { Settings = ldap, SampleUsername = string.IsNullOrWhiteSpace(sampleUsername) ? null : sampleUsername.Trim() };
-        var result = await InvokeAsync<LdapTestResult>(agent, AgentMethods.TestDirectory, request, ct);
+        var result = await InvokeAsync<LdapTestResult>(agent, AgentMethods.TestDirectory, request, TimeSpan.FromSeconds(TimeoutSeconds), ct);
         return result is null
             ? new DirectoryTestOutcome(agent.AgentName, null, $"Agent \"{agent.AgentName}\" did not answer within {TimeoutSeconds} seconds.")
             : new DirectoryTestOutcome(agent.AgentName, result, null);
     }
 
+    /// <summary>
+    /// "Import from directory": every entry the request's filter matches, from an agent new enough to list users
+    /// (1.1 and later). The caller authorises and fills in the settings; this only carries the request. Agents are asked
+    /// in turn while time remains, so one that dropped its connection doesn't sink the listing, but the whole attempt
+    /// stays within <see cref="AgentOptions.DirectoryListTimeoutSeconds"/> - the admin's browser is waiting on it.
+    /// </summary>
+    public async Task<DirectoryListOutcome> ListUsersAsync(LdapListUsersRequest request, CancellationToken ct = default)
+    {
+        var agents = registry.WithCapability(AgentCapabilities.LdapListUsers);
+        if (agents.Count == 0)
+            return new DirectoryListOutcome(null, null, registry.WithCapability(AgentCapabilities.LdapAuthenticate).Count == 0
+                ? "No Orbit Agent is connected, so there is nothing inside the network to read the directory."
+                : "No connected Orbit Agent can list directory users: they predate it. Update the agent to version 1.1 or later.");
+
+        var deadline = DateTime.UtcNow.AddSeconds(ListTimeoutSeconds);
+        string? error = null;
+        foreach (var agent in agents)
+        {
+            var remaining = deadline - DateTime.UtcNow;
+            if (remaining < TimeSpan.FromSeconds(5)) break;
+            // The agent gets a little less than Orbit waits, so it can still report "timed out" itself.
+            request.TimeLimitSeconds = Math.Max(5, (int)remaining.TotalSeconds - 5);
+            var result = await InvokeAsync<LdapListUsersResult>(agent, AgentMethods.ListDirectoryUsers, request, remaining, ct);
+            if (result is not null) return new DirectoryListOutcome(agent.AgentName, result, null);
+            error = $"Agent \"{agent.AgentName}\" did not answer in time or lost its connection. Orbit's log has the details.";
+        }
+        return new DirectoryListOutcome(null, null, error ?? $"No agent could answer within {ListTimeoutSeconds} seconds.");
+    }
+
     private int TimeoutSeconds => Math.Clamp(options.Value.CommandTimeoutSeconds, 1, 120);
+    private int ListTimeoutSeconds => Math.Clamp(options.Value.DirectoryListTimeoutSeconds, 5, 300);
 
     /// <summary>Sends a command to one agent and waits for its result. Null means "no answer": timed out, disconnected or faulted.</summary>
-    private async Task<T?> InvokeAsync<T>(AgentConnection agent, string method, object request, CancellationToken ct) where T : class
+    private async Task<T?> InvokeAsync<T>(AgentConnection agent, string method, object request, TimeSpan wait, CancellationToken ct) where T : class
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(TimeSpan.FromSeconds(TimeoutSeconds));
+        timeout.CancelAfter(wait);
         try
         {
             return await hub.Clients.Client(agent.ConnectionId).InvokeAsync<T>(method, request, timeout.Token);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            logger.LogError("Agent {Agent} did not answer {Method} within {Seconds}s.", agent.AgentName, method, TimeoutSeconds);
+            logger.LogError("Agent {Agent} did not answer {Method} within {Seconds}s.", agent.AgentName, method, (int)wait.TotalSeconds);
             return null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

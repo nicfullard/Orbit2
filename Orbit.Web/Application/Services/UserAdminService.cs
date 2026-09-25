@@ -63,8 +63,9 @@ public sealed class UserAdminService(
         Throw(isDirectoryUser ? await userManager.CreateAsync(user) : await userManager.CreateAsync(user, input.Password!));
         Throw(await userManager.AddToRoleAsync(user, role.Name));
 
-        audit.Add(actor, AuditEntity.User, user.Id, AuditAction.Created, departmentId, displayName,
-            new { email, role = role.Name, roleId = role.Id, departmentId, authSource = input.AuthSource });
+        audit.Add(actor, AuditEntity.User, user.Id, AuditAction.Created, departmentId, displayName, input.DirectoryDn is null
+            ? new { email, role = role.Name, roleId = role.Id, departmentId, authSource = input.AuthSource }
+            : new { email, role = role.Name, roleId = role.Id, departmentId, authSource = input.AuthSource, source = "directoryImport", directoryDn = input.DirectoryDn });
         await db.SaveChangesAsync(ct);
         return await GetAsync(user.Id, ct);
     }

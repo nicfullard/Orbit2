@@ -68,3 +68,50 @@ public sealed class LdapTestResult
     public string? FoundDn { get; set; }
     public string? FoundDisplayName { get; set; }
 }
+
+/// <summary>
+/// "Import from directory": every user entry under the search base matching <see cref="Filter"/>, read with a paged
+/// search. Orbit decides what to do with them; the agent only reads.
+/// </summary>
+public sealed class LdapListUsersRequest
+{
+    public LdapConnectionSettings Settings { get; set; } = new();
+    /// <summary>A complete LDAP filter written by the admin, e.g. <c>(&amp;(objectCategory=person)(objectClass=user)(mail=*))</c>.</summary>
+    public string Filter { get; set; } = string.Empty;
+    /// <summary>Searches here instead of <see cref="LdapConnectionSettings.SearchBase"/> when set (one OU at a time).</summary>
+    public string? SearchBase { get; set; }
+    /// <summary>The attribute read into <see cref="LdapDirectoryUser.Department"/>.</summary>
+    public string DepartmentAttribute { get; set; } = "department";
+    /// <summary>Stop after this many entries and report <see cref="LdapListUsersResult.Truncated"/>.</summary>
+    public int MaxResults { get; set; } = 5000;
+    /// <summary>How long the agent may spend, so it answers before Orbit stops waiting.</summary>
+    public int TimeLimitSeconds { get; set; } = 40;
+}
+
+public sealed class LdapDirectoryUser
+{
+    /// <summary>objectGUID in its usual text form, or the DN for a directory without one. Unique within one result.</summary>
+    public string Id { get; set; } = string.Empty;
+    public string Dn { get; set; } = string.Empty;
+    public string? DisplayName { get; set; }
+    public string? GivenName { get; set; }
+    public string? Surname { get; set; }
+    public string? Mail { get; set; }
+    public string? UserPrincipalName { get; set; }
+    public string? SamAccountName { get; set; }
+    public string? Title { get; set; }
+    /// <summary>The value of the requested department attribute.</summary>
+    public string? Department { get; set; }
+    /// <summary>Active Directory's "account disabled" flag (userAccountControl bit 0x2).</summary>
+    public bool Disabled { get; set; }
+}
+
+public sealed class LdapListUsersResult
+{
+    public bool Success { get; set; }
+    /// <summary>Why the listing failed, worded for the admin (e.g. "the service account's bind DN or password was rejected").</summary>
+    public string? Error { get; set; }
+    public List<LdapDirectoryUser> Users { get; set; } = [];
+    /// <summary>More entries matched than <see cref="LdapListUsersRequest.MaxResults"/>; the rest were not read.</summary>
+    public bool Truncated { get; set; }
+}

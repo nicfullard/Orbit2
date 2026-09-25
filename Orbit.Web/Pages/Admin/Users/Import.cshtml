@@ -1,0 +1,284 @@
+@page
+@model Orbit.Pages.Admin.Users.ImportModel
+@using Orbit.Application.Services
+@{
+    ViewData["Title"] = "Import from directory";
+    var s = Model.Setup;
+    var p = Model.Preview;
+    var o = Model.Outcome;
+    var q = Model.Query;
+    var selected = Model.SelectedKeys;
+    var emailSource = p?.EmailSource ?? s.EmailSource;
+
+    // The query travels with the Import and "Load again" forms, so they read the directory exactly as it was listed.
+    void QueryFields(DirectoryImportQuery query)
+    {
+        <input type="hidden" name="Query.Filter" value="@query.Filter" />
+        <input type="hidden" name="Query.SearchBase" value="@query.SearchBase" />
+        <input type="hidden" name="Query.DepartmentAttribute" value="@query.DepartmentAttribute" />
+    }
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Admin/Users/Index">Users</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Import from directory</li>
+    </ol>
+</nav>
+<div class="mb-3">
+    <h1 class="h3 mb-0">Import from directory</h1>
+    <div class="text-muted small">Creates Orbit accounts for people in your company directory (Active Directory), who then sign in with their directory password. An <a asp-page="/Admin/Agents/Index">Orbit Agent</a> reads the directory; you choose who is imported, their role and their department. It is a one-off: nothing is kept in step with the directory afterwards.</div>
+</div>
+
+@if (!s.DirectoryEnabled)
+{
+    <div class="alert alert-warning">
+        <span class="fw-semibold">Directory sign-in isn't enabled.</span>
+        Imported people sign in with it, so set it up under <a asp-page="/Admin/Directory/Index">Admin &gt; Directory</a> first.
+    </div>
+}
+else if (s.AgentsAbleToList == 0)
+{
+    <div class="alert alert-warning">
+        @if (s.AgentsConnected == 0)
+        {
+            <span class="fw-semibold">No Orbit Agent is connected,</span> <text>so there is nothing inside the network to read the directory.</text>
+        }
+        else
+        {
+            <span class="fw-semibold">The connected Orbit Agent@(s.AgentsConnected == 1 ? " is" : "s are") too old to list directory users.</span> <text>Update @(s.AgentsConnected == 1 ? "it" : "them") to version 1.1 or later; sign-in keeps working meanwhile.</text>
+        }
+        <a asp-page="/Admin/Agents/Index">Manage agents</a>
+    </div>
+}
+
+@if (ViewData.ModelState[string.Empty]?.Errors.Count > 0)
+{
+    <div asp-validation-summary="ModelOnly" class="alert alert-danger py-2 mb-3"></div>
+}
+
+@if (o is not null)
+{
+    <div class="card mb-3">
+        <div class="card-header fw-semibold">
+            @(o.Imported.Count == 0 ? "Nobody was imported" : $"Imported {People(o.Imported.Count)} as {o.RoleName}")@(o.Skipped.Count == 0 ? "" : $", {o.Skipped.Count} skipped")
+        </div>
+        <div class="card-body">
+            @if (o.Imported.Count > 0)
+            {
+                <p class="small mb-2">They can sign in now with their directory email and password. Each account is recorded in the activity log as imported from the directory.</p>
+                <details class="mb-2" open="@(o.Imported.Count <= 20)">
+                    <summary class="small fw-semibold">Imported</summary>
+                    <div class="table-responsive mt-2" style="max-height:24rem">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead class="table-light"><tr><th>Name</th><th>Email</th><th>Department</th></tr></thead>
+                            <tbody>
+                                @foreach (var u in o.Imported)
+                                {
+                                    <tr><td><a asp-page="/Admin/Users/Edit" asp-route-id="@u.Id">@u.DisplayName</a></td><td>@u.Email</td><td>@(u.DepartmentName ?? "-")</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </details>
+            }
+            @if (o.Skipped.Count > 0)
+            {
+                <details open>
+                    <summary class="small fw-semibold">Skipped</summary>
+                    <div class="table-responsive mt-2" style="max-height:24rem">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead class="table-light"><tr><th>Name</th><th>Email</th><th>Why</th></tr></thead>
+                            <tbody>
+                                @foreach (var u in o.Skipped)
+                                {
+                                    <tr><td>@u.DisplayName</td><td>@(u.Email ?? "-")</td><td>@u.Reason</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </details>
+            }
+            <form method="post" asp-page-handler="Load" class="mt-3">
+                @{ QueryFields(q); }
+                <input type="hidden" name="RoleId" value="@Model.RoleId" />
+                <button type="submit" class="btn btn-outline-primary btn-sm">Load the directory again</button>
+            </form>
+        </div>
+    </div>
+}
+
+<div class="card mb-3">
+    <div class="card-header fw-semibold">Who to list</div>
+    <div class="card-body">
+        <form method="post" asp-page-handler="Load">
+            <input type="hidden" name="RoleId" value="@Model.RoleId" />
+            <div class="row g-3">
+                <div class="col-12">
+                    <label class="form-label" for="Query_Filter">Filter</label>
+                    <input class="form-control key-box" id="Query_Filter" name="Query.Filter" value="@q.Filter" maxlength="@DirectoryImportRules.MaxFilterLength" />
+                    <div class="form-text">An LDAP filter. The default is your sign-in filter with <code>*</code> in place of <code>{0}</code>, so it lists the people who could sign in. To import one group, add e.g. <code>(memberOf=CN=Finance,OU=Groups,DC=corp,DC=example,DC=com)</code> inside the <code>(&amp;...)</code>.</div>
+                </div>
+                <div class="col-md-8">
+                    <label class="form-label" for="Query_SearchBase">Search base</label>
+                    <input class="form-control" id="Query_SearchBase" name="Query.SearchBase" value="@q.SearchBase" maxlength="@DirectoryImportRules.MaxSearchBaseLength" placeholder="(the search base under Admin > Directory)" />
+                    <div class="form-text">Narrow it to one OU to import a part of the organisation at a time.</div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="Query_DepartmentAttribute">Department attribute</label>
+                    <input class="form-control" id="Query_DepartmentAttribute" name="Query.DepartmentAttribute" value="@q.DepartmentAttribute" maxlength="64" placeholder="department" />
+                    <div class="form-text">Matched to Orbit department names, ignoring case and spacing.</div>
+                </div>
+            </div>
+            <div class="d-flex flex-wrap align-items-center gap-3 mt-3">
+                <button type="submit" class="btn btn-primary">Load directory users</button>
+                <span class="small text-muted">Reads up to @DirectoryImportService.MaxUsers.ToString("N0") entries. Nothing is created until you import.</span>
+            </div>
+        </form>
+    </div>
+</div>
+
+@if (p is not null)
+{
+    var linked = p.Rows.Count(r => r.CanImport && r.IsLinked);
+    <form method="post" asp-page-handler="Import" id="importForm" data-confirm="Create Orbit accounts for the ticked people?">
+        @{ QueryFields(p.Query); }
+
+        <div class="d-flex flex-wrap gap-2 mb-3 small">
+            <span class="badge text-bg-light border">@p.Rows.Count found@(p.AgentName is null ? "" : $" by agent \"{p.AgentName}\"")</span>
+            <span class="badge text-bg-success">@p.ReadyCount ready to import</span>
+            @if (p.ReadyCount > 0)
+            {
+                <span class="badge text-bg-light border">@linked linked to a department</span>
+                @if (p.UnlinkedCount > 0) { <span class="badge text-bg-warning">@p.UnlinkedCount not linked</span> }
+            }
+            <span class="badge text-bg-secondary">@p.InOrbitCount already in Orbit</span>
+            @if (p.BlockedCount > 0) { <span class="badge text-bg-secondary">@p.BlockedCount can't be imported</span> }
+        </div>
+        @if (p.Truncated)
+        {
+            <div class="alert alert-warning py-2">The directory has more entries than the @DirectoryImportService.MaxUsers.ToString("N0") read. Narrow the filter or the search base, and import in parts.</div>
+        }
+        <p class="small text-muted">
+            Emails come from each person's <code>@emailSource.Attribute</code> attribute, the one your sign-in filter looks people up by.
+            @if (emailSource.Warning is not null) { <span class="text-warning-emphasis d-block">@emailSource.Warning</span> }
+        </p>
+
+        @if (p.Unlinked.Count > 0)
+        {
+            <div class="card mb-3 border-warning">
+                <div class="card-header fw-semibold">Departments that couldn't be linked</div>
+                <div class="card-body">
+                    <p class="small text-muted">No Orbit department has these names. Choose one for each, or leave them without a department (which the role must allow). This applies to this import only; to link them automatically next time, rename the Orbit department to match or <a asp-page="/Admin/Departments/Index">add it</a>.</p>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead class="table-light"><tr><th>In the directory</th><th class="text-end">People</th><th style="min-width:16rem">Orbit department</th></tr></thead>
+                            <tbody>
+                                @for (var i = 0; i < p.Unlinked.Count; i++)
+                                {
+                                    var u = p.Unlinked[i];
+                                    var mapped = Model.MappedTo(u.Key);
+                                    <tr>
+                                        <td>
+                                            @if (u.IsBlank) { <span class="fst-italic">(no department in the directory)</span> } else { @u.Value }
+                                            @if (u.ArchivedMatch is not null) { <div class="small text-muted">Matches the archived department "@u.ArchivedMatch".</div> }
+                                        </td>
+                                        <td class="text-end">@u.Count</td>
+                                        <td>
+                                            <input type="hidden" name="Map[@i].Key" value="@u.Key" />
+                                            <select class="form-select form-select-sm" name="Map[@i].DepartmentId" aria-label="Orbit department for @(u.IsBlank ? "people with no department" : u.Value)">
+                                                <option value="">(leave without a department)</option>
+                                                @foreach (var d in Model.Departments)
+                                                {
+                                                    <option value="@d.Id" selected="@(mapped == d.Id)">@d.Name</option>
+                                                }
+                                            </select>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="card">
+            <div class="card-header d-flex flex-wrap align-items-center gap-2">
+                <input type="search" class="form-control form-control-sm js-table-filter" data-filter-target="#directoryUsers" placeholder="Filter by name, email, department..." style="max-width:20rem" aria-label="Filter the list" />
+                <span class="small text-muted"><span class="js-selected-count" data-count-of="#directoryUsers">@selected.Count</span> ticked</span>
+                <div class="ms-auto d-flex flex-wrap align-items-center gap-2">
+                    <label class="small" for="RoleId">Role</label>
+                    <select class="form-select form-select-sm w-auto" id="RoleId" name="RoleId">
+                        @foreach (var r in Model.RoleItems)
+                        {
+                            <option value="@r.Id" title="@r.Description" selected="@(r.Id == Model.RoleId)">@r.Name@(r.RequiresDepartment ? " (needs a department)" : "")</option>
+                        }
+                    </select>
+                    <button type="submit" class="btn btn-primary btn-sm" disabled="@(p.ReadyCount == 0)">Import ticked</button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0" id="directoryUsers">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:2rem"><input type="checkbox" class="form-check-input js-select-all" title="Tick everyone shown who can be imported" aria-label="Tick all" /></th>
+                                <th>Name</th><th>Email</th><th>Account</th><th>Directory department</th><th>Orbit department</th><th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var r in p.Rows)
+                            {
+                                <tr class="@(r.CanImport ? "" : "text-muted")">
+                                    <td>
+                                        @if (r.CanImport)
+                                        {
+                                            <input type="checkbox" class="form-check-input js-select-item" name="Selected" value="@r.Key" checked="@selected.Contains(r.Key)" aria-label="Import @r.DisplayName" />
+                                        }
+                                    </td>
+                                    <td>
+                                        <div class="fw-semibold">@r.DisplayName</div>
+                                        @if (r.Title is not null) { <div class="small text-muted">@r.Title</div> }
+                                    </td>
+                                    <td>@(r.Email ?? "-")</td>
+                                    <td class="small">@(r.Account ?? "-")</td>
+                                    <td>@(r.DirectoryDepartment ?? "-")</td>
+                                    <td>
+                                        @* Only for people who can be imported: for anyone else it isn't what they have, or will have, in Orbit. *@
+                                        @if (!r.CanImport) { <text>-</text> }
+                                        else if (r.IsLinked) { @r.DepartmentName }
+                                        else { <span class="badge text-bg-warning" title="Choose a department for it above">Not linked</span> }
+                                    </td>
+                                    <td>
+                                        @switch (r.Status)
+                                        {
+                                            case DirectoryImportStatus.Ready:
+                                                <span class="badge text-bg-success">Ready</span>
+                                                break;
+                                            case DirectoryImportStatus.InOrbit:
+                                                <a class="badge text-bg-secondary text-decoration-none" asp-page="/Admin/Users/Edit" asp-route-id="@r.ExistingUserId">Already in Orbit</a>
+                                                break;
+                                            default:
+                                                <span class="badge text-bg-secondary">@DirectoryImportRules.StatusLabel(r.Status)</span>
+                                                break;
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (p.Rows.Count == 0)
+                {
+                    <div class="p-3 text-muted">Nothing under the search base matches the filter.</div>
+                }
+            </div>
+        </div>
+    </form>
+}
+
+@functions {
+    private static string People(int n) => n == 1 ? "1 person" : $"{n} people";
+}
+

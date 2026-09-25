@@ -6,12 +6,37 @@ document.addEventListener('change', function (e) {
   }
 });
 
-// "Select all" checkbox for bulk planning.
+// "Select all" checkbox for bulk planning and the directory import. Rows hidden by a table filter (below) and disabled
+// boxes are left alone, so "all" means "all shown". A .js-selected-count shows how many boxes are ticked.
+function orbitUpdateSelectedCounts() {
+  document.querySelectorAll('.js-selected-count').forEach(function (el) {
+    var scope = el.dataset.countOf ? document.querySelector(el.dataset.countOf) : document;
+    if (scope) el.textContent = scope.querySelectorAll('input.js-select-item:checked').length;
+  });
+}
 document.addEventListener('change', function (e) {
   var el = e.target;
-  if (el && el.classList && el.classList.contains('js-select-all')) {
-    document.querySelectorAll('input.js-select-item').forEach(function (cb) { cb.checked = el.checked; });
+  if (!el || !el.classList) return;
+  if (el.classList.contains('js-select-all')) {
+    document.querySelectorAll('input.js-select-item').forEach(function (cb) {
+      var row = cb.closest('tr');
+      if (!cb.disabled && !(row && row.hidden)) cb.checked = el.checked;
+    });
   }
+  if (el.classList.contains('js-select-all') || el.classList.contains('js-select-item')) orbitUpdateSelectedCounts();
+});
+
+// Type-to-filter for a long table: hides the body rows of data-filter-target whose text doesn't contain every word typed.
+document.addEventListener('input', function (e) {
+  var el = e.target;
+  if (!el || !el.classList || !el.classList.contains('js-table-filter')) return;
+  var table = document.querySelector(el.dataset.filterTarget);
+  if (!table) return;
+  var words = el.value.toLowerCase().split(/\s+/).filter(Boolean);
+  table.querySelectorAll('tbody tr').forEach(function (row) {
+    var text = row.textContent.toLowerCase();
+    row.hidden = !words.every(function (w) { return text.indexOf(w) >= 0; });
+  });
 });
 
 // Confirmations

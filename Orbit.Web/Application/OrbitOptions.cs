@@ -62,6 +62,11 @@ public sealed class AgentOptions
     public const string Section = "Agents";
     /// <summary>How long Orbit waits for an agent to answer a command (e.g. a directory sign-in) before trying the next agent.</summary>
     public int CommandTimeoutSeconds { get; set; } = 15;
+    /// <summary>
+    /// How long "Import from directory" waits for an agent to list the directory's users. Keep it under the reverse
+    /// proxy's read timeout (nginx: 60 s by default): the admin's browser waits this long for the page.
+    /// </summary>
+    public int DirectoryListTimeoutSeconds { get; set; } = 45;
     /// <summary>How long a registration token stays redeemable after it is shown to the admin.</summary>
     public int RegistrationTokenLifetimeMinutes { get; set; } = 60;
 }

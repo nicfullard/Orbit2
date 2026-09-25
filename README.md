@@ -53,7 +53,8 @@ dotnet ef migrations add <Name> --project Orbit.Web  # from the solution root (d
 3. Sign in as the seed admin, then under **Admin** create departments, users and an API key, and adjust or add
    roles under **Admin > Roles**.
 
-Self-registration is disabled: accounts are created under **Admin > Users**.
+Self-registration is disabled: accounts are created under **Admin > Users** - one at a time, or many at once with
+**Import from directory** (below).
 
 ## Permissions and scopes
 
@@ -112,7 +113,7 @@ inbound firewall ports. The agent has practically no settings; you register it l
 2. Run it on the agent's machine, then `Orbit.Agent run` (or install it as a service). It shows as **Online**.
 3. **Admin > Directory**: server, service account, search base, filter. **Test connection** runs through the agent
    against whatever is in the form, before you save or enable anything.
-4. Set users' **Sign-in method** to *Directory (LDAP)*.
+4. Set users' **Sign-in method** to *Directory (LDAP)*, or bring many people in at once with **Import from directory**.
 
 Directory settings live in Orbit (the bind password encrypted) and are sent with each request, so nothing is ever
 configured on the agent. A directory or agent outage shows "temporarily unavailable" and never locks anyone out. At
@@ -130,6 +131,24 @@ spec §8.3.
 ```
 dotnet run --project Orbit.Agent -- help
 ```
+
+### Import from directory (take-on)
+
+**Admin > Users > Import from directory** creates Orbit accounts for people already in AD, so a take-on of a hundred
+staff isn't a hundred trips through *Create user* (spec §6.13.1). It needs directory sign-in enabled and an agent of
+**version 1.1 or later** - older agents keep handling sign-ins but can't list, and the page says so.
+
+1. **Load directory users.** The filter defaults to your sign-in filter with `*` for `{0}` (so it lists the people who
+   could sign in); narrow it with `memberOf`, or narrow the search base to one OU. Up to 5,000 people per listing.
+2. Each person's AD `department` (or another attribute you name) is matched to an Orbit department by name, ignoring
+   case and spacing. **Departments that couldn't be linked** are listed with a head count: pick an Orbit department
+   for each, or leave those people without one. Nothing is remembered and no department is created.
+3. Tick people (filter the list, select all shown), choose **one role** for them, **Import ticked**. People already in
+   Orbit, disabled in AD, without an email or sharing one with someone else can't be ticked, and say why.
+
+Imported users sign in with their directory email and password. If the role needs a department and a ticked person
+has none, nothing is imported until you choose one. Each account is audited as imported from the directory. It is a
+one-off: nothing is kept in step with AD afterwards.
 
 ## Claude / MCP
 

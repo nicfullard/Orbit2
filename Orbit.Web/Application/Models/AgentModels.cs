@@ -41,3 +41,6 @@ public sealed record DirectoryAuthOutcome(DirectoryAuthStatus Status, LdapAuthRe
 
 /// <summary>Result of "Test connection". <see cref="Result"/> is null when no agent could be asked at all.</summary>
 public sealed record DirectoryTestOutcome(string? AgentName, LdapTestResult? Result, string? Error);
+
+/// <summary>An agent's directory listing. <see cref="Result"/> is null when no agent could be asked or none answered.</summary>
+public sealed record DirectoryListOutcome(string? AgentName, LdapListUsersResult? Result, string? Error);

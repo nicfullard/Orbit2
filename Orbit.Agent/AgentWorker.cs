@@ -38,6 +38,7 @@ public sealed class AgentWorker(AgentConfig config, LdapDirectory ldap, ILoggerF
         // Commands. Each returns its result to Orbit; a new capability is a new handler here plus its name in Hello.
         connection.On<LdapAuthRequest, LdapAuthResult>(AgentMethods.Authenticate, request => ldap.AuthenticateAsync(request, stoppingToken));
         connection.On<LdapTestRequest, LdapTestResult>(AgentMethods.TestDirectory, request => ldap.TestAsync(request, stoppingToken));
+        connection.On<LdapListUsersRequest, LdapListUsersResult>(AgentMethods.ListDirectoryUsers, request => ldap.ListUsersAsync(request, stoppingToken));
 
         connection.Reconnecting += error =>
         {
@@ -119,7 +120,7 @@ public sealed class AgentWorker(AgentConfig config, LdapDirectory ldap, ILoggerF
                 MachineName = Environment.MachineName,
                 OsDescription = RuntimeInformation.OSDescription,
                 Version = Version,
-                Capabilities = [AgentCapabilities.LdapAuthenticate, AgentCapabilities.LdapTest]
+                Capabilities = [AgentCapabilities.LdapAuthenticate, AgentCapabilities.LdapTest, AgentCapabilities.LdapListUsers]
             }, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

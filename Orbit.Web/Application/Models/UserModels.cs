@@ -12,6 +12,8 @@ public sealed class UserInput
     public AuthSource AuthSource { get; set; } = AuthSource.Local;
     /// <summary>Temporary password (create only, local users only).</summary>
     public string? Password { get; set; }
+    /// <summary>Set by "Import from directory" only: the entry the user came from, recorded in the audit entry.</summary>
+    public string? DirectoryDn { get; set; }
 }
 
 public sealed record UserSummary(

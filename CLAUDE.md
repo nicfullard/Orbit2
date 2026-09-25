@@ -71,9 +71,9 @@ Razor Pages and MCP tools are thin. Both call the same scoped services in `Orbit
 - **Entities/migrations:** every enum is stored as its name (a convention at the end of
   `ApplicationDbContext.OnModelCreating`), so raw SQL uses `'Todo'`, not `0`. Recent migrations were tested on an
   empty DB and on a DB at the previous migration, forward, back (`Down`) and forward again (spec §13 item 37).
-- **Pure rules** (`Application/Scheduling/*`, `Application/Assets/*Rules`, `RoleRules`, `DependencyRules`) have no
-  DB access so they can be unit-tested. Put new domain logic there when it can be separated. Tests cite the spec's
-  acceptance IDs (e.g. `AST-005`) in their doc comments.
+- **Pure rules** (`Application/Scheduling/*`, `Application/Assets/*Rules`, `RoleRules`, `DependencyRules`,
+  `DirectoryImportRules`) have no DB access so they can be unit-tested. Put new domain logic there when it can be
+  separated. Tests cite the spec's acceptance IDs (e.g. `AST-005`) in their doc comments.
 - The critical path analysis is stored and marked stale by a hash of its inputs (`ScheduleFingerprint`), not by
   write hooks. A new field that affects scheduling must be added to the fingerprint.
 

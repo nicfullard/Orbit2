@@ -9,7 +9,10 @@
         <h1 class="h3 mb-0">Users</h1>
         <div class="text-muted small">Self-registration is disabled; accounts are created here.</div>
     </div>
-    <a class="btn btn-primary btn-sm" asp-page="/Admin/Users/Create">Create user</a>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-primary btn-sm" asp-page="/Admin/Users/Import" title="Create accounts for people in your company directory (Active Directory)">Import from directory</a>
+        <a class="btn btn-primary btn-sm" asp-page="/Admin/Users/Create">Create user</a>
+    </div>
 </div>
 
 <div class="card">

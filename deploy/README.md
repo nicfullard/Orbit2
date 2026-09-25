@@ -76,11 +76,17 @@ location /agent/hub {
     proxy_set_header   X-Forwarded-Proto $scheme;
     proxy_read_timeout 1h;      # the agent's connection is idle between sign-ins; keep-alives flow every 15s
     proxy_buffering    off;
+    client_max_body_size 8m;    # a directory listing for Import from directory, if the agent falls back to long polling
 }
 ```
 
 Caddy needs nothing extra. If WebSockets are blocked somewhere along the way the agent still works: SignalR falls
 back to Server-Sent Events or long polling by itself.
+
+**Admin > Users > Import from directory** waits for the agent to list the directory - up to
+`Agents__DirectoryListTimeoutSeconds` (45 s by default). Keep that below the proxy's read timeout for `location /`
+(nginx: 60 s by default). The listing comes back to Orbit as one message of up to a few megabytes: over WebSockets that
+needs nothing, but with long polling it is a request body, hence `client_max_body_size` above.
 
 ## 5. First run
 
