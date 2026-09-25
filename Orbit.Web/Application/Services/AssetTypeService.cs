@@ -118,9 +118,29 @@ public sealed class AssetTypeService(ApplicationDbContext db, IActorProvider act
             CreatedAt = now,
             UpdatedAt = now
         };
+        // First properties (create_asset_type): validated here and saved with the type, so a bad one creates nothing.
+        foreach (var p in input.Properties)
+        {
+            var (propertyName, options) = AssetPropertyRules.ValidateDefinition(p.Name, p.PropertyType, p.Options);
+            RequireUniquePropertyName(type, propertyName, null);
+            type.Properties.Add(new AssetTypeProperty
+            {
+                AssetTypeId = type.Id,
+                Name = propertyName,
+                PropertyType = p.PropertyType,
+                Options = options,
+                IsRequired = p.IsRequired,
+                DisplayOrder = type.Properties.Count + 1
+            });
+        }
         db.AssetTypes.Add(type);
         audit.Add(actor, AuditEntity.AssetType, type.Id, AuditAction.Created, departmentId, type.Name,
-            new { type.Name, type.Category, type.CheckIntervalDays, department = dept.Name });
+            new
+            {
+                type.Name, type.Category, type.CheckIntervalDays, department = dept.Name,
+                properties = type.Properties.Count == 0 ? null
+                    : type.Properties.Select(p => new { name = p.Name, type = p.PropertyType, required = p.IsRequired, options = p.Options }).ToList()
+            });
         await db.SaveChangesAsync(ct);
         return type;
     }
@@ -149,6 +169,24 @@ public sealed class AssetTypeService(ApplicationDbContext db, IActorProvider act
         audit.Add(actor, AuditEntity.AssetType, type.Id, AuditAction.Updated, type.DepartmentId, type.Name, changes.Changes);
         await db.SaveChangesAsync(ct);
         return type;
+    }
+
+    /// <summary>
+    /// The update_asset_type tool: the type's own fields, archiving, and property changes and additions in one transaction, so a
+    /// refused property change leaves nothing half-applied. Each step keeps its own checks and audit entry, as on the edit page.
+    /// </summary>
+    public async Task<AssetType> ApplyAsync(Guid id, AssetTypeInput input, bool? archived, IReadOnlyList<AssetPropertyChange> properties, CancellationToken ct = default)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await UpdateAsync(id, input, ct);
+        if (archived is bool a) await SetArchivedAsync(id, a, ct);
+        foreach (var change in properties)
+        {
+            if (change.PropertyId is Guid propertyId) await UpdatePropertyAsync(id, propertyId, change.Input, ct);
+            else await AddPropertyAsync(id, change.Input, ct);
+        }
+        await tx.CommitAsync(ct);
+        return await GetAsync(id, ct);
     }
 
     /// <summary>Archive: no longer offered for new or changed assets; the assets that have it keep it.</summary>

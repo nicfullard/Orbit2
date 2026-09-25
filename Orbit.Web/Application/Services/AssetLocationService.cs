@@ -43,6 +43,14 @@ public sealed class AssetLocationService(ApplicationDbContext db, IActorProvider
         return await q.OrderBy(l => l.Department.Name).ThenBy(l => l.Name).ToListAsync(ct);
     }
 
+    /// <summary>One location with its department, archived or not. Open to every caller (the get_asset_location lookup).</summary>
+    public async Task<AssetLocation> GetAsync(Guid id, CancellationToken ct = default)
+    {
+        await actors.GetAsync(ct);
+        return await db.AssetLocations.AsNoTracking().Include(l => l.Department).FirstOrDefaultAsync(l => l.Id == id, ct)
+            ?? throw new NotFoundException("Location not found.");
+    }
+
     /// <summary>A location for its edit page: assets.configure must reach its department.</summary>
     public async Task<AssetLocation> GetForConfigureAsync(Guid id, CancellationToken ct = default)
     {

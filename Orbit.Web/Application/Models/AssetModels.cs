@@ -115,6 +115,8 @@ public sealed class AssetTypeInput
     public string? Category { get; set; }
     /// <summary>Blank or 0 = no scheduled checks.</summary>
     public int? CheckIntervalDays { get; set; }
+    /// <summary>Read only on create: the type's first properties, in display order (create_asset_type; the pages add them on the edit page).</summary>
+    public IReadOnlyList<AssetPropertyInput> Properties { get; set; } = [];
 }
 
 public sealed class AssetPropertyInput
@@ -125,6 +127,9 @@ public sealed class AssetPropertyInput
     public IReadOnlyList<string> Options { get; set; } = [];
     public bool IsRequired { get; set; }
 }
+
+/// <summary>One property change in <c>AssetTypeService.ApplyAsync</c>: a change to an existing property, or an addition when <paramref name="PropertyId"/> is null.</summary>
+public sealed record AssetPropertyChange(Guid? PropertyId, AssetPropertyInput Input);
 
 public sealed record AssetTypeListItem(AssetType Type, int PropertyCount, int AssetCount);
 

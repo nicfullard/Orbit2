@@ -741,20 +741,86 @@ public sealed class OrbitTools(
         CancellationToken ct = default) => Run(async () =>
     {
         var list = await assetTypes.ListActiveAsync(ParseGuid(departmentId, "departmentId"), ct);
-        return new
+        return new { items = list.Select(AssetTypeDto).ToList(), totalCount = list.Count };
+    });
+
+    [McpServerTool(Name = "get_asset_type"), Description(
+        "Get one asset type, archived or not: its department, category, description, check interval and properties (id, name, type, required, " +
+        "a Choice property's options, display order). Available to every key.")]
+    public Task<string> GetAssetType(
+        [Description("Asset type id (GUID) or name.")] string assetTypeId,
+        [Description("Department id (GUID) whose type a name refers to. Defaults to the key's own department.")] string? departmentId = null,
+        CancellationToken ct = default) => Run(async () =>
+        AssetTypeDto(await assetTypes.GetAsync(await AssetTypeIdAsync(assetTypeId, ParseGuid(departmentId, "departmentId"), ct), ct)));
+
+    [McpServerTool(Name = "create_asset_type"), Description(
+        "Create an asset type. Every department defines its own types, and a type's department never changes; its name is unique (ignoring case) " +
+        "within the department. properties lists the type's properties in display order, each {name, type, required, options}: type is Text " +
+        "(default), Number, Date, YesNo or Choice, and a Choice needs options. The type is created with all of them or, if any is refused, not at all. " +
+        "Needs Configure assets in the department.")]
+    public Task<string> CreateAssetType(
+        [Description("Name (required), e.g. \"Laptop\".")] string name,
+        [Description("Department id (GUID). Defaults to the key's own department; required for a key without one.")] string? departmentId = null,
+        [Description("Category grouping types in the pickers and filters, e.g. \"IT equipment\".")] string? category = null,
+        [Description("Description.")] string? description = null,
+        [Description("Days between periodic checks of its assets (1-3650). Omit or 0 for no scheduled checks.")] int? checkIntervalDays = null,
+        [Description("The type's properties, in display order. Property names are unique (ignoring case) within the type.")] AssetPropertyArg[]? properties = null,
+        CancellationToken ct = default) => Run(async () =>
+    {
+        var created = await assetTypes.CreateAsync(new AssetTypeInput
         {
-            items = list.Select(t => new
-            {
-                id = t.Id, name = t.Name, category = t.Category, description = t.Description, checkIntervalDays = t.CheckIntervalDays,
-                departmentId = t.DepartmentId, department = t.Department.Name,
-                properties = t.Properties.OrderBy(p => p.DisplayOrder).Select(p => new
-                {
-                    name = p.Name, type = p.PropertyType, required = p.IsRequired,
-                    options = p.PropertyType == AssetPropertyType.Choice ? p.Options : null, order = p.DisplayOrder
-                }).ToList()
-            }).ToList(),
-            totalCount = list.Count
-        };
+            DepartmentId = ParseGuid(departmentId, "departmentId"),
+            Name = name,
+            Category = category,
+            Description = description,
+            CheckIntervalDays = checkIntervalDays,
+            Properties = (properties ?? []).OfType<AssetPropertyArg>().Select(p => string.IsNullOrWhiteSpace(p.NewName)
+                ? PropertyInput(p, null)
+                : throw new McpException($"newName is only for update_asset_type; call the property \"{p.NewName.Trim()}\" in name instead.")).ToList()
+        }, ct);
+        return AssetTypeDto(await assetTypes.GetAsync(created.Id, ct));
+    });
+
+    [McpServerTool(Name = "update_asset_type"), Description(
+        "Change an asset type. Only the arguments passed change; \"none\" clears category or description. archived true stops the type being " +
+        "offered for new or changed assets (the assets that have it keep it); false restores it. properties merges by name: an entry naming an " +
+        "existing property (ignoring case) changes only the fields it gives - newName renames it, options replaces a Choice property's whole list - " +
+        "and an entry naming none adds a property at the end. A property's type can't change while any asset has a value for it, nor can a Choice " +
+        "option some asset holds be removed or reworded; making a property required flags the assets without a value. Properties can't be deleted " +
+        "over MCP, because that deletes their values: that is done in the web UI. All or nothing: if any change is refused, none of the call applies. " +
+        "Needs Configure assets in the type's department.")]
+    public Task<string> UpdateAssetType(
+        [Description("Asset type id (GUID) or name.")] string assetTypeId,
+        [Description("Department id (GUID) whose type a name refers to; defaults to the key's own. A type's department can't be changed.")] string? departmentId = null,
+        [Description("New name.")] string? name = null,
+        [Description("Category, or \"none\".")] string? category = null,
+        [Description("Description, or \"none\".")] string? description = null,
+        [Description("Days between periodic checks (1-3650), or \"none\" (or 0) for no scheduled checks.")] string? checkIntervalDays = null,
+        [Description("true archives the type, false restores it.")] bool? archived = null,
+        [Description("Properties to change (matched by name) or add.")] AssetPropertyArg[]? properties = null,
+        CancellationToken ct = default) => Run(async () =>
+    {
+        var department = ParseGuid(departmentId, "departmentId");
+        var current = await assetTypes.GetAsync(await AssetTypeIdAsync(assetTypeId, department, ct), ct);
+        if (department is Guid d && d != current.DepartmentId)
+            throw new McpException($"\"{current.Name}\" belongs to {current.Department.Name}, and a type's department can't change; departmentId only says whose type a name refers to.");
+        // Matched against the names before the call: an entry naming an existing property changes it, any other adds one.
+        var changes = new List<AssetPropertyChange>();
+        foreach (var p in (properties ?? []).OfType<AssetPropertyArg>()) // OfType skips a null entry
+        {
+            var existing = current.Properties.FirstOrDefault(x => string.Equals(x.Name, p.Name?.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (existing is null && !string.IsNullOrWhiteSpace(p.NewName))
+                throw new McpException($"\"{current.Name}\" has no property called \"{p.Name}\" to rename. Its properties: {PropertyNames(current)}.");
+            changes.Add(new(existing?.Id, PropertyInput(p, existing)));
+        }
+        var saved = await assetTypes.ApplyAsync(current.Id, new AssetTypeInput
+        {
+            Name = name ?? current.Name,
+            Category = Text(category, current.Category),
+            Description = Text(description, current.Description),
+            CheckIntervalDays = IsClear(checkIntervalDays) ? null : ParseInt(checkIntervalDays, "checkIntervalDays") ?? current.CheckIntervalDays
+        }, archived, changes, ct);
+        return AssetTypeDto(saved);
     });
 
     [McpServerTool(Name = "list_asset_locations"), Description(
@@ -764,11 +830,56 @@ public sealed class OrbitTools(
         CancellationToken ct = default) => Run(async () =>
     {
         var list = await assetLocations.ListActiveAsync(ParseGuid(departmentId, "departmentId"), ct);
-        return new
+        return new { items = list.Select(AssetLocationDto).ToList(), totalCount = list.Count };
+    });
+
+    [McpServerTool(Name = "get_asset_location"), Description("Get one asset location, archived or not, with its department. Available to every key.")]
+    public Task<string> GetAssetLocation(
+        [Description("Location id (GUID) or name.")] string locationId,
+        [Description("Department id (GUID) whose location a name refers to. Defaults to the key's own department.")] string? departmentId = null,
+        CancellationToken ct = default) => Run(async () =>
+        AssetLocationDto(await assetLocations.GetAsync(await AssetLocationIdAsync(locationId, ParseGuid(departmentId, "departmentId"), ct), ct)));
+
+    [McpServerTool(Name = "create_asset_location"), Description(
+        "Create an asset location - a place a department keeps assets, e.g. \"Server room\". Every department keeps its own list, and a location's " +
+        "department never changes; its name is unique (ignoring case) within the department. Needs Configure assets in the department.")]
+    public Task<string> CreateAssetLocation(
+        [Description("Name (required).")] string name,
+        [Description("Department id (GUID). Defaults to the key's own department; required for a key without one.")] string? departmentId = null,
+        [Description("Description, e.g. the building and floor.")] string? description = null,
+        CancellationToken ct = default) => Run(async () =>
+    {
+        var created = await assetLocations.CreateAsync(new AssetLocationInput
         {
-            items = list.Select(l => new { id = l.Id, name = l.Name, description = l.Description, departmentId = l.DepartmentId, department = l.Department.Name }).ToList(),
-            totalCount = list.Count
-        };
+            DepartmentId = ParseGuid(departmentId, "departmentId"),
+            Name = name,
+            Description = description
+        }, ct);
+        return AssetLocationDto(await assetLocations.GetAsync(created.Id, ct));
+    });
+
+    [McpServerTool(Name = "update_asset_location"), Description(
+        "Change an asset location: its name, its description (\"none\" clears it), or archived - true stops it being offered for new or changed " +
+        "assets (the assets there keep it), false restores it. Only the arguments passed change. Needs Configure assets in its department.")]
+    public Task<string> UpdateAssetLocation(
+        [Description("Location id (GUID) or name.")] string locationId,
+        [Description("Department id (GUID) whose location a name refers to; defaults to the key's own. A location's department can't be changed.")] string? departmentId = null,
+        [Description("New name.")] string? name = null,
+        [Description("Description, or \"none\".")] string? description = null,
+        [Description("true archives the location, false restores it.")] bool? archived = null,
+        CancellationToken ct = default) => Run(async () =>
+    {
+        var department = ParseGuid(departmentId, "departmentId");
+        var current = await assetLocations.GetAsync(await AssetLocationIdAsync(locationId, department, ct), ct);
+        if (department is Guid d && d != current.DepartmentId)
+            throw new McpException($"\"{current.Name}\" belongs to {current.Department.Name}, and a location's department can't change; departmentId only says whose location a name refers to.");
+        await assetLocations.UpdateAsync(current.Id, new AssetLocationInput
+        {
+            Name = name ?? current.Name,
+            Description = Text(description, current.Description)
+        }, ct);
+        if (archived is bool a) await assetLocations.SetArchivedAsync(current.Id, a, ct);
+        return AssetLocationDto(await assetLocations.GetAsync(current.Id, ct));
     });
 
     /// <summary>A type argument: its GUID, or its name among the department's types.</summary>
@@ -794,7 +905,7 @@ public sealed class OrbitTools(
         foreach (var (key, element) in values)
         {
             var property = type.Properties.FirstOrDefault(p => string.Equals(p.Name, key.Trim(), StringComparison.OrdinalIgnoreCase))
-                ?? throw new McpException($"\"{type.Name}\" has no property called \"{key}\". Its properties: {string.Join(", ", type.Properties.OrderBy(p => p.DisplayOrder).Select(p => p.Name))}.");
+                ?? throw new McpException($"\"{type.Name}\" has no property called \"{key}\". Its properties: {PropertyNames(type)}.");
             var text = element.ValueKind switch
             {
                 JsonValueKind.Null or JsonValueKind.Undefined => null,
@@ -807,6 +918,18 @@ public sealed class OrbitTools(
         }
         return changes;
     }
+
+    /// <summary>A property argument as the service takes it: a change to <paramref name="current"/>, which fills in what the argument leaves out, or a new property.</summary>
+    private static AssetPropertyInput PropertyInput(AssetPropertyArg arg, AssetTypeProperty? current) => new()
+    {
+        Name = string.IsNullOrWhiteSpace(arg.NewName) ? current?.Name ?? arg.Name : arg.NewName,
+        PropertyType = ParseEnum<AssetPropertyType>(arg.Type, "type") ?? current?.PropertyType ?? AssetPropertyType.Text,
+        IsRequired = arg.Required ?? current?.IsRequired ?? false,
+        Options = (IReadOnlyList<string>?)arg.Options ?? current?.Options ?? []
+    };
+
+    private static string PropertyNames(AssetType type) =>
+        type.Properties.Count == 0 ? "none" : string.Join(", ", type.Properties.OrderBy(p => p.DisplayOrder).Select(p => p.Name));
 
     /// <summary>An optional text argument: unchanged when omitted, cleared by "none".</summary>
     private static string? Text(string? value, string? current) => value is null ? current : IsClear(value) ? null : value;
@@ -1078,6 +1201,25 @@ public sealed class OrbitTools(
     {
         id = c.Id, checkDate = c.CheckDate, outcome = c.Outcome, notes = c.Notes,
         checkedBy = c.CheckedBy is null ? null : c.CheckedBy.IsSystemAccount ? "Claude" : c.CheckedBy.DisplayName, recordedAt = c.CreatedAt
+    };
+
+    /// <summary>An asset type (§6.19) as every type tool returns it: its fields, then its properties in display order.</summary>
+    private static object AssetTypeDto(AssetType t) => new
+    {
+        id = t.Id, name = t.Name, category = t.Category, description = t.Description, checkIntervalDays = t.CheckIntervalDays,
+        departmentId = t.DepartmentId, department = t.Department?.Name, archived = t.IsArchived, createdAt = t.CreatedAt, updatedAt = t.UpdatedAt,
+        properties = t.Properties.OrderBy(p => p.DisplayOrder).ThenBy(p => p.Name).Select(p => new
+        {
+            id = p.Id, name = p.Name, type = p.PropertyType, required = p.IsRequired,
+            options = p.PropertyType == AssetPropertyType.Choice ? p.Options : null, order = p.DisplayOrder
+        }).ToList()
+    };
+
+    /// <summary>An asset location (§6.19) as every location tool returns it.</summary>
+    private static object AssetLocationDto(AssetLocation l) => new
+    {
+        id = l.Id, name = l.Name, description = l.Description, departmentId = l.DepartmentId, department = l.Department?.Name,
+        archived = l.IsArchived, createdAt = l.CreatedAt
     };
 
     private static object IssueDto(PlanIssue i) => new { code = i.Code, message = i.Message, informational = i.Informational, taskIds = i.TaskIds, linkIds = i.LinkIds };
