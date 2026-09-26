@@ -193,4 +193,40 @@ public class TimeReportRulesTests
         Assert.Equal("-45m", TimeFormat.Signed(-45));
         Assert.Equal("0m", TimeFormat.Signed(0));
     }
+
+    /// <summary>
+    /// RPT-008: everyone the report covers gets a row: a person who logged nothing shows zero with no tasks, after the
+    /// people with time, by name; someone on the list who did log time isn't doubled; the totals don't change.
+    /// </summary>
+    [Fact]
+    public void People_with_no_time_get_a_zero_row()
+    {
+        var carol = Guid.NewGuid();
+        var dave = Guid.NewGuid();
+        string WithOthers(Guid? id) => id == carol ? "carol" : id == dave ? "Dave" : Name(id);
+        var t = Task(60, 90);
+        var report = TimeReportRules.TimeByPerson(
+            [new LoggedTime(Bob, t.Id, 90)], Index(t), WithOthers, people: [dave, Alice, Bob, carol, dave]);
+
+        Assert.Equal(["Bob", "Alice", "carol", "Dave"], report.Rows.Select(r => r.Name));
+        Assert.Equal(90, report.Rows[0].LoggedMinutes);
+        foreach (var zero in report.Rows.Skip(1))
+        {
+            Assert.Equal(0, zero.LoggedMinutes);
+            Assert.Equal(0, zero.TaskCount);
+            Assert.Equal(0, zero.UnestimatedTasks);
+            Assert.Equal(EstimateComparison.None, zero.Estimate);
+            Assert.Empty(zero.Tasks);
+        }
+
+        Assert.Equal(90, report.TotalLoggedMinutes);
+        Assert.Equal(1, report.TotalTasks);
+        Assert.Equal(new EstimateComparison(1, 60, 90, 1), report.Total);
+
+        var nobody = TimeReportRules.TimeByPerson([], new Dictionary<Guid, TaskTimeFacts>(), WithOthers, [carol]);
+        Assert.Equal("carol", Assert.Single(nobody.Rows).Name);
+        Assert.Equal(0, nobody.TotalLoggedMinutes);
+        Assert.Equal(EstimateComparison.None, nobody.Total);
+    }
+
 }

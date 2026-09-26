@@ -27,6 +27,20 @@ else
             @for (var i = 0; i < Model.Rows.Count; i++)
             {
                 var r = Model.Rows[i];
+                if (r.TaskCount == 0)
+                {
+                    @* No time in the period: muted, with nothing to expand. Table cells set their own colour, so the class goes on each. *@
+                    <tr title="No time logged in the period">
+                        <td class="text-muted">@r.Name</td>
+                        <td class="text-end text-muted">@TimeFormat.Minutes(r.LoggedMinutes)</td>
+                        <td></td>
+                        <td class="text-end text-muted">0</td>
+                        <td class="text-end text-muted">@ViewModel.Estimated(r.Estimate)</td>
+                        <td class="text-end text-muted">@ViewModel.Actual(r.Estimate)</td>
+                        <td class="text-end text-muted">@ViewModel.Variance(r.Estimate)</td>
+                    </tr>
+                    continue;
+                }
                 var id = $"time-person-{i}";
                 var pct = max == 0 ? 0 : (int)Math.Round(r.LoggedMinutes * 100.0 / max);
                 <tr>
@@ -99,6 +113,7 @@ else
     <div class="small text-muted px-3 py-2 border-top">
         Logged is each person's time in the period. Estimated, actual and variance compare the estimated tasks they worked on
         (cancelled tasks aside) with all time logged on them to date, by anyone. A task several people worked on shows under
-        each of them but counts once in the total. Click a task count to see the tasks.
+        each of them but counts once in the total. Click a task count to see the tasks. Active people in the department
+        reported on who logged nothing in the period are listed last, greyed out.
     </div>
 }

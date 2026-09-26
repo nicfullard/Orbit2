@@ -86,7 +86,7 @@ public class ViewModel(ReportingService reporting, ProjectService projects, Depa
         yield return new(["Person", "Logged", "Tasks", "Estimated", "Actual to date", "Variance"], rows,
             Widths: [3, 1.4f, 2, 1.4f, 1.5f, 2]);
 
-        foreach (var p in r.Rows)
+        foreach (var p in r.Rows.Where(p => p.Tasks.Count > 0)) // people with no time have only their summary row
         {
             yield return new(["Task", "Status", "Estimate", "Logged", "Actual to date", ""],
                 p.Tasks.Select(t => (IReadOnlyList<string>)

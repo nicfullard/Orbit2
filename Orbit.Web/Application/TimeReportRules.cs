@@ -25,11 +25,12 @@ public static class TimeReportRules
     }
 
     /// <summary>
-    /// Time by person: one row per person with time in the range, ordered by time logged (most first) then name;
-    /// each row's tasks ordered by that person's time on them.
+    /// Time by person: one row per person with time in the range, plus a zero row for each of <paramref name="people"/>
+    /// who logged none, ordered by time logged (most first) then name; each row's tasks ordered by that person's time on them.
     /// </summary>
     public static TimeByPersonReport TimeByPerson(
-        IEnumerable<LoggedTime> logged, IReadOnlyDictionary<Guid, TaskTimeFacts> tasks, Func<Guid?, string> name)
+        IEnumerable<LoggedTime> logged, IReadOnlyDictionary<Guid, TaskTimeFacts> tasks, Func<Guid?, string> name,
+        IEnumerable<Guid>? people = null)
     {
         // Merge duplicates defensively (the SQL groups by user and task already) and drop tasks we know nothing about.
         var entries = logged.Where(l => tasks.ContainsKey(l.TaskId))
@@ -51,6 +52,10 @@ public static class TimeReportRules
                 return new PersonTimeRow(g.Key, name(g.Key), g.Sum(l => l.Minutes), facts.Count,
                     facts.Count(t => t.EstimateMinutes is null), Compare(facts), lines);
             })
+            .ToList();
+        var withTime = rows.Select(r => r.UserId).ToHashSet();
+        rows = rows.Concat((people ?? []).Distinct().Where(id => !withTime.Contains(id))
+                .Select(id => new PersonTimeRow(id, name(id), 0, 0, 0, EstimateComparison.None, [])))
             .OrderByDescending(r => r.LoggedMinutes).ThenBy(r => r.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
 

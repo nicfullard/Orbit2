@@ -211,6 +211,8 @@ reports:
 - **Time by person** - the time each person logged in the period, and for the tasks they worked on, each task's
   estimate against all time logged on it to date (cancelled tasks aside). Expand a person to see their tasks, with
   the ones over estimate flagged. A task several people worked on shows under each of them but counts once in the total.
+  Active people in the department reported on (the project's department when only a project is chosen, everyone when
+  neither is) who logged nothing in the period are listed too, with 0, greyed out at the bottom.
 - **Estimate accuracy** - tasks completed in the period, grouped by assignee: estimated against actual time, the
   variance, and how many ran over. Expand a row to see its tasks, largest overrun first.
 

@@ -86,7 +86,8 @@ public sealed class ReportingService(ApplicationDbContext db, IActorProvider act
 
     /// <summary>
     /// Time logged in the period (by entry date) per person, with each task's estimate against all time logged on it
-    /// to date. Scoped by the task's project and department, like time logging itself (§6.2.1).
+    /// to date. Scoped by the task's project and department, like time logging itself (§6.2.1). The people the report
+    /// covers (<see cref="PeopleAsync"/>) are listed with zero when they logged nothing.
     /// </summary>
     public async Task<TimeByPersonReport> TimeByPersonAsync(ReportFilter f, CancellationToken ct = default)
     {
@@ -101,8 +102,24 @@ public sealed class ReportingService(ApplicationDbContext db, IActorProvider act
         var taskIds = logged.Select(l => l.TaskId).Distinct().ToList();
         var tasks = taskIds.Count == 0 ? new Dictionary<Guid, TaskTimeFacts>()
             : await Facts(db.Tasks.AsNoTracking().Where(t => taskIds.Contains(t.Id))).ToDictionaryAsync(t => t.Id, ct);
-        var names = await NamesAsync(logged.Select(l => (Guid?)l.UserId), ct);
-        return TimeReportRules.TimeByPerson(logged, tasks, id => Name(id, names, "Unknown"));
+        var people = await PeopleAsync(f, actor, ct);
+        var names = await NamesAsync(logged.Select(l => l.UserId).Concat(people).Select(id => (Guid?)id), ct);
+        return TimeReportRules.TimeByPerson(logged, tasks, id => Name(id, names, "Unknown"), people);
+    }
+
+    /// <summary>
+    /// The people Time by person lists even with nothing logged: active people (never the Claude user) whose own
+    /// department is the one reported on - the project's when only a project is chosen - or everyone when neither is.
+    /// </summary>
+    private async Task<List<Guid>> PeopleAsync(ReportFilter f, Actor actor, CancellationToken ct)
+    {
+        var departmentId = RestrictedDepartment(actor) ?? f.DepartmentId;
+        if (departmentId is null && f.ProjectId is Guid p)
+            departmentId = await db.Projects.AsNoTracking().Where(x => x.Id == p).Select(x => (Guid?)x.DepartmentId).FirstOrDefaultAsync(ct)
+                ?? Guid.Empty; // an unknown project covers nobody
+        var q = db.Users.AsNoTracking().Where(u => u.IsActive && !u.IsSystemAccount);
+        if (departmentId is Guid d) q = q.Where(u => u.DepartmentId == d);
+        return await q.Select(u => u.Id).ToListAsync(ct);
     }
 
     /// <summary>Tasks set to Done in the period, grouped by assignee: the estimate against all time logged on them.</summary>
