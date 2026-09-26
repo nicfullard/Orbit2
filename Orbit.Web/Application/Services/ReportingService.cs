@@ -205,6 +205,72 @@ public sealed class ReportingService(ApplicationDbContext db, IActorProvider act
             f.FromUtc, f.ToUtc, DateOnly.FromDateTime(DateTime.UtcNow));
     }
 
+    /// <summary>
+    /// Every asset in the register during the period - not Disposed at some point in it, registered in it, or with a linked task
+    /// created, completed or logged against in it - disposed ones included (§12 Asset status). A department selects the assets it
+    /// manages, and their linked tasks count whatever department they are filed in. Status changes come from the asset audit
+    /// trail; checks are read as at the period's last day, or today when that is sooner.
+    /// </summary>
+    public async Task<AssetStatusReport> AssetStatusAsync(ReportFilter f, CancellationToken ct = default)
+    {
+        var actor = await RequireReportsAsync(ct);
+        var from = DateOnly.FromDateTime(f.FromUtc);
+        var to = DateOnly.FromDateTime(f.ToUtc);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var asAt = AssetReportRules.AsAt(f.ToUtc, today);
+
+        // An asset disposed of before the period is read only when it was registered or worked on in it.
+        var assets = await Apply(db.Assets.AsNoTracking(), f, actor)
+            .Where(a => a.CreatedAt < f.ToUtc)
+            .Select(a => new
+            {
+                Asset = a,
+                Worked = a.Tasks.Any(t => (t.CreatedAt >= f.FromUtc && t.CreatedAt < f.ToUtc)
+                    || (t.Status == TaskItemStatus.Done && t.CompletedAt >= f.FromUtc && t.CompletedAt < f.ToUtc)
+                    || t.TimeEntries.Any(e => e.Date >= from && e.Date < to))
+            })
+            .Where(x => x.Asset.DisposedOn == null || x.Asset.DisposedOn >= from || x.Asset.CreatedAt >= f.FromUtc || x.Worked)
+            .Select(x => new AssetFacts(x.Asset.Id, x.Asset.AssetNumber, x.Asset.Name, x.Asset.Status, x.Asset.DisposedOn, x.Asset.CreatedAt,
+                x.Asset.DepartmentId, x.Asset.Department.Name, x.Asset.AssetTypeId, x.Asset.AssetType.Name, x.Asset.AssetType.Category,
+                x.Asset.AssetType.CheckIntervalDays, x.Asset.AssetLocationId, x.Asset.AssetLocation != null ? x.Asset.AssetLocation.Name : null,
+                x.Asset.PurchaseValue,
+                x.Asset.Checks.Where(c => c.CheckDate <= asAt).OrderByDescending(c => c.CheckDate).ThenByDescending(c => c.CreatedAt)
+                    .Select(c => (DateOnly?)c.CheckDate).FirstOrDefault(),
+                x.Asset.Checks.Where(c => c.CheckDate <= asAt).OrderByDescending(c => c.CheckDate).ThenByDescending(c => c.CreatedAt)
+                    .Select(c => (AssetCheckOutcome?)c.Outcome).FirstOrDefault(),
+                x.Asset.Checks.Count(c => c.CheckDate >= from && c.CheckDate < to),
+                x.Worked))
+            .ToListAsync(ct);
+
+        // Only changes from the start of the period on are needed to rebuild the status over it.
+        var ids = assets.Select(a => a.Id).ToList();
+        var audit = await db.AuditLogs.AsNoTracking()
+            .Where(a => a.EntityType == AuditEntity.Asset && ids.Contains(a.EntityId) && a.Timestamp >= f.FromUtc
+                && a.Action == AuditAction.StatusChanged)
+            .Select(a => new { a.EntityId, a.Timestamp, a.Details })
+            .ToListAsync(ct);
+        var changes = audit
+            .Select(a => AssetReportRules.TryReadStatusChange(a.Details, out var was, out var now)
+                ? new AssetStatusChange(a.EntityId, a.Timestamp, was, now) : null)
+            .OfType<AssetStatusChange>()
+            .ToLookup(c => c.AssetId);
+        var histories = assets.ToDictionary(a => a.Id,
+            a => AssetReportRules.History(a.Status, a.DisposedOn, changes[a.Id], f.FromUtc, f.ToUtc));
+        var included = assets
+            .Where(a => AssetReportRules.Includes(histories[a.Id], a.CreatedAt >= f.FromUtc, a.HadTaskActivity))
+            .ToList();
+        var includedIds = included.Select(a => (Guid?)a.Id).ToList();
+
+        var tasks = await db.Tasks.AsNoTracking()
+            .Where(t => includedIds.Contains(t.AssetId))
+            .Select(t => new AssetTaskFacts(t.Id, t.Number, t.Title, t.Status, t.AssigneeId, t.AssetId!.Value, t.DueDate,
+                t.CreatedAt, t.CompletedAt, t.TimeEntries.Where(e => e.Date >= from && e.Date < to).Sum(e => (int?)e.DurationMinutes) ?? 0))
+            .ToListAsync(ct);
+        var names = await NamesAsync(tasks.Select(t => t.AssigneeId), ct);
+
+        return AssetReportRules.Build(included, histories, tasks, id => Name(id, names, "Unassigned"), f.FromUtc, f.ToUtc, today);
+    }
+
     private static IQueryable<TaskTimeFacts> Facts(IQueryable<TaskItem> q) =>
         q.Select(t => new TaskTimeFacts(t.Id, t.Number, t.Title, t.Status, t.AssigneeId, t.EstimateMinutes,
             t.TimeEntries.Sum(e => (int?)e.DurationMinutes) ?? 0));
@@ -235,6 +301,13 @@ public sealed class ReportingService(ApplicationDbContext db, IActorProvider act
         if (f.ProjectId is Guid p) q = q.Where(x => x.Id == p);
         if (departmentId is Guid d) q = q.Where(x => x.DepartmentId == d);
         return q;
+    }
+
+    /// <summary>An asset belongs to its managing department (§6.19) and to no project, so only the department applies.</summary>
+    private static IQueryable<Asset> Apply(IQueryable<Asset> q, ReportFilter f, Actor actor)
+    {
+        var departmentId = RestrictedDepartment(actor) ?? f.DepartmentId;
+        return departmentId is Guid d ? q.Where(a => a.DepartmentId == d) : q;
     }
 
     /// <summary>Time entries take their project and department from their task.</summary>

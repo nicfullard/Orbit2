@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Orbit.Application.Models;
 using Orbit.Data.Entities;
 
@@ -21,26 +20,8 @@ public static class ProjectReportRules
     /// Reads a project audit row's <c>Details</c> for a status change: <c>{"status":{"from":"Active","to":"Completed"}}</c>,
     /// as <see cref="ChangeSet"/> and <c>ProjectService.ArchiveAsync</c> write it. False for any other change.
     /// </summary>
-    public static bool TryReadStatusChange(string? details, out ProjectStatus from, out ProjectStatus to)
-    {
-        from = to = default;
-        if (string.IsNullOrWhiteSpace(details)) return false;
-        try
-        {
-            using var doc = JsonDocument.Parse(details);
-            return doc.RootElement.ValueKind == JsonValueKind.Object
-                && doc.RootElement.TryGetProperty("status", out var status)
-                && status.ValueKind == JsonValueKind.Object
-                && status.TryGetProperty("from", out var f) && f.ValueKind == JsonValueKind.String
-                && status.TryGetProperty("to", out var t) && t.ValueKind == JsonValueKind.String
-                && Enum.TryParse(f.GetString(), out from)
-                && Enum.TryParse(t.GetString(), out to);
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
-    }
+    public static bool TryReadStatusChange(string? details, out ProjectStatus from, out ProjectStatus to) =>
+        AuditStatusChange.TryRead(details, out from, out to);
 
     /// <summary>
     /// The project's status at the start and end of [<paramref name="fromUtc"/>, <paramref name="toUtc"/>) and the

@@ -43,13 +43,16 @@
                     </select>
                 </div>
             }
-            <div class="col-sm-6 col-lg-3">
-                <label class="form-label small mb-0">Project</label>
-                <select class="form-select form-select-sm" name="projectId">
-                    <option value="">All</option>
-                    @foreach (var i in Model.ProjectItems) { <option value="@i.Value" selected="@i.Selected">@i.Text</option> }
-                </select>
-            </div>
+            @if (Model.Definition.ByProject)
+            {
+                <div class="col-sm-6 col-lg-3">
+                    <label class="form-label small mb-0">Project</label>
+                    <select class="form-select form-select-sm" name="projectId">
+                        <option value="">All</option>
+                        @foreach (var i in Model.ProjectItems) { <option value="@i.Value" selected="@i.Selected">@i.Text</option> }
+                    </select>
+                </div>
+            }
             <div class="col-auto">
                 <button class="btn btn-sm btn-outline-primary" type="submit">Run</button>
             </div>
@@ -125,6 +128,10 @@
         else if (Model.ProjectReport is not null)
         {
             <partial name="_ProjectStatus" model="Model.ProjectReport" />
+        }
+        else if (Model.AssetReport is not null)
+        {
+            <partial name="_AssetStatus" model="Model.AssetReport" />
         }
     </div>
 </div>

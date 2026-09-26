@@ -10,7 +10,8 @@ public enum ReportKind
     MeanTimeToResolve,
     TimeByPerson,
     EstimateAccuracy,
-    ProjectStatus
+    ProjectStatus,
+    AssetStatus
 }
 
 public sealed record ReportFilter(DateTime FromUtc, DateTime ToUtc, Guid? ProjectId, Guid? DepartmentId);
@@ -149,7 +150,104 @@ public sealed record ProjectTaskRow(
     public bool IsOver => !IsCancelled && EstimateMinutes is int e && TotalMinutes > e;
 }
 
-public sealed record ReportDefinition(ReportKind Kind, string Title, string Description);
+/// <summary>
+/// What the asset status report (§12) needs to know about an asset. Its type, location and managing department are as they are
+/// now; its last check is the latest on or before the report's as-at day (<see cref="AssetReportRules.AsAt"/>).
+/// <see cref="HadTaskActivity"/> is a linked task created, completed or logged against in the range.
+/// </summary>
+public sealed record AssetFacts(
+    Guid Id, string? AssetNumber, string Name, AssetStatus Status, DateOnly? DisposedOn, DateTime CreatedAt,
+    Guid DepartmentId, string DepartmentName, Guid TypeId, string TypeName, string? TypeCategory, int? CheckIntervalDays,
+    Guid? LocationId, string? LocationName, decimal? PurchaseValue,
+    DateOnly? LastCheckedOn, AssetCheckOutcome? LastCheckOutcome, int ChecksInPeriod, bool HadTaskActivity);
+
+/// <summary>One change of an asset's status, read from its audit trail; <see cref="At"/> is when it took effect.</summary>
+public sealed record AssetStatusChange(Guid AssetId, DateTime At, AssetStatus From, AssetStatus To);
+
+/// <summary>An asset's status over a report's period, rebuilt from its status changes (§12 Asset status).</summary>
+public sealed record AssetStatusHistory(
+    AssetStatus AtStart, AssetStatus AtEnd, AssetStatus Current, IReadOnlyList<AssetStatusChange> Changes)
+{
+    /// <summary>Not Disposed at some point in the period.</summary>
+    public bool WasInService => AtStart != AssetStatus.Disposed || Changes.Any(c => c.To != AssetStatus.Disposed);
+}
+
+/// <summary>A task about an asset: <see cref="PeriodMinutes"/> is everyone's time on it in the range.</summary>
+public sealed record AssetTaskFacts(
+    Guid Id, string Number, string Title, TaskItemStatus Status, Guid? AssigneeId, Guid AssetId,
+    DateOnly? DueDate, DateTime CreatedAt, DateTime? CompletedAt, int PeriodMinutes);
+
+/// <summary>The linked tasks of some assets: open (and overdue) now; created, done and logged in the range.</summary>
+public sealed record AssetTaskCounts(int Open, int Overdue, int Created, int Done, int LoggedMinutes)
+{
+    public static readonly AssetTaskCounts None = new(0, 0, 0, 0, 0);
+
+    public AssetTaskCounts Plus(AssetTaskCounts o) =>
+        new(Open + o.Open, Overdue + o.Overdue, Created + o.Created, Done + o.Done, LoggedMinutes + o.LoggedMinutes);
+}
+
+/// <summary>
+/// The figures of a group of assets - a type, a location, one within the other, or all of them (§12 Asset status). The statuses
+/// are at the end of the range; held means not Disposed then. Values are at cost (<c>PurchaseValue</c>). Checked counts the held
+/// assets checked in the range; check overdue and not OK are as at the as-at day.
+/// </summary>
+public sealed record AssetGroupCounts(
+    int Active, int InStorage, int Damaged, int Lost, int Disposed, int Registered,
+    decimal HeldValue, int HeldUnvalued, decimal DisposedValue,
+    int Checked, int CheckOverdue, int CheckNotOk, AssetTaskCounts Tasks)
+{
+    public static readonly AssetGroupCounts None = new(0, 0, 0, 0, 0, 0, 0m, 0, 0m, 0, 0, 0, AssetTaskCounts.None);
+
+    public int Total => Active + InStorage + Damaged + Lost + Disposed;
+    public int Held => Total - Disposed;
+
+    public int Of(AssetStatus status) => status switch
+    {
+        AssetStatus.Active => Active,
+        AssetStatus.InStorage => InStorage,
+        AssetStatus.Damaged => Damaged,
+        AssetStatus.Lost => Lost,
+        AssetStatus.Disposed => Disposed,
+        _ => 0
+    };
+
+    public AssetGroupCounts Plus(AssetGroupCounts o) => new(
+        Active + o.Active, InStorage + o.InStorage, Damaged + o.Damaged, Lost + o.Lost, Disposed + o.Disposed,
+        Registered + o.Registered, HeldValue + o.HeldValue, HeldUnvalued + o.HeldUnvalued, DisposedValue + o.DisposedValue,
+        Checked + o.Checked, CheckOverdue + o.CheckOverdue, CheckNotOk + o.CheckNotOk, Tasks.Plus(o.Tasks));
+}
+
+/// <summary>
+/// A type (with its <see cref="Category"/>) or a location, with its figures and its breakdown by the other: a type's locations, a
+/// location's types. <see cref="Id"/> null is "No location".
+/// </summary>
+public sealed record AssetGroupRow(
+    Guid? Id, string Name, string? Category, string DepartmentName, AssetGroupCounts Counts, IReadOnlyList<AssetGroupRow> Breakdown);
+
+/// <summary>How many assets ended the range in a status, and how many of those changed to it during the range.</summary>
+public sealed record AssetStatusCount(AssetStatus Status, int Count, int ChangedInPeriod);
+
+/// <summary>An asset with a linked task open now or worked on in the range: its status at the end of the range, and those tasks.</summary>
+public sealed record AssetWorkRow(
+    Guid AssetId, string? AssetNumber, string Name, string TypeName, string? LocationName, string DepartmentName,
+    AssetStatus Status, AssetTaskCounts Tasks, IReadOnlyList<AssetTaskRow> TaskRows);
+
+/// <summary>A task about an asset: <see cref="PeriodMinutes"/> is everyone's time on it in the range.</summary>
+public sealed record AssetTaskRow(
+    Guid TaskId, string Number, string Title, TaskItemStatus Status, string Assignee, DateOnly? DueDate, bool IsOverdue,
+    DateTime? CompletedAt, int PeriodMinutes, bool CreatedInPeriod, bool DoneInPeriod);
+
+/// <summary>
+/// Asset status (§12): every asset in the register during the range, disposed ones included, by type (each with its locations)
+/// and by location (each with its types). <see cref="StatusCounts"/> counts the assets by their status at the end of the range;
+/// <see cref="Assets"/> are the ones with linked-task work; checks are read as at <see cref="AsAt"/>.
+/// </summary>
+public sealed record AssetStatusReport(
+    IReadOnlyList<AssetGroupRow> ByType, IReadOnlyList<AssetGroupRow> ByLocation, AssetGroupCounts Total,
+    IReadOnlyList<AssetStatusCount> StatusCounts, IReadOnlyList<AssetWorkRow> Assets, DateOnly AsAt);
+
+/// <summary>A report in the catalogue. <see cref="ByProject"/> false hides the project filter: assets belong to no project.</summary>
+public sealed record ReportDefinition(ReportKind Kind, string Title, string Description, bool ByProject = true);
 
 public static class ReportCatalog
 {
@@ -168,7 +266,10 @@ public static class ReportCatalog
         new(ReportKind.EstimateAccuracy, "Estimate accuracy",
             "Tasks completed in the period, grouped by assignee: the estimate against all time logged on them."),
         new(ReportKind.ProjectStatus, "Project status",
-            "Every project open or active in the period, closed ones included: its status and status changes, tasks, schedule, and estimated and logged time by person.")
+            "Every project open or active in the period, closed ones included: its status and status changes, tasks, schedule, and estimated and logged time by person."),
+        new(ReportKind.AssetStatus, "Asset status",
+            "Every asset in the register during the period, disposed ones included: status by type and location, value at cost, checks, and the work done through linked tasks.",
+            ByProject: false)
     ];
 
     public static ReportDefinition Get(ReportKind kind) => All.First(r => r.Kind == kind);

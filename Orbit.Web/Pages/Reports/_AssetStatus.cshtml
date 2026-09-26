@@ -1,0 +1,205 @@
+@model AssetStatusReport
+@using Orbit.Pages.Reports
+@{
+    // Zero counts recede so the others stand out; damaged and lost assets are flagged.
+    string Num(int n, string flag = "") => n == 0 ? "text-muted" : flag;
+    string Detail(AssetGroupRow r) => string.Join(" · ", new[] { r.Category, r.DepartmentName }.Where(x => !string.IsNullOrEmpty(x)));
+
+    void Figures(AssetGroupCounts c)
+    {
+        <td class="text-end @Num(c.Active)">@c.Active</td>
+        <td class="text-end @Num(c.InStorage)">@c.InStorage</td>
+        <td class="text-end @Num(c.Damaged, "text-warning-emphasis fw-semibold")">@c.Damaged</td>
+        <td class="text-end @Num(c.Lost, "text-danger fw-semibold")">@c.Lost</td>
+        <td class="text-end @Num(c.Disposed)">@c.Disposed</td>
+        <td class="text-end fw-semibold">@c.Total</td>
+        <td class="text-end @Num(c.Registered)">@c.Registered</td>
+        <td class="text-end text-nowrap">
+            @ViewModel.HeldValue(c)
+            @if (c.HeldUnvalued > 0 && c.HeldUnvalued < c.Held) { <div class="small text-muted fw-normal">@c.HeldUnvalued unvalued</div> }
+            @if (c.DisposedValue > 0) { <div class="small text-muted fw-normal">@Ui.Money(c.DisposedValue) disposed of</div> }
+        </td>
+        <td class="text-end text-nowrap">
+            @ViewModel.Checked(c)
+            @if (c.CheckOverdue > 0) { <div class="small text-danger fw-normal">@c.CheckOverdue overdue</div> }
+            @if (c.CheckNotOk > 0) { <div class="small text-danger fw-normal">@c.CheckNotOk not OK</div> }
+        </td>
+        <td class="text-end @Num(c.Tasks.Open)">
+            @c.Tasks.Open
+            @if (c.Tasks.Overdue > 0) { <div class="small text-danger fw-normal">@c.Tasks.Overdue overdue</div> }
+        </td>
+        <td class="text-end @Num(c.Tasks.Created)">@c.Tasks.Created</td>
+        <td class="text-end @Num(c.Tasks.Done)">@c.Tasks.Done</td>
+        <td class="text-end text-nowrap @Num(c.Tasks.LoggedMinutes)">@TimeFormat.Minutes(c.Tasks.LoggedMinutes)</td>
+    }
+
+    // One of the two summary tables: each row expands (Bootstrap collapse, targeted by class) to its breakdown by the other.
+    void Groups(string id, string heading, string totalLabel, string one, string many, IReadOnlyList<AssetGroupRow> rows)
+    {
+        <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>@heading</th>
+                    <th class="text-end" title="Status at the end of the period">Active</th>
+                    <th class="text-end" title="Status at the end of the period">In storage</th>
+                    <th class="text-end" title="Status at the end of the period">Damaged</th>
+                    <th class="text-end" title="Status at the end of the period">Lost</th>
+                    <th class="text-end" title="Disposed of by the end of the period">Disposed</th>
+                    <th class="text-end">Total</th>
+                    <th class="text-end" title="Registered in Orbit during the period">Registered</th>
+                    <th class="text-end" title="Purchase value of the assets held at the end of the period (not disposed of), and of the disposed ones">Value</th>
+                    <th class="text-end" title="Assets held at the end of the period that were checked during it; checks overdue and last checks not OK as at @ViewModel.Date(Model.AsAt)">Checked</th>
+                    <th class="text-end" title="Linked tasks open now">Open tasks</th>
+                    <th class="text-end" title="Linked tasks created in the period">Created</th>
+                    <th class="text-end" title="Linked tasks set to Done in the period">Done</th>
+                    <th class="text-end" title="Time logged on linked tasks in the period, by anyone">Logged</th>
+                </tr>
+            </thead>
+            <tbody>
+                @for (var i = 0; i < rows.Count; i++)
+                {
+                    var r = rows[i];
+                    var target = $"{id}-{i}";
+                    <tr>
+                        <td>
+                            <span class="@(r.Id is null ? "fst-italic" : "")">@r.Name</span>
+                            <div class="small text-muted">@Detail(r)</div>
+                            @if (r.Breakdown.Count > 0)
+                            {
+                                <a class="small" href="#" role="button" data-bs-toggle="collapse" data-bs-target=".@target" aria-expanded="false"
+                                   aria-controls="@string.Join(" ", r.Breakdown.Select((_, j) => $"{target}-{j}"))">@r.Breakdown.Count @(r.Breakdown.Count == 1 ? one : many)</a>
+                            }
+                        </td>
+                        @{ Figures(r.Counts); }
+                    </tr>
+                    @for (var j = 0; j < r.Breakdown.Count; j++)
+                    {
+                        var b = r.Breakdown[j];
+                        <tr class="collapse small @target" id="@($"{target}-{j}")">
+                            <td class="ps-4 @(b.Id is null ? "fst-italic" : "")">@b.Name</td>
+                            @{ Figures(b.Counts); }
+                        </tr>
+                    }
+                }
+            </tbody>
+            <tfoot>
+                <tr class="table-light fw-semibold">
+                    <td>@totalLabel</td>
+                    @{ Figures(Model.Total); }
+                </tr>
+            </tfoot>
+        </table>
+        </div>
+    }
+}
+
+@if (Model.Total.Total == 0)
+{
+    <p class="text-muted fst-italic p-3 mb-0">No assets in the selected period.</p>
+}
+else
+{
+    <div class="small px-3 py-2 border-bottom">@ViewModel.AssetStatusCounts(Model)</div>
+
+    <h2 class="h6 px-3 pt-3 mb-2">By type</h2>
+    Groups("asset-type", "Type", "All types", "location", "locations", Model.ByType);
+
+    <h2 class="h6 px-3 pt-4 mb-2">By location</h2>
+    Groups("asset-location", "Location", "All locations", "type", "types", Model.ByLocation);
+
+    @if (Model.Assets.Count > 0)
+    {
+        var t = Model.Total.Tasks;
+        <h2 class="h6 px-3 pt-4 mb-2">Assets with linked tasks</h2>
+        <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Asset</th>
+                    <th title="The asset's status at the end of the period">Status</th>
+                    <th class="text-end" title="Linked tasks open now">Open tasks</th>
+                    <th class="text-end" title="Linked tasks created in the period">Created</th>
+                    <th class="text-end" title="Linked tasks set to Done in the period">Done</th>
+                    <th class="text-end" title="Time logged on linked tasks in the period, by anyone">Logged</th>
+                </tr>
+            </thead>
+            <tbody>
+                @for (var i = 0; i < Model.Assets.Count; i++)
+                {
+                    var a = Model.Assets[i];
+                    var id = $"asset-tasks-{i}";
+                    <tr>
+                        <td>
+                            <a asp-page="/Assets/Details" asp-route-id="@a.AssetId" class="text-decoration-none">@ViewModel.AssetLabel(a)</a>
+                            <div class="small text-muted">@a.TypeName · @(a.LocationName ?? AssetReportRules.NoLocation) · @a.DepartmentName</div>
+                            <a class="small" href="#@id" data-bs-toggle="collapse" role="button" aria-expanded="false" aria-controls="@id">@a.TaskRows.Count @(a.TaskRows.Count == 1 ? "task" : "tasks")</a>
+                        </td>
+                        <td><span class="badge @Ui.AssetStatusBadge(a.Status)">@a.Status.Label()</span></td>
+                        <td class="text-end @Num(a.Tasks.Open)">
+                            @a.Tasks.Open
+                            @if (a.Tasks.Overdue > 0) { <div class="small text-danger">@a.Tasks.Overdue overdue</div> }
+                        </td>
+                        <td class="text-end @Num(a.Tasks.Created)">@a.Tasks.Created</td>
+                        <td class="text-end @Num(a.Tasks.Done)">@a.Tasks.Done</td>
+                        <td class="text-end text-nowrap @Num(a.Tasks.LoggedMinutes)">@TimeFormat.Minutes(a.Tasks.LoggedMinutes)</td>
+                    </tr>
+                    <tr class="collapse" id="@id">
+                        <td colspan="6" class="p-0">
+                            <table class="table table-sm small mb-0">
+                                <thead>
+                                    <tr class="text-muted">
+                                        <th class="ps-4">Task</th>
+                                        <th>Status</th>
+                                        <th>Assignee</th>
+                                        <th>Due</th>
+                                        <th>Completed</th>
+                                        <th class="text-end" title="Everyone's time on the task in the period">Logged in period</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var x in a.TaskRows)
+                                    {
+                                        <tr>
+                                            <td class="ps-4"><a asp-page="/Tasks/Details" asp-route-id="@x.TaskId" class="text-decoration-none">@x.Number</a> @x.Title</td>
+                                            <td><span class="badge @Ui.StatusBadge(x.Status)">@x.Status.Label()</span></td>
+                                            <td>@x.Assignee</td>
+                                            <td class="text-nowrap @(x.IsOverdue ? "text-danger fw-semibold" : "")" title="@(x.IsOverdue ? "Overdue" : null)">@ViewModel.Date(x.DueDate)</td>
+                                            <td class="text-nowrap">@ViewModel.Day(x.CompletedAt)</td>
+                                            <td class="text-end">@TimeFormat.Minutes(x.PeriodMinutes)</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+            <tfoot>
+                <tr class="table-light fw-semibold">
+                    <td>All assets</td>
+                    <td></td>
+                    <td class="text-end">
+                        @t.Open
+                        @if (t.Overdue > 0) { <div class="small text-danger fw-normal">@t.Overdue overdue</div> }
+                    </td>
+                    <td class="text-end">@t.Created</td>
+                    <td class="text-end">@t.Done</td>
+                    <td class="text-end text-nowrap">@TimeFormat.Minutes(t.LoggedMinutes)</td>
+                </tr>
+            </tfoot>
+        </table>
+        </div>
+    }
+
+    <div class="small text-muted px-3 py-2 border-top">
+        Every asset in the register during the period: registered before its end and not disposed of before its start,
+        plus any registered in it and any disposed of earlier with work on a linked task in it. Statuses are at the end of
+        the period (a disposal counts from its disposal date); type, location and managing department are as they are now.
+        Value is the purchase value of the assets held at the end, and of those disposed of. Checked counts the held assets
+        checked in the period; checks overdue and last checks not OK are as at @ViewModel.Date(Model.AsAt). Open linked
+        tasks are as things stand now; created, done and logged count the period, whichever department the tasks are in.
+        Expand a type or a location for its breakdown by the other, and an asset for its tasks that are open or were worked
+        on in the period.
+    </div>
+}

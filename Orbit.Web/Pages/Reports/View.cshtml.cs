@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Orbit.Application;
+using Orbit.Application.Assets;
 using Orbit.Application.Models;
 using Orbit.Application.Services;
 using Orbit.Data.Entities;
@@ -24,6 +25,7 @@ public class ViewModel(ReportingService reporting, ProjectService projects, Depa
     public TimeByPersonReport? TimeByPerson { get; private set; }
     public EstimateAccuracyReport? EstimateAccuracy { get; private set; }
     public ProjectStatusReport? ProjectReport { get; private set; }
+    public AssetStatusReport? AssetReport { get; private set; }
     public IReadOnlyList<SelectListItem> ProjectItems { get; private set; } = [];
     public IReadOnlyList<SelectListItem> DepartmentItems { get; private set; } = [];
     public string FilterSummary { get; private set; } = string.Empty;
@@ -31,9 +33,10 @@ public class ViewModel(ReportingService reporting, ProjectService projects, Depa
     public async Task OnGetAsync(CancellationToken ct)
     {
         await RunAsync(ct);
-        ProjectItems = (await projects.ListOpenForPickerAsync(includeArchived: true, ct: ct))
-            .Select(p => new SelectListItem($"{p.Department.Name} / {p.Name}{(p.Status == ProjectStatus.Archived ? " (archived)" : "")}",
-                p.Id.ToString(), p.Id == ProjectId)).ToList();
+        if (Definition.ByProject)
+            ProjectItems = (await projects.ListOpenForPickerAsync(includeArchived: true, ct: ct))
+                .Select(p => new SelectListItem($"{p.Department.Name} / {p.Name}{(p.Status == ProjectStatus.Archived ? " (archived)" : "")}",
+                    p.Id.ToString(), p.Id == ProjectId)).ToList();
         if (CanChooseDepartment)
             DepartmentItems = (await departments.ListAsync(true, ct))
                 .Select(d => new SelectListItem(d.Name, d.Id.ToString(), d.Id == DepartmentId)).ToList();
@@ -57,7 +60,8 @@ public class ViewModel(ReportingService reporting, ProjectService projects, Depa
         if (TimeByPerson is not null) tables.AddRange(TimeByPersonTables(TimeByPerson));
         if (EstimateAccuracy is not null) tables.AddRange(EstimateAccuracyTables(EstimateAccuracy));
         if (ProjectReport is not null) tables.AddRange(ProjectStatusTables(ProjectReport));
-        var bytes = ReportPdfBuilder.Build(Definition.Title, FilterSummary, tables, landscape: ProjectReport is not null);
+        if (AssetReport is not null) tables.AddRange(AssetStatusTables(AssetReport));
+        var bytes = ReportPdfBuilder.Build(Definition.Title, FilterSummary, tables, landscape: ProjectReport is not null || AssetReport is not null);
         var fileName = $"orbit-{Kind.ToString().ToLowerInvariant()}-{From:yyyyMMdd}-{To:yyyyMMdd}.pdf";
         return File(bytes, "application/pdf", fileName);
     }
@@ -191,6 +195,85 @@ public class ViewModel(ReportingService reporting, ProjectService projects, Depa
         }
     }
 
+    /// <summary>
+    /// "139 assets: 122 Active · 3 Damaged (2 in the period) · 5 Disposed (5 in the period) · 6 registered in the period", by
+    /// status at the end of the period.
+    /// </summary>
+    public static string AssetStatusCounts(AssetStatusReport r)
+    {
+        var total = r.Total.Total;
+        var text = $"{total} {(total == 1 ? "asset" : "assets")}: " + string.Join(" · ", r.StatusCounts.Select(c =>
+            $"{c.Count} {c.Status.Label()}" + (c.ChangedInPeriod > 0 ? $" ({c.ChangedInPeriod} in the period)" : "")));
+        return r.Total.Registered > 0 ? $"{text} · {r.Total.Registered} registered in the period" : text;
+    }
+
+    /// <summary>"35 of 40": the assets held at the end of the period that were checked in it.</summary>
+    public static string Checked(AssetGroupCounts c) => c.Held == 0 ? "-" : $"{c.Checked} of {c.Held}";
+
+    /// <summary>The value at cost of the assets held at the end of the period; "-" when none of them has a value.</summary>
+    public static string HeldValue(AssetGroupCounts c) => c.HeldUnvalued == c.Held ? "-" : Ui.Money(c.HeldValue);
+
+    public static string AssetLabel(AssetWorkRow a) => AssetRules.Label(a.AssetNumber, a.Name);
+
+    public static string Day(DateTime? utc) => utc is DateTime d ? d.ToString("yyyy-MM-dd") : "-";
+
+    private static IEnumerable<ReportPdfBuilder.Table> AssetStatusTables(AssetStatusReport r)
+    {
+        static string Lines(string first, params string?[] more) =>
+            string.Join("\n", more.Where(m => !string.IsNullOrEmpty(m)).Prepend(first));
+        static string Value(AssetGroupCounts c) => Lines(HeldValue(c),
+            c.HeldUnvalued > 0 && c.HeldUnvalued < c.Held ? $"{c.HeldUnvalued} unvalued" : null,
+            c.DisposedValue > 0 ? $"{Ui.Money(c.DisposedValue)} disposed of" : null);
+        static string Checks(AssetGroupCounts c) => Lines(Checked(c),
+            c.CheckOverdue > 0 ? $"{c.CheckOverdue} overdue" : null, c.CheckNotOk > 0 ? $"{c.CheckNotOk} not OK" : null);
+        static string Open(AssetTaskCounts t) => Lines(t.Open.ToString(), t.Overdue > 0 ? $"{t.Overdue} overdue" : null);
+        static IReadOnlyList<string> Cells(string label, AssetGroupCounts c) =>
+        [
+            label, c.Active.ToString(), c.InStorage.ToString(), c.Damaged.ToString(), c.Lost.ToString(), c.Disposed.ToString(),
+            c.Total.ToString(), c.Registered.ToString(), Value(c), Checks(c), Open(c.Tasks), c.Tasks.Created.ToString(),
+            c.Tasks.Done.ToString(), TimeFormat.Minutes(c.Tasks.LoggedMinutes)
+        ];
+        static string Group(AssetGroupRow g) =>
+            Lines(g.Name, string.Join(" · ", new[] { g.Category, g.DepartmentName }.Where(x => !string.IsNullOrEmpty(x))));
+        static List<string> Headers(string first) =>
+            [first, "Active", "In storage", "Damaged", "Lost", "Disposed", "Total", "Registered", "Value", "Checked", "Open tasks", "Created", "Done", "Logged"];
+        // Fourteen columns: 9pt, and each column wide enough for its header (in points on a landscape page).
+        float[] widths = [130, 42, 50, 54, 34, 54, 38, 62, 80, 60, 58, 50, 38, 46];
+        const float size = 9;
+
+        var byType = new List<IReadOnlyList<string>>();
+        foreach (var t in r.ByType)
+        {
+            byType.Add(Cells(Group(t), t.Counts));
+            byType.AddRange(t.Breakdown.Select(l => Cells("  · " + l.Name, l.Counts)));
+        }
+        if (byType.Count > 0) byType.Add(Cells("All types", r.Total));
+        yield return new(Headers("Type"), byType, byType.Count == 0 ? null : AssetStatusCounts(r), widths, size);
+        if (byType.Count == 0) yield break;
+
+        var byLocation = r.ByLocation.Select(l => Cells(Group(l), l.Counts)).ToList();
+        byLocation.Add(Cells("All locations", r.Total));
+        yield return new(Headers("Location"), byLocation, "By location", widths, size);
+
+        // One line per asset (its department is on its type above), so a row never splits across pages.
+        if (r.Assets.Count == 0) yield break;
+        var assets = r.Assets.Select(a => (IReadOnlyList<string>)
+            [AssetLabel(a), a.TypeName, a.LocationName ?? AssetReportRules.NoLocation, a.Status.Label(),
+             OpenOnOneLine(a.Tasks), a.Tasks.Created.ToString(), a.Tasks.Done.ToString(), TimeFormat.Minutes(a.Tasks.LoggedMinutes)]).ToList();
+        assets.Add(["All assets", "", "", "", OpenOnOneLine(r.Total.Tasks), r.Total.Tasks.Created.ToString(), r.Total.Tasks.Done.ToString(),
+            TimeFormat.Minutes(r.Total.Tasks.LoggedMinutes)]);
+        yield return new(["Asset", "Type", "Location", "Status", "Open tasks", "Created", "Done", "Logged"], assets,
+            "Assets with linked tasks", [3.8f, 2, 2, 1.3f, 1.9f, 1.1f, 1, 1.2f]);
+
+        yield return new(["Asset", "Task", "Status", "Assignee", "Due", "Completed", "Logged in period"],
+            r.Assets.SelectMany(a => a.TaskRows.Select(t => (IReadOnlyList<string>)
+                [AssetLabel(a), $"{t.Number} {t.Title}", t.Status.Label(), t.Assignee, Date(t.DueDate) + (t.IsOverdue ? " (overdue)" : ""),
+                 Day(t.CompletedAt), TimeFormat.Minutes(t.PeriodMinutes)])).ToList(),
+            "Linked tasks", [3, 4.3f, 1.3f, 2, 2.6f, 1.4f, 1.4f]);
+
+        static string OpenOnOneLine(AssetTaskCounts t) => t.Overdue > 0 ? $"{t.Open} ({t.Overdue} overdue)" : t.Open.ToString();
+    }
+
     private async Task RunAsync(CancellationToken ct)
     {
         var actor = await actors.GetAsync(ct);
@@ -198,6 +281,7 @@ public class ViewModel(ReportingService reporting, ProjectService projects, Depa
         CanChooseDepartment = restricted is null;
         if (restricted is Guid r) DepartmentId = r == Guid.Empty ? null : r; // the service enforces it either way
         Definition = ReportCatalog.Get(Kind);
+        if (!Definition.ByProject) ProjectId = null; // assets belong to no project
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         To ??= today;
         From ??= To.Value.AddDays(-30);
@@ -216,6 +300,7 @@ public class ViewModel(ReportingService reporting, ProjectService projects, Depa
             case ReportKind.TimeByPerson: TimeByPerson = await reporting.TimeByPersonAsync(filter, ct); break;
             case ReportKind.EstimateAccuracy: EstimateAccuracy = await reporting.EstimateAccuracyAsync(filter, ct); break;
             case ReportKind.ProjectStatus: ProjectReport = await reporting.ProjectStatusAsync(filter, ct); break;
+            case ReportKind.AssetStatus: AssetReport = await reporting.AssetStatusAsync(filter, ct); break;
         }
 
         var parts = new List<string> { $"{From:yyyy-MM-dd} to {To:yyyy-MM-dd}" };

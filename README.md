@@ -238,6 +238,17 @@ And one about projects:
   that are open or were worked on. A department filter picks the projects the department owns, with the whole
   project's figures. The PDF is landscape. The report's project filter also lists archived projects.
 
+And one about assets:
+
+- **Asset status** - every asset in the register during the period (registered before its end and not disposed of
+  before its start), disposed ones included, by type and by location: expand a type for its locations, or a location
+  for its types. Each row gives the assets in each status at the end of the period (read from the audit trail; a
+  disposal counts from its disposal date), those registered in the period, the value at cost held and disposed of, how
+  many were checked in the period with checks overdue and last checks not OK at its end, and the linked tasks open now,
+  created and done in the period with the time logged on them. Below, the assets with linked tasks, each expanding to
+  its tasks. A department filter picks the assets the department manages; there is no project filter. The PDF is
+  landscape.
+
 ## Configuration
 
 See `Orbit.Web/appsettings.json` for defaults and `deploy/orbit.env.example` for the production environment

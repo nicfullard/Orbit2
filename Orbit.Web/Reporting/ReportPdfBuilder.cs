@@ -7,9 +7,13 @@ namespace Orbit.Reporting;
 /// <summary>Renders a report's rows as a simple tabular PDF via QuestPDF (Community licence).</summary>
 public static class ReportPdfBuilder
 {
-    /// <summary>A captioned table. <paramref name="Widths"/> gives each column a relative width; omitted, the columns share the page equally.</summary>
+    /// <summary>
+    /// A captioned table. <paramref name="Widths"/> gives each column a relative width; omitted, the columns share the page equally.
+    /// <paramref name="FontSize"/> shrinks the text of a table too wide for the page's 10pt; the caption keeps its size.
+    /// </summary>
     public sealed record Table(
-        IReadOnlyList<string> Headers, IReadOnlyList<IReadOnlyList<string>> Rows, string? Caption = null, IReadOnlyList<float>? Widths = null);
+        IReadOnlyList<string> Headers, IReadOnlyList<IReadOnlyList<string>> Rows, string? Caption = null, IReadOnlyList<float>? Widths = null,
+        float? FontSize = null);
 
     /// <summary>An A4 document of <paramref name="tables"/>; <paramref name="landscape"/> turns the page for a wide table.</summary>
     public static byte[] Build(string title, string subtitle, IReadOnlyList<Table> tables, bool landscape = false)
@@ -45,7 +49,7 @@ public static class ReportPdfBuilder
                                 return;
                             }
 
-                            section.Item().Table(t =>
+                            section.Item().DefaultTextStyle(x => table.FontSize is float size ? x.FontSize(size) : x).Table(t =>
                             {
                                 t.ColumnsDefinition(cd =>
                                 {
