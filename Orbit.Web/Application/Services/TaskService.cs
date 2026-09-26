@@ -64,7 +64,7 @@ public sealed class TaskService(
             .OrderBy(t => t.Status == TaskItemStatus.Done || t.Status == TaskItemStatus.Cancelled)
             .ThenBy(t => t.DueDate == null)
             .ThenBy(t => t.DueDate)
-            .ThenByDescending(t => t.Priority)
+            .ThenByDescending(EnumOrder.ByTaskPriority)
             .ThenByDescending(t => t.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
@@ -96,7 +96,7 @@ public sealed class TaskService(
         var q = WithIncludes(db.Tasks.AsNoTracking()).Where(t => t.AssigneeId == actor.UserId);
         if (openOnly) q = q.Where(t => t.Status != TaskItemStatus.Done && t.Status != TaskItemStatus.Cancelled);
         return await q.OrderBy(t => t.DueDate == null).ThenBy(t => t.DueDate)
-            .ThenByDescending(t => t.Priority).ThenByDescending(t => t.CreatedAt).ToListAsync(ct);
+            .ThenByDescending(EnumOrder.ByTaskPriority).ThenByDescending(t => t.CreatedAt).ToListAsync(ct);
     }
 
     public async Task<TaskItem> CreateAsync(TaskInput input, TaskSource source, CancellationToken ct = default)
@@ -446,7 +446,7 @@ public sealed class TaskService(
         var planned = await scoped.Where(t => t.PlannedFor == date)
             .OrderBy(t => t.Status == TaskItemStatus.Done || t.Status == TaskItemStatus.Cancelled)
             .ThenBy(t => t.Assignee == null).ThenBy(t => t.Assignee!.DisplayName)
-            .ThenByDescending(t => t.Priority).ThenBy(t => t.DueDate == null).ThenBy(t => t.DueDate)
+            .ThenByDescending(EnumOrder.ByTaskPriority).ThenBy(t => t.DueDate == null).ThenBy(t => t.DueDate)
             .ToListAsync(ct);
 
         // Whatever is still open on the most recent earlier plan - "what didn't get finished last time".
@@ -454,7 +454,7 @@ public sealed class TaskService(
             && t.Status != TaskItemStatus.Done && t.Status != TaskItemStatus.Cancelled);
         var previous = await leftOver.MaxAsync(t => t.PlannedFor, ct);
         List<TaskItem> unfinished = previous is null ? [] : await leftOver.Where(t => t.PlannedFor == previous)
-            .OrderBy(t => t.Assignee == null).ThenBy(t => t.Assignee!.DisplayName).ThenByDescending(t => t.Priority)
+            .OrderBy(t => t.Assignee == null).ThenBy(t => t.Assignee!.DisplayName).ThenByDescending(EnumOrder.ByTaskPriority)
             .ToListAsync(ct);
         return new DayPlan { Date = date, Planned = planned, PreviousDate = previous, Unfinished = unfinished };
     }

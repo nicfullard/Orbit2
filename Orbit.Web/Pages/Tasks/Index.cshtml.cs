@@ -21,6 +21,11 @@ public class IndexModel(
     [BindProperty(SupportsGet = true)] public TaskFilter Filter { get; set; } = new();
     /// <summary>"Reset": forget the remembered filter and show the plain list.</summary>
     [BindProperty(SupportsGet = true)] public bool Reset { get; set; }
+    /// <summary>
+    /// The page of results. Not "Page": Razor Pages keeps its own "page" route value (the page's path), which wins over a
+    /// "page" query parameter when binding and swallows one when links are built - so every page was page 1.
+    /// </summary>
+    [BindProperty(SupportsGet = true)] public int PageNumber { get; set; } = 1;
 
     /// <summary>
     /// The filter fields remembered for the session (§6.2). The page number and the one-off "subtasks of one task"
@@ -63,6 +68,7 @@ public class IndexModel(
             return LocalRedirect(Request.Path + remembered);
 
         Filter.BacklogOnly = false;
+        Filter.Page = PageNumber;
         Filter.PageSize = 50;
         Result = await tasks.ListAsync(Filter, ct);
         Waiting = await structure.GetWaitingAsync(Result.Items, ct);
@@ -90,6 +96,6 @@ public class IndexModel(
     {
         Filter.ProjectId, Filter.DepartmentId, Filter.Status, Filter.AssigneeId, Filter.Priority, Filter.Type, Filter.Source,
         Filter.DueBefore, Filter.DueAfter, Filter.OpenOnly, Filter.PlannedToday, Filter.PlannedFor, Filter.ParentTaskId, Filter.Unassigned, Filter.Search,
-        Filter.AssetId, Page = page
+        Filter.AssetId, PageNumber = page
     })!;
 }

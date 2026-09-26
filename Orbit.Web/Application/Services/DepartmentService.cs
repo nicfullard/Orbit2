@@ -44,7 +44,7 @@ public sealed class DepartmentService(ApplicationDbContext db, IActorProvider ac
             .Where(u => !u.IsSystemAccount && u.DepartmentId == id).OrderBy(u => u.DisplayName).ToListAsync(ct);
         var members = await UserDirectoryService.ToSummariesAsync(db, users, ct);
         var projects = await db.Projects.AsNoTracking().Include(p => p.Owner).Include(p => p.Department)
-            .Where(p => p.DepartmentId == id).OrderBy(p => p.Status).ThenBy(p => p.Name)
+            .Where(p => p.DepartmentId == id).OrderBy(EnumOrder.ByProjectStatus).ThenBy(p => p.Name)
             .Select(p => new
             {
                 Project = p,

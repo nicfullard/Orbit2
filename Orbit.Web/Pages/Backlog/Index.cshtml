@@ -63,7 +63,7 @@
     <div class="card-header">
         <form method="post" asp-page-handler="Plan" id="planForm" class="d-flex flex-wrap align-items-center gap-2"
               asp-route-ProjectId="@f.ProjectId" asp-route-DepartmentId="@f.DepartmentId" asp-route-Priority="@f.Priority"
-              asp-route-AssigneeId="@f.AssigneeId" asp-route-Search="@f.Search">
+              asp-route-AssigneeId="@f.AssigneeId" asp-route-Search="@f.Search" asp-route-PageNumber="@Model.Result.Page">
             <span class="fw-semibold">Plan selected into</span>
             <select class="form-select form-select-sm w-auto" name="sprintId">
                 <option value="">- choose a sprint -</option>
@@ -86,4 +86,14 @@
     <div class="card-body p-0 p-sm-2">
         <partial name="_TaskRows" model="rows" />
     </div>
+    @if (Model.Result.TotalPages > 1)
+    {
+        <div class="card-footer d-flex justify-content-between align-items-center small">
+            <span>Page @Model.Result.Page of @Model.Result.TotalPages <span class="text-muted">· select all picks this page's tasks</span></span>
+            <div>
+                @if (Model.Result.HasPrevious) { <a class="btn btn-sm btn-outline-secondary" href="@Model.PageUrl(Model.Result.Page - 1)">Previous</a> }
+                @if (Model.Result.HasNext) { <a class="btn btn-sm btn-outline-secondary" href="@Model.PageUrl(Model.Result.Page + 1)">Next</a> }
+            </div>
+        </div>
+    }
 </div>

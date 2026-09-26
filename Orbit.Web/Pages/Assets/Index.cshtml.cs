@@ -20,7 +20,11 @@ public class IndexModel(AssetService assets, DepartmentService departments, IAct
     [BindProperty(SupportsGet = true)] public string? Holder { get; set; }
     [BindProperty(SupportsGet = true)] public AssetCheckFilter? Check { get; set; }
     [BindProperty(SupportsGet = true)] public AssetWarrantyFilter? Warranty { get; set; }
-    [BindProperty(SupportsGet = true, Name = "page")] public int PageNumber { get; set; } = 1;
+    /// <summary>
+    /// The page of results. Not "page": Razor Pages keeps its own "page" route value (the page's path), which wins over a
+    /// "page" query parameter when binding and swallows one when links are built - so every page was page 1.
+    /// </summary>
+    [BindProperty(SupportsGet = true)] public int PageNumber { get; set; } = 1;
     /// <summary>"Reset": forget the remembered filter and show the plain list.</summary>
     [BindProperty(SupportsGet = true)] public bool Reset { get; set; }
 
@@ -109,6 +113,6 @@ public class IndexModel(AssetService assets, DepartmentService departments, IAct
 
     public string PageUrl(int page) => Url.Page("/Assets/Index", new
     {
-        Search, DepartmentId, AssetTypeId, LocationId, Status, Holder, Check, Warranty, page
+        Search, DepartmentId, AssetTypeId, LocationId, Status, Holder, Check, Warranty, PageNumber = page
     })!;
 }

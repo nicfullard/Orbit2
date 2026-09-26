@@ -70,7 +70,7 @@ public sealed class DashboardService(ApplicationDbContext db, IActorProvider act
             sprintDone = await all.CountAsync(t => t.Status == TaskItemStatus.Done, ct);
             sprintTasks = await InTier(all)
                 .Include(t => t.Project).Include(t => t.Assignee).Include(t => t.Department).Include(t => t.Asset)
-                .OrderBy(t => t.Status).ThenByDescending(t => t.Priority).Take(20).ToListAsync(ct);
+                .OrderBy(EnumOrder.ByTaskStatus).ThenByDescending(EnumOrder.ByTaskPriority).Take(20).ToListAsync(ct);
             if (tier == PermissionScope.All)
             {
                 var rows = await all.GroupBy(t => t.Department.Name)
@@ -176,5 +176,5 @@ public sealed class DashboardService(ApplicationDbContext db, IActorProvider act
 
     private static IQueryable<TaskItem> Detailed(IQueryable<TaskItem> q) => q
         .Include(t => t.Project).Include(t => t.Assignee).Include(t => t.Department).Include(t => t.Asset)
-        .OrderBy(t => t.DueDate == null).ThenBy(t => t.DueDate).ThenByDescending(t => t.Priority).ThenByDescending(t => t.CreatedAt);
+        .OrderBy(t => t.DueDate == null).ThenBy(t => t.DueDate).ThenByDescending(EnumOrder.ByTaskPriority).ThenByDescending(t => t.CreatedAt);
 }

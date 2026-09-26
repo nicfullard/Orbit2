@@ -21,6 +21,8 @@ public class IndexModel(
     [BindProperty(SupportsGet = true)] public TaskFilter Filter { get; set; } = new();
     /// <summary>"Reset": forget the remembered filter and show the plain backlog.</summary>
     [BindProperty(SupportsGet = true)] public bool Reset { get; set; }
+    /// <summary>The page of the backlog, 100 tasks a page. Not "page", which Razor Pages keeps for its own route value (decision 46).</summary>
+    [BindProperty(SupportsGet = true)] public int PageNumber { get; set; } = 1;
     /// <summary>The filter fields remembered for the session (§6.2, §6.3).</summary>
     public static readonly string[] RememberedFilters =
     [
@@ -53,8 +55,15 @@ public class IndexModel(
         Filter.BacklogOnly = true;
         Filter.OpenOnly = true;
         Filter.SprintId = null;
+        Filter.Page = PageNumber;
         Filter.PageSize = 100;
         Result = await tasks.ListAsync(Filter, ct);
+        // Planning the last tasks off a page leaves it empty: show the last page that still has tasks instead.
+        if (Result.Items.Count == 0 && Result.TotalCount > 0 && Result.Page > 1)
+        {
+            Filter.Page = Result.TotalPages;
+            Result = await tasks.ListAsync(Filter, ct);
+        }
         Waiting = await structure.GetWaitingAsync(Result.Items, ct);
         OpenSprints = await sprints.ListOpenAsync(ct);
 
@@ -93,7 +102,12 @@ public class IndexModel(
         }
         return RedirectToPage(new
         {
-            Filter.ProjectId, Filter.DepartmentId, Filter.Priority, Filter.AssigneeId, Filter.Search
+            Filter.ProjectId, Filter.DepartmentId, Filter.Priority, Filter.AssigneeId, Filter.Search, PageNumber
         });
     }
+
+    public string PageUrl(int page) => Url.Page("/Backlog/Index", new
+    {
+        Filter.Search, Filter.DepartmentId, Filter.ProjectId, Filter.Priority, Filter.AssigneeId, PageNumber = page
+    })!;
 }
