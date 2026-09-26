@@ -85,7 +85,8 @@ public class EditModel(
     {
         Asset = await assets.GetAsync(id, ct);
         AccessPolicy.Require(AccessPolicy.CanEditAsset(actor, Asset), "You don't have permission to edit this asset.");
-        CanDelete = AssetRules.DeleteBlocker(Asset.Checks.Count) is null;
+        var links = await assets.LinkCountsAsync(id, ct);
+        CanDelete = AssetRules.DeleteBlocker(Asset.Checks.Count, links.Tasks, links.Recurring) is null;
     }
 
     private Task<AssetFormLookups> BuildAsync(Actor actor, bool propertiesFromForm, CancellationToken ct) =>

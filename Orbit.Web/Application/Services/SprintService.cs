@@ -50,7 +50,7 @@ public sealed class SprintService(ApplicationDbContext db, IActorProvider actors
         var sprint = await db.Sprints.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct)
             ?? throw new NotFoundException("Sprint not found.");
         sprint.Tasks = await Scoping.Tasks(db.Tasks.AsNoTracking().Where(t => t.SprintId == id), actor)
-            .Include(t => t.Department).Include(t => t.Project).Include(t => t.Assignee).Include(t => t.ParentTask)
+            .Include(t => t.Department).Include(t => t.Project).Include(t => t.Assignee).Include(t => t.ParentTask).Include(t => t.Asset)
             .ToListAsync(ct);
         return sprint;
     }

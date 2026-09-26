@@ -54,6 +54,21 @@
                     <dt class="col-4">Next due</dt><dd class="col-8">@Ui.Day(d.NextRunDate)</dd>
                     <dt class="col-4">Lead time</dt><dd class="col-8">@d.LeadTimeDays day(s) before due (task created @(d.NextRunDate is DateOnly n ? Ui.Day(n.AddDays(-d.LeadTimeDays)) : "-"))</dd>
                     <dt class="col-4">Assignee</dt><dd class="col-8">@(d.Assignee?.DisplayName ?? "Unassigned")</dd>
+                    <dt class="col-4">Asset</dt>
+                    <dd class="col-8">
+                        @if (d.Asset is not null)
+                        {
+                            @Ui.AssetLabel(d.Asset)
+                            @if (d.Asset.Status == AssetStatus.Disposed)
+                            {
+                                <span class="badge text-bg-dark ms-1" title="New tasks are generated without it">Disposed</span>
+                            }
+                        }
+                        else
+                        {
+                            <span class="text-muted">None</span>
+                        }
+                    </dd>
                     <dt class="col-4">Created by</dt><dd class="col-8">@Ui.AuthorName(d.CreatedBy) <span class="text-muted">@Ui.When(d.CreatedAt)</span></dd>
                     <dt class="col-4">Last generated</dt><dd class="col-8">@Ui.When(d.LastGeneratedAt)</dd>
                 </dl>

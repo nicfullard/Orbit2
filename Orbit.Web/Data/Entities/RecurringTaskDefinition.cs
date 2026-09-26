@@ -14,6 +14,9 @@ public class RecurringTaskDefinition
     public TaskPriority Priority { get; set; } = TaskPriority.Medium;
     public Guid? AssigneeId { get; set; }
     public ApplicationUser? Assignee { get; set; }
+    /// <summary>The asset each generated task is about (§6.19); left off a generated task once the asset is disposed.</summary>
+    public Guid? AssetId { get; set; }
+    public Asset? Asset { get; set; }
 
     /// <summary>iCal RRULE, e.g. FREQ=WEEKLY;BYDAY=MO</summary>
     public string RecurrenceRule { get; set; } = string.Empty;

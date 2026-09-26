@@ -506,6 +506,29 @@
                             <span class="text-muted">Standalone</span>
                         }
                     </dd>
+                    <dt class="col-5">Asset</dt>
+                    <dd class="col-7">
+                        @if (t.Asset is not null)
+                        {
+                            @* Named to everyone who sees the task; a link only for those who can open the asset (§6.19). *@
+                            @if (AccessPolicy.CanViewAsset(Model.Actor, t.Asset, AccessPolicy.IsAssigned(Model.Actor, t.Asset)))
+                            {
+                                <a asp-page="/Assets/Details" asp-route-id="@t.AssetId">@Ui.AssetLabel(t.Asset)</a>
+                            }
+                            else
+                            {
+                                <span>@Ui.AssetLabel(t.Asset)</span>
+                            }
+                            @if (t.Asset.Status != AssetStatus.Active)
+                            {
+                                <span class="badge @Ui.AssetStatusBadge(t.Asset.Status) ms-1">@t.Asset.Status.Label()</span>
+                            }
+                        }
+                        else
+                        {
+                            <span class="text-muted">None</span>
+                        }
+                    </dd>
                     <dt class="col-5">Parent task</dt>
                     <dd class="col-7">
                         @if (t.ParentTask is not null)

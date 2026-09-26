@@ -10,6 +10,8 @@ public sealed class RecurringInput
     public Guid? DepartmentId { get; set; }
     public TaskPriority Priority { get; set; } = TaskPriority.Medium;
     public Guid? AssigneeId { get; set; }
+    /// <summary>The asset each generated task is about (§6.19); the same rule as a task's asset. Null = none.</summary>
+    public Guid? AssetId { get; set; }
     public string RecurrenceRule { get; set; } = string.Empty;
     public DateOnly StartDate { get; set; }
     public int LeadTimeDays { get; set; }

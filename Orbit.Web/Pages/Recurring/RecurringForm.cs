@@ -14,6 +14,8 @@ public sealed class RecurringForm
     public Guid? DepartmentId { get; set; }
     public TaskPriority Priority { get; set; } = TaskPriority.Medium;
     public Guid? AssigneeId { get; set; }
+    /// <summary>The asset each generated task is about (§6.19); blank = none.</summary>
+    public Guid? AssetId { get; set; }
     [Required, StringLength(500)] public string RecurrenceRule { get; set; } = "FREQ=WEEKLY;BYDAY=MO";
     [DataType(DataType.Date)] public DateOnly StartDate { get; set; } = DateOnly.FromDateTime(DateTime.UtcNow);
     [Range(0, 365)] public int LeadTimeDays { get; set; } = 1;
@@ -22,16 +24,16 @@ public sealed class RecurringForm
     {
         Title = Title, Description = Description, ProjectId = ProjectId,
         DepartmentId = DepartmentId,
-        Priority = Priority, AssigneeId = AssigneeId, RecurrenceRule = RecurrenceRule,
+        Priority = Priority, AssigneeId = AssigneeId, AssetId = AssetId, RecurrenceRule = RecurrenceRule,
         StartDate = StartDate, LeadTimeDays = LeadTimeDays
     };
 
-    public TaskForm AsTaskForm() => new() { ProjectId = ProjectId, DepartmentId = DepartmentId, AssigneeId = AssigneeId, Priority = Priority };
+    public TaskForm AsTaskForm() => new() { ProjectId = ProjectId, DepartmentId = DepartmentId, AssigneeId = AssigneeId, AssetId = AssetId, Priority = Priority };
 
     public static RecurringForm From(RecurringTaskDefinition d) => new()
     {
         Title = d.Title, Description = d.Description, ProjectId = d.ProjectId, DepartmentId = d.DepartmentId,
-        Priority = d.Priority, AssigneeId = d.AssigneeId, RecurrenceRule = d.RecurrenceRule,
+        Priority = d.Priority, AssigneeId = d.AssigneeId, AssetId = d.AssetId, RecurrenceRule = d.RecurrenceRule,
         StartDate = d.StartDate, LeadTimeDays = d.LeadTimeDays
     };
 }

@@ -9,6 +9,12 @@ public class TaskItem
     public Guid? ProjectId { get; set; }
     public Project? Project { get; set; }
     /// <summary>
+    /// The asset this task is about (spec §6.19): optional, and building the asset's task history. Set only to an asset the
+    /// editor can see that isn't disposed; a link that is kept on a save is never re-checked.
+    /// </summary>
+    public Guid? AssetId { get; set; }
+    public Asset? Asset { get; set; }
+    /// <summary>
     /// The task this one is a subtask of (spec §6.15). Always on the same project as the parent (or both standalone in
     /// the same department); may be in a different department. Never its own ancestor.
     /// </summary>

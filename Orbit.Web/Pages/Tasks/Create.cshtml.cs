@@ -12,7 +12,8 @@ public class CreateModel(
     ProjectService projects,
     UserDirectoryService users,
     SprintService sprints,
-    TaskStructureService structure) : OrbitPageModel
+    TaskStructureService structure,
+    AssetService assets) : OrbitPageModel
 {
     [BindProperty] public TaskForm Form { get; set; } = new();
     public TaskFormLookups Lookups { get; private set; } = null!;
@@ -33,7 +34,7 @@ public class CreateModel(
         Form.DepartmentId ??= projectId is Guid pid
             ? await projects.GetDepartmentIdAsync(pid, ct) ?? actor.DepartmentId
             : actor.DepartmentId;
-        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, structure, Form, null, ct);
+        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, structure, assets, Form, null, null, ct);
     }
 
     public async Task<IActionResult> OnPostAsync(CancellationToken ct)
@@ -53,7 +54,7 @@ public class CreateModel(
                 ModelState.AddModelError(string.Empty, ex.Message);
             }
         }
-        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, structure, Form, null, ct);
+        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, structure, assets, Form, null, null, ct);
         return Page();
     }
 }

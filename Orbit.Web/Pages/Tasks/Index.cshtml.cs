@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Orbit.Application;
+using Orbit.Application.Assets;
 using Orbit.Application.Models;
 using Orbit.Application.Services;
 using Orbit.Data.Entities;
@@ -14,7 +15,8 @@ public class IndexModel(
     DepartmentService departments,
     ProjectService projects,
     UserDirectoryService users,
-    TaskStructureService structure) : OrbitPageModel
+    TaskStructureService structure,
+    AssetService assets) : OrbitPageModel
 {
     [BindProperty(SupportsGet = true)] public TaskFilter Filter { get; set; } = new();
     /// <summary>"Reset": forget the remembered filter and show the plain list.</summary>
@@ -29,7 +31,7 @@ public class IndexModel(
         nameof(TaskFilter.Search), nameof(TaskFilter.DepartmentId), nameof(TaskFilter.ProjectId), nameof(TaskFilter.Status),
         nameof(TaskFilter.AssigneeId), nameof(TaskFilter.Unassigned), nameof(TaskFilter.Priority), nameof(TaskFilter.Type),
         nameof(TaskFilter.Source), nameof(TaskFilter.DueAfter), nameof(TaskFilter.DueBefore), nameof(TaskFilter.OpenOnly),
-        nameof(TaskFilter.PlannedToday), nameof(TaskFilter.PlannedFor)
+        nameof(TaskFilter.PlannedToday), nameof(TaskFilter.PlannedFor), nameof(TaskFilter.AssetId)
     ];
     private const string MemoryKey = "tasks";
 
@@ -42,6 +44,10 @@ public class IndexModel(
     public IReadOnlyList<UserSummary> QuickEditAssignees { get; private set; } = [];
     /// <summary>Tasks on this page whose next move is gated by a dependency (§6.15).</summary>
     public IReadOnlyDictionary<Guid, WaitingSummary> Waiting { get; private set; } = new Dictionary<Guid, WaitingSummary>();
+    /// <summary>The Asset filter's picker (§6.19) is offered to whoever can see assets.</summary>
+    public bool CanFilterByAsset { get; private set; }
+    /// <summary>The filtered asset's number and name, for the filter's chip.</summary>
+    public string? AssetFilterLabel { get; private set; }
 
     public async Task<IActionResult> OnGetAsync(CancellationToken ct)
     {
@@ -74,12 +80,16 @@ public class IndexModel(
         AssigneeItems = people.Select(u => new SelectListItem(u.DisplayName, u.Id.ToString(), u.Id == Filter.AssigneeId)).ToList();
         // The filter list may be narrowed to one department; the inline control needs candidates for every listed task.
         QuickEditAssignees = await users.GetQuickEditCandidatesAsync(ct);
+        CanFilterByAsset = Actor.Has(Permission.AssetsView);
+        if (Filter.AssetId is Guid assetId)
+            AssetFilterLabel = await assets.GetRefAsync(assetId, ct) is { } asset ? AssetRules.Label(asset.AssetNumber, asset.Name) : "(an asset you can't see)";
         return Page();
     }
 
     public string PageUrl(int page) => Url.Page("/Tasks/Index", new
     {
         Filter.ProjectId, Filter.DepartmentId, Filter.Status, Filter.AssigneeId, Filter.Priority, Filter.Type, Filter.Source,
-        Filter.DueBefore, Filter.DueAfter, Filter.OpenOnly, Filter.PlannedToday, Filter.PlannedFor, Filter.ParentTaskId, Filter.Unassigned, Filter.Search, Page = page
+        Filter.DueBefore, Filter.DueAfter, Filter.OpenOnly, Filter.PlannedToday, Filter.PlannedFor, Filter.ParentTaskId, Filter.Unassigned, Filter.Search,
+        Filter.AssetId, Page = page
     })!;
 }

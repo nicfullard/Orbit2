@@ -49,6 +49,26 @@
                     @foreach (var i in Model.ProjectItems) { <option value="@i.Value" selected="@i.Selected">@i.Text</option> }
                 </select>
             </div>
+            @if (Model.CanFilterByAsset)
+            {
+                var assetFilter = new Orbit.Pages.Assets.AssetPickerVm
+                {
+                    Id = "asset-filter", FieldName = "AssetId", SearchUrl = Url.Page("/Assets/Lookup")!, Small = true,
+                    SelectedId = f.AssetId, SelectedLabel = Model.AssetFilterLabel, Placeholder = "Search assets...", Label = "Only tasks about this asset"
+                };
+                <div class="col-sm-6 col-lg-3">
+                    <label class="form-label small mb-0" for="asset-filter-input">Asset</label>
+                    <partial name="/Pages/Assets/_AssetPicker.cshtml" model="assetFilter" />
+                </div>
+            }
+            else if (f.AssetId is Guid assetFilterId)
+            {
+                <div class="col-sm-6 col-lg-3">
+                    <span class="form-label small mb-0 d-block">Asset</span>
+                    <span class="small">@Model.AssetFilterLabel</span>
+                    <input type="hidden" name="AssetId" value="@assetFilterId" />
+                </div>
+            }
             <div class="col-sm-6 col-lg-2">
                 <label class="form-label small mb-0">Status</label>
                 <select class="form-select form-select-sm" name="Status" asp-items="statusItems"></select>

@@ -69,7 +69,7 @@ public sealed class DashboardService(ApplicationDbContext db, IActorProvider act
             sprintTotal = await all.CountAsync(ct);
             sprintDone = await all.CountAsync(t => t.Status == TaskItemStatus.Done, ct);
             sprintTasks = await InTier(all)
-                .Include(t => t.Project).Include(t => t.Assignee).Include(t => t.Department)
+                .Include(t => t.Project).Include(t => t.Assignee).Include(t => t.Department).Include(t => t.Asset)
                 .OrderBy(t => t.Status).ThenByDescending(t => t.Priority).Take(20).ToListAsync(ct);
             if (tier == PermissionScope.All)
             {
@@ -93,7 +93,7 @@ public sealed class DashboardService(ApplicationDbContext db, IActorProvider act
         }).ToListAsync(ct);
 
         var dueSoon = await scope.Where(t => t.DueDate != null && t.DueDate <= dueHorizon)
-            .Include(t => t.Project).Include(t => t.Assignee).Include(t => t.Department)
+            .Include(t => t.Project).Include(t => t.Assignee).Include(t => t.Department).Include(t => t.Asset)
             .OrderBy(t => t.DueDate).Take(10).ToListAsync(ct);
 
         List<NameCount> byAssignee = [];
@@ -175,6 +175,6 @@ public sealed class DashboardService(ApplicationDbContext db, IActorProvider act
     }
 
     private static IQueryable<TaskItem> Detailed(IQueryable<TaskItem> q) => q
-        .Include(t => t.Project).Include(t => t.Assignee).Include(t => t.Department)
+        .Include(t => t.Project).Include(t => t.Assignee).Include(t => t.Department).Include(t => t.Asset)
         .OrderBy(t => t.DueDate == null).ThenBy(t => t.DueDate).ThenByDescending(t => t.Priority).ThenByDescending(t => t.CreatedAt);
 }

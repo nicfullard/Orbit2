@@ -219,6 +219,57 @@
             </div>
         </div>
 
+        @{ var history = Model.TaskHistory; }
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="fw-semibold">Tasks <span class="text-muted fw-normal">(@(history.VisibleCount + history.HiddenCount))</span></span>
+                @if (Model.CanListTasks && history.VisibleCount > 0)
+                {
+                    <a class="small" asp-page="/Tasks/Index" asp-route-AssetId="@a.Id" title="Every task about this asset that you can see, on the Tasks list">All in the task list</a>
+                }
+            </div>
+            <div class="card-body">
+                @if (history.VisibleCount == 0)
+                {
+                    <p class="text-muted fst-italic small mb-0">
+                        @(history.HiddenCount == 0
+                            ? "No tasks are about this asset yet. Choose it in a task's Asset field to start its history."
+                            : $"{history.HiddenCount} linked {(history.HiddenCount == 1 ? "task" : "tasks")}, none that you can see.")
+                    </p>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle small mb-0">
+                            <thead class="table-light"><tr><th>Task</th><th>Status</th><th>Assignee</th><th>Due / done</th></tr></thead>
+                            <tbody>
+                                @foreach (var t in history.Tasks)
+                                {
+                                    <tr>
+                                        <td>
+                                            <span class="font-monospace text-muted me-1">@t.Number</span>
+                                            <a asp-page="/Tasks/Details" asp-route-id="@t.Id" class="text-decoration-none">@t.Title</a>
+                                        </td>
+                                        <td><span class="badge @Ui.StatusBadge(t.Status)">@t.Status.Label()</span></td>
+                                        <td class="text-nowrap">@(t.Assignee?.DisplayName ?? "-")</td>
+                                        <td class="text-nowrap">@(t.CompletedAt is DateTime done && !t.IsOpen ? Ui.Day(DateOnly.FromDateTime(done)) : Ui.Day(t.DueDate))</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    @if (history.VisibleCount > history.Tasks.Count)
+                    {
+                        <p class="small text-muted mb-0 mt-2">Showing @history.Tasks.Count of @history.VisibleCount, open ones first, then the newest.</p>
+                    }
+                }
+                @if (history.HiddenCount > 0 && history.VisibleCount > 0)
+                {
+                    <p class="small text-muted mb-0 mt-2">And @history.HiddenCount more linked @(history.HiddenCount == 1 ? "task" : "tasks") that you can't see.</p>
+                }
+            </div>
+        </div>
+
         <div class="card mb-3">
             <div class="card-header fw-semibold">Comments <span class="text-muted fw-normal">(@Model.Comments.Count)</span></div>
             <div class="card-body">

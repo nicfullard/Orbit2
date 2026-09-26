@@ -118,10 +118,43 @@ public static class AssetRules
     public static bool CheckedOkToday(IEnumerable<AssetCheck> checks, Guid? userId, DateOnly today) =>
         userId is Guid me && checks.Any(c => c.CheckedById == me && c.CheckDate == today && c.Outcome == AssetCheckOutcome.Ok);
 
-    /// <summary>Why an asset can't be deleted, or null when it can: only an asset with no history - no checks - may be; otherwise dispose of it.</summary>
-    public static string? DeleteBlocker(int checkCount) => checkCount > 0
-        ? $"This asset has {(checkCount == 1 ? "a check" : $"{checkCount} checks")} on record, so it can't be deleted. Dispose of it instead."
-        : null;
+    /// <summary>
+    /// Why an asset can't be deleted, or null when it can: only an asset with no history - no checks, no linked tasks and no recurring
+    /// task that generates tasks about it - may be; otherwise dispose of it.
+    /// </summary>
+    public static string? DeleteBlocker(int checkCount, int taskCount = 0, int recurringCount = 0)
+    {
+        var history = new List<string>();
+        if (checkCount > 0) history.Add(checkCount == 1 ? "a check" : $"{checkCount} checks");
+        if (taskCount > 0) history.Add(taskCount == 1 ? "a linked task" : $"{taskCount} linked tasks");
+        if (recurringCount > 0) history.Add(recurringCount == 1 ? "a recurring task" : $"{recurringCount} recurring tasks");
+        if (history.Count == 0) return null;
+        var list = history.Count == 1 ? history[0] : $"{string.Join(", ", history.Take(history.Count - 1))} and {history[^1]}";
+        return $"This asset has {list} on record, so it can't be deleted. Dispose of it instead.";
+    }
+
+    /// <summary>
+    /// Whether a task or recurring task may be linked to this asset (§6.19): one the caller can see - so the picker and the MCP tools
+    /// offer and accept the same assets - that isn't disposed. Only a new or changed link is checked: a link that a save keeps stays,
+    /// whoever edits the task and whatever has happened to the asset since.
+    /// </summary>
+    public static void RequireLinkable(Asset asset, bool canView)
+    {
+        if (!canView) throw new ValidationException("You don't have permission to see that asset, so a task can't be linked to it.");
+        if (asset.Status == AssetStatus.Disposed)
+            throw new ValidationException($"\"{Label(asset.AssetNumber, asset.Name)}\" is disposed, so a task can't be linked to it.");
+    }
+
+    /// <summary>
+    /// Whether what was typed or scanned into the asset picker is exactly this asset's ERP asset number or serial number, ignoring case
+    /// and surrounding spaces (§6.19) - so a scan followed by Enter picks it without choosing from a list.
+    /// </summary>
+    public static bool MatchesScan(string? assetNumber, string? serialNumber, string? text)
+    {
+        var t = text?.Trim();
+        if (string.IsNullOrEmpty(t)) return false;
+        return SameAssetNumber(assetNumber, t) || (serialNumber is not null && string.Equals(serialNumber.Trim(), t, StringComparison.OrdinalIgnoreCase));
+    }
 
     /// <summary>
     /// An asset's type must be one of its managing department's types and its location, when set, one of its locations. On a move

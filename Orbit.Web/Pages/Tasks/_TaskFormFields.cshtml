@@ -4,6 +4,14 @@
     var isEdit = ViewData["IsEdit"] as bool? ?? false;
     var existing = ViewData["ExistingTask"] as TaskItem;
     var form = ViewData["Form"] as TaskForm ?? new TaskForm();
+    // Project, then the department (for those who may choose it), then the asset - side by side on a wide screen.
+    var showAsset = Model.CanPickAsset || form.AssetId is not null;
+    var firstRowCol = Model.CanChooseDepartment && showAsset ? "col-md-4" : "col-md-6";
+    var assetPicker = new Orbit.Pages.Assets.AssetPickerVm
+    {
+        Id = "asset-picker", FieldName = "Form.AssetId", SearchUrl = Url.Page("/Assets/Lookup")!,
+        SelectedId = form.AssetId, SelectedLabel = Model.SelectedAssetLabel, Label = "The asset this task is about"
+    };
 }
 
 <div asp-validation-summary="ModelOnly" class="text-danger mb-2"></div>
@@ -20,7 +28,7 @@
 </div>
 
 <div class="row g-3">
-    <div class="col-md-6">
+    <div class="@firstRowCol">
         <label class="form-label" for="Form_ProjectId">Project</label>
         <select class="form-select js-project-select" id="Form_ProjectId" name="Form.ProjectId" data-department-target="#Form_DepartmentId">
             @foreach (var o in Model.Projects)
@@ -39,7 +47,7 @@
     </div>
     @if (Model.CanChooseDepartment)
     {
-        <div class="col-md-6">
+        <div class="@firstRowCol">
             <label class="form-label" for="Form_DepartmentId">Department</label>
             <select class="form-select js-department-select" id="Form_DepartmentId" name="Form.DepartmentId" asp-items="Model.Departments" data-assignee-target="#Form_AssigneeId"></select>
             <div class="form-text">
@@ -51,6 +59,24 @@
     else
     {
         <input type="hidden" name="Form.DepartmentId" value="@form.DepartmentId" />
+    }
+    @if (showAsset)
+    {
+        <div class="@firstRowCol">
+            @if (Model.CanPickAsset)
+            {
+                <label class="form-label" for="asset-picker-input">Asset <span class="text-muted">(optional)</span></label>
+                <partial name="/Pages/Assets/_AssetPicker.cshtml" model="assetPicker" />
+                <div class="form-text">The asset this task is about; the task joins the asset's history. Search by name, ERP number, serial, make, model, holder or location, or scan its label.</div>
+            }
+            else
+            {
+                @* No asset picker without assets.view (§6.19): the link is shown and kept as it is. *@
+                <span class="form-label d-block">Asset</span>
+                <div class="form-control-plaintext py-0">@Model.SelectedAssetLabel</div>
+                <input type="hidden" name="Form.AssetId" value="@form.AssetId" />
+            }
+        </div>
     }
 </div>
 

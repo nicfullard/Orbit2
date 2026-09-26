@@ -176,6 +176,38 @@ public class AssetAccessTests
         Assert.Empty(Scoping.AssetLocations(locations.AsQueryable(), TestActors.Member(It)));
     }
 
+    /// <summary>
+    /// AST-023 (the access half): the asset picker on a task offers, and a save accepts, exactly the assets the caller can see - a
+    /// Member (Own) the assets they hold, a Department Admin their department's plus the ones they hold elsewhere, All everything.
+    /// </summary>
+    [Fact]
+    public void A_task_can_be_linked_to_the_assets_the_caller_can_see()
+    {
+        var member = TestActors.Member(Marketing);
+        var itAdmin = TestActors.DepartmentAdmin(It);
+        var memberLaptop = Asset(It, member.UserId);
+        var spareLaptop = Asset(It);
+        var projector = Asset(Marketing, itAdmin.UserId);
+        var camera = Asset(Marketing);
+        var list = new List<Asset> { memberLaptop, spareLaptop, projector, camera };
+        void Linkable(Actor a, Asset asset) => AssetRules.RequireLinkable(asset, CanView(a, asset));
+        void NotLinkable(Actor a, Asset asset) => Assert.Throws<ValidationException>(() => Linkable(a, asset));
+        string[] Offered(Actor a) => Scoping.Assets(list.AsQueryable(), a).Select(x => x.AssetNumber!).OrderBy(n => n).ToArray();
+
+        Linkable(member, memberLaptop);
+        NotLinkable(member, spareLaptop);
+        NotLinkable(member, camera);
+        Assert.Equal([memberLaptop.AssetNumber!], Offered(member));
+
+        Linkable(itAdmin, spareLaptop);
+        Linkable(itAdmin, projector);
+        NotLinkable(itAdmin, camera);
+        Assert.Equal(new[] { memberLaptop, spareLaptop, projector }.Select(x => x.AssetNumber!).OrderBy(n => n).ToArray(), Offered(itAdmin));
+
+        Linkable(TestActors.SystemAdmin(), camera);
+        Assert.Empty(Offered(TestActors.Nobody(Marketing)));
+    }
+
     /// <summary>AST-015 (the defaults half): Members see and self-certify what they hold; Department Admins run their department's register.</summary>
     [Fact]
     public void Shipped_roles_default_asset_grants()

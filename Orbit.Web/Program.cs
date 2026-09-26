@@ -169,11 +169,13 @@ builder.Services.AddMcpServer(o =>
             "rather than deriving criticality from raw tasks; run_critical_path_analysis runs and stores a fresh one. " +
             "Files attached to tasks and projects are listed by get_task / get_project and read with get_attachment. " +
             "log_time records time a person worked on a task: pass their userId from list_users, and an idempotencyKey so a retry can't log it twice. " +
-            "The asset register (laptops, vehicles, equipment) is separate from tasks and projects: list_assets / get_asset read it, " +
+            "The asset register (laptops, vehicles, equipment) belongs to no project: list_assets / get_asset read it, " +
             "create_asset / update_asset / record_asset_check write it; each department has its own asset types and locations " +
             "(list_asset_types, list_asset_locations; get_, create_ and update_asset_type / asset_location read and manage them, adding and changing " +
             "a type's properties but never deleting one), and any assetId argument also accepts the asset's ERP asset number, which not every asset has. " +
-            "Pass an idempotencyKey to create_asset so a retry can't register an asset twice.";
+            "Pass an idempotencyKey to create_asset so a retry can't register an asset twice. " +
+            "A task can be about one asset - a repair, a service: pass assetId to create_task / update_task (\"none\" unlinks it); " +
+            "get_asset lists the asset's task history and list_tasks filters on assetId.";
     })
     .WithHttpTransport(o => o.SessionMode = HttpServerSessionMode.Stateless)
     .WithTools<OrbitTools>();

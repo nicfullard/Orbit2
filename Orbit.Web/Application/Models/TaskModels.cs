@@ -19,6 +19,8 @@ public sealed class TaskFilter
     public Guid? RecurringTaskDefinitionId { get; set; }
     /// <summary>Only the direct subtasks of this task (§6.15).</summary>
     public Guid? ParentTaskId { get; set; }
+    /// <summary>Only tasks about this asset (§6.19).</summary>
+    public Guid? AssetId { get; set; }
     /// <summary>Only tasks with no sprint.</summary>
     public bool BacklogOnly { get; set; }
     /// <summary>Exclude Done/Cancelled.</summary>
@@ -54,6 +56,11 @@ public sealed class TaskInput
     public DateOnly? DueDate { get; set; }
     /// <summary>The parent task (§6.15): a task on the same project (or a standalone task in the same department). Null = top level.</summary>
     public Guid? ParentTaskId { get; set; }
+    /// <summary>
+    /// The asset the task is about (§6.19); null = none. A new or changed asset must be one the caller can see that isn't disposed;
+    /// on update, the task's current asset is kept without that check.
+    /// </summary>
+    public Guid? AssetId { get; set; }
     /// <summary>Null on create = Todo; null on update = unchanged.</summary>
     public TaskItemStatus? Status { get; set; }
     /// <summary>Null = backlog.</summary>

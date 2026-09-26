@@ -15,7 +15,8 @@ public sealed class TaskService(
     IActorProvider actors,
     AuditService audit,
     NotificationService notifications,
-    TaskStructureService structure)
+    TaskStructureService structure,
+    AssetService assets)
 {
     private static IQueryable<TaskItem> WithIncludes(IQueryable<TaskItem> q) => q
         .Include(t => t.Department)
@@ -24,6 +25,7 @@ public sealed class TaskService(
         .Include(t => t.Assignee)
         .Include(t => t.CreatedBy)
         .Include(t => t.Sprint)
+        .Include(t => t.Asset)
         .Include(t => t.RecurringTaskDefinition);
 
     public async Task<PagedResult<TaskItem>> ListAsync(TaskFilter f, CancellationToken ct = default)
@@ -44,6 +46,7 @@ public sealed class TaskService(
         if (f.SprintId is Guid sprintId) q = q.Where(t => t.SprintId == sprintId);
         if (f.RecurringTaskDefinitionId is Guid defId) q = q.Where(t => t.RecurringTaskDefinitionId == defId);
         if (f.ParentTaskId is Guid parentId) q = q.Where(t => t.ParentTaskId == parentId);
+        if (f.AssetId is Guid assetId) q = q.Where(t => t.AssetId == assetId);
         if (f.BacklogOnly) q = q.Where(t => t.SprintId == null);
         if (f.OpenOnly) q = q.Where(t => t.Status != TaskItemStatus.Done && t.Status != TaskItemStatus.Cancelled);
         var plannedFor = f.PlannedFor ?? (f.PlannedToday ? DateOnly.FromDateTime(DateTime.UtcNow) : null);
@@ -79,7 +82,8 @@ public sealed class TaskService(
     public async Task<TaskItem> GetAsync(Guid id, CancellationToken ct = default)
     {
         var actor = await actors.GetAsync(ct);
-        var task = await WithIncludes(db.Tasks).FirstOrDefaultAsync(t => t.Id == id, ct)
+        // The asset's holders decide whether the viewer may open the asset (§6.19), so the task page links it only then.
+        var task = await WithIncludes(db.Tasks).Include(t => t.Asset!.Assignments).FirstOrDefaultAsync(t => t.Id == id, ct)
             ?? throw new NotFoundException("Task not found.");
         AccessPolicy.Require(AccessPolicy.CanViewTask(actor, task), "This task belongs to another department.");
         return task;
@@ -113,6 +117,7 @@ public sealed class TaskService(
 
         var assignee = await ValidateAssigneeAsync(input.AssigneeId, departmentId, ct);
         await ValidateSprintAsync(input.SprintId, ct);
+        await assets.CheckLinkAsync(input.AssetId, null, ct);
 
         var status = input.Status ?? TaskItemStatus.Todo;
         DependencyRules.RequireDatesInOrder(input.StartDate, input.DueDate);
@@ -126,6 +131,7 @@ public sealed class TaskService(
             Description = Clean(input.Description),
             DepartmentId = departmentId,
             ProjectId = input.ProjectId,
+            AssetId = input.AssetId,
             Priority = input.Priority,
             Type = input.Type,
             EstimateMinutes = CleanEstimate(input.EstimateMinutes),
@@ -146,7 +152,7 @@ public sealed class TaskService(
         audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.Created, departmentId, task.Title, new
         {
             task.Number, task.Title, task.Status, task.Priority, task.Type, task.EstimateMinutes, task.ProjectId, task.DepartmentId, task.AssigneeId,
-            task.ParentTaskId, task.StartDate, task.DueDate, task.Source, task.SprintId
+            task.ParentTaskId, task.StartDate, task.DueDate, task.Source, task.SprintId, task.AssetId
         });
         await db.SaveChangesAsync(ct);
 
@@ -174,6 +180,7 @@ public sealed class TaskService(
         }
 
         var assignee = await ValidateAssigneeAsync(input.AssigneeId, departmentId, ct);
+        await assets.CheckLinkAsync(input.AssetId, task.AssetId, ct); // a kept asset isn't re-checked (§6.19)
         var newStatus = input.Status ?? task.Status; // any status: the §6.5 status rule is the edit right required above
         if (input.SprintId != task.SprintId)
         {
@@ -194,6 +201,7 @@ public sealed class TaskService(
             .TrackText("description", task.Description, input.Description)
             .Track("departmentId", task.DepartmentId, departmentId)
             .Track("projectId", task.ProjectId, input.ProjectId)
+            .Track("assetId", task.AssetId, input.AssetId)
             .Track("priority", task.Priority, input.Priority)
             .Track("type", task.Type, input.Type)
             .Track("estimateMinutes", task.EstimateMinutes, estimate)
@@ -211,6 +219,7 @@ public sealed class TaskService(
         task.Description = Clean(input.Description);
         task.DepartmentId = departmentId;
         task.ProjectId = input.ProjectId;
+        task.AssetId = input.AssetId;
         task.Priority = input.Priority;
         task.Type = input.Type;
         task.EstimateMinutes = estimate;

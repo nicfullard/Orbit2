@@ -47,6 +47,10 @@ public sealed class TaskForm
     [Display(Name = "Sprint")]
     public Guid? SprintId { get; set; }
 
+    /// <summary>The asset this task is about (§6.19); blank = none. Chosen with the asset picker.</summary>
+    [Display(Name = "Asset")]
+    public Guid? AssetId { get; set; }
+
     public TaskInput ToInput(bool includeStatus) => new()
     {
         Title = Title,
@@ -61,7 +65,8 @@ public sealed class TaskForm
         DueDate = DueDate,
         ParentTaskId = ParentTaskId,
         Status = includeStatus ? Status : null,
-        SprintId = SprintId
+        SprintId = SprintId,
+        AssetId = AssetId
     };
 
     public static TaskForm From(TaskItem t) => new()
@@ -78,6 +83,7 @@ public sealed class TaskForm
         DueDate = t.DueDate,
         ParentTaskId = t.ParentTaskId,
         Status = t.Status,
-        SprintId = t.SprintId
+        SprintId = t.SprintId,
+        AssetId = t.AssetId
     };
 }

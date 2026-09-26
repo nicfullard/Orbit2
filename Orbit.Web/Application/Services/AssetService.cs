@@ -107,6 +107,97 @@ public sealed class AssetService(ApplicationDbContext db, IActorProvider actors,
             .ToListAsync(ct);
     }
 
+    /// <summary>
+    /// The asset picker's search (§6.19): up to <paramref name="take"/> assets the caller can see (assets.view) that aren't disposed,
+    /// whose name, ERP asset number, serial number, manufacturer, model, location or holder contains the text. An exact ERP number or
+    /// serial number comes first - a scan - then names starting with the text, then the rest by name. Works with any number of assets:
+    /// only the matches leave the database.
+    /// </summary>
+    public async Task<IReadOnlyList<AssetPickerItem>> SearchForPickerAsync(string? text, int take = 20, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        var t = text?.Trim();
+        if (string.IsNullOrEmpty(t)) return [];
+        var pattern = $"%{t}%";
+        var prefix = $"{t}%";
+        var lower = t.ToLower();
+        var rows = await Scoping.Assets(db.Assets.AsNoTracking(), actor)
+            .Where(a => a.Status != AssetStatus.Disposed)
+            .Where(a => EF.Functions.ILike(a.Name, pattern)
+                || (a.AssetNumber != null && EF.Functions.ILike(a.AssetNumber, pattern))
+                || (a.SerialNumber != null && EF.Functions.ILike(a.SerialNumber, pattern))
+                || (a.Manufacturer != null && EF.Functions.ILike(a.Manufacturer, pattern))
+                || (a.Model != null && EF.Functions.ILike(a.Model, pattern))
+                || (a.AssetLocation != null && EF.Functions.ILike(a.AssetLocation.Name, pattern))
+                || a.Assignments.Any(x => EF.Functions.ILike(x.User.DisplayName, pattern)))
+            .OrderBy(a => (a.AssetNumber != null && a.AssetNumber.ToLower() == lower) || (a.SerialNumber != null && a.SerialNumber.ToLower() == lower)
+                ? 0
+                : EF.Functions.ILike(a.Name, prefix) ? 1 : 2)
+            .ThenBy(a => a.Name).ThenBy(a => a.AssetNumber).ThenBy(a => a.Id)
+            .Take(Math.Clamp(take, 1, 50))
+            .Select(a => new
+            {
+                a.Id, a.AssetNumber, a.Name, a.SerialNumber, a.Status,
+                Type = a.AssetType.Name,
+                Location = a.AssetLocation != null ? a.AssetLocation.Name : null,
+                Holders = a.Assignments.OrderBy(x => x.User.DisplayName).Select(x => x.User.DisplayName).ToList()
+            })
+            .ToListAsync(ct);
+        return rows.Select(r => new AssetPickerItem(r.Id, r.AssetNumber, r.Name, r.Type, r.Location, r.Holders, r.Status,
+            AssetRules.MatchesScan(r.AssetNumber, r.SerialNumber, t))).ToList();
+    }
+
+    /// <summary>An asset's number and name for a picker's chip - only when the caller can see it; null otherwise, or when there's no such asset.</summary>
+    public async Task<AssetRef?> GetRefAsync(Guid id, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        return await Scoping.Assets(db.Assets.AsNoTracking(), actor).Where(a => a.Id == id)
+            .Select(a => new AssetRef(a.Id, a.AssetNumber, a.Name)).FirstOrDefaultAsync(ct);
+    }
+
+    /// <summary>
+    /// Checks the asset a task or recurring task is being linked to (§6.19): a new or changed asset must be one the caller can see
+    /// that isn't disposed (<see cref="AssetRules.RequireLinkable"/>). No asset is always fine, and the current one is kept unchecked.
+    /// </summary>
+    public async Task CheckLinkAsync(Guid? assetId, Guid? currentAssetId, CancellationToken ct = default)
+    {
+        if (assetId is not Guid id || id == currentAssetId) return;
+        var actor = await actors.GetAsync(ct);
+        var asset = await db.Assets.AsNoTracking().Include(a => a.Assignments).FirstOrDefaultAsync(a => a.Id == id, ct)
+            ?? throw new ValidationException("That asset doesn't exist.");
+        AssetRules.RequireLinkable(asset, AccessPolicy.CanViewAsset(actor, asset, AccessPolicy.IsAssigned(actor, asset)));
+    }
+
+    /// <summary>
+    /// An asset's task history (§6.19) for an asset already read with <see cref="GetAsync"/>: the linked tasks the caller can see
+    /// (tasks.view) - open ones first, then the newest - at most <paramref name="take"/> of them, with how many they can see in all
+    /// and how many others are linked. Each side keeps its own permissions.
+    /// </summary>
+    public async Task<AssetTaskHistory> TaskHistoryAsync(Asset asset, int take = 20, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        var linked = db.Tasks.AsNoTracking().Where(t => t.AssetId == asset.Id);
+        var total = await linked.CountAsync(ct);
+        var visible = Scoping.Tasks(linked, actor);
+        var visibleCount = await visible.CountAsync(ct);
+        var tasks = visibleCount == 0 ? [] : await visible
+            .Include(t => t.Assignee).Include(t => t.Department)
+            .OrderBy(t => t.Status == TaskItemStatus.Done || t.Status == TaskItemStatus.Cancelled)
+            .ThenByDescending(t => t.CreatedAt).ThenBy(t => t.Id)
+            .Take(Math.Clamp(take, 1, 200))
+            .ToListAsync(ct);
+        return new AssetTaskHistory(tasks, visibleCount, total - visibleCount);
+    }
+
+    /// <summary>How many tasks and recurring tasks are linked to an asset, whoever can see them - what stops it being deleted (§6.19).</summary>
+    public async Task<(int Tasks, int Recurring)> LinkCountsAsync(Guid assetId, CancellationToken ct = default)
+    {
+        await actors.GetAsync(ct);
+        var tasks = await db.Tasks.CountAsync(t => t.AssetId == assetId, ct);
+        var recurring = await db.RecurringTaskDefinitions.CountAsync(r => r.AssetId == assetId, ct);
+        return (tasks, recurring);
+    }
+
     /// <summary>The types and locations found among the assets the caller can see, for the list filters.</summary>
     public async Task<(IReadOnlyList<AssetFilterOption> Types, IReadOnlyList<AssetFilterOption> Locations)> FilterOptionsAsync(CancellationToken ct = default)
     {
@@ -381,7 +472,10 @@ public sealed class AssetService(ApplicationDbContext db, IActorProvider actors,
         return await GetAsync(id, ct);
     }
 
-    /// <summary>Delete an asset registered in error - only while it has no checks (§6.19); otherwise dispose of it.</summary>
+    /// <summary>
+    /// Delete an asset registered in error - only while it has no checks, no linked tasks and no recurring task about it (§6.19);
+    /// otherwise dispose of it.
+    /// </summary>
     public async Task DeleteAsync(Guid id, CancellationToken ct = default)
     {
         var actor = await actors.GetAsync(ct);
@@ -389,7 +483,8 @@ public sealed class AssetService(ApplicationDbContext db, IActorProvider actors,
             ?? throw new NotFoundException("Asset not found.");
         AccessPolicy.Require(AccessPolicy.CanViewAsset(actor, asset, AccessPolicy.IsAssigned(actor, asset)), CantSee);
         AccessPolicy.Require(AccessPolicy.CanEditAsset(actor, asset), "You don't have permission to delete this asset.");
-        if (AssetRules.DeleteBlocker(await db.AssetChecks.CountAsync(c => c.AssetId == id, ct)) is string blocker)
+        var links = await LinkCountsAsync(id, ct);
+        if (AssetRules.DeleteBlocker(await db.AssetChecks.CountAsync(c => c.AssetId == id, ct), links.Tasks, links.Recurring) is string blocker)
             throw new ValidationException(blocker);
         // Holders, values, comments and files go with it (cascade); the audit entry records that it existed.
         audit.Add(actor, AuditEntity.Asset, asset.Id, AuditAction.Deleted, asset.DepartmentId, Summary(asset), new { asset.AssetNumber, asset.Name });

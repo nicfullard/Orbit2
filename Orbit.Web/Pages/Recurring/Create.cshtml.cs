@@ -12,7 +12,8 @@ public class CreateModel(
     DepartmentService departments,
     ProjectService projects,
     UserDirectoryService users,
-    SprintService sprints) : OrbitPageModel
+    SprintService sprints,
+    AssetService assets) : OrbitPageModel
 {
     [BindProperty] public RecurringForm Form { get; set; } = new();
     public TaskFormLookups Lookups { get; private set; } = null!;
@@ -25,7 +26,7 @@ public class CreateModel(
         Form.DepartmentId = projectId is Guid pid
             ? await projects.GetDepartmentIdAsync(pid, ct) ?? actor.DepartmentId
             : actor.DepartmentId;
-        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, Form.AsTaskForm(), ct);
+        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, assets, Form.AsTaskForm(), null, ct);
     }
 
     public async Task<IActionResult> OnPostAsync(CancellationToken ct)
@@ -42,7 +43,7 @@ public class CreateModel(
             }
             catch (ValidationException ex) { ModelState.AddModelError(string.Empty, ex.Message); }
         }
-        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, Form.AsTaskForm(), ct);
+        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, assets, Form.AsTaskForm(), null, ct);
         return Page();
     }
 }

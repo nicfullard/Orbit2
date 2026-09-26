@@ -103,6 +103,19 @@ public sealed record AssetCheckSummary(PermissionScope Scope, int Overdue, int D
 /// </summary>
 public sealed record AssetRef(Guid Id, string? AssetNumber, string Name);
 
+/// <summary>
+/// One match in the asset picker (§6.19): enough to tell similar assets apart - type, location, holders, status - and whether it is
+/// exactly the ERP number or serial number that was typed or scanned.
+/// </summary>
+public sealed record AssetPickerItem(Guid Id, string? AssetNumber, string Name, string TypeName, string? LocationName,
+    IReadOnlyList<string> Holders, AssetStatus Status, bool Exact);
+
+/// <summary>
+/// An asset's task history as the caller may see it (§6.19): the linked tasks within their tasks.view reach (the first few), how many
+/// of those there are in all, and how many other tasks are linked that they can't see.
+/// </summary>
+public sealed record AssetTaskHistory(IReadOnlyList<TaskItem> Tasks, int VisibleCount, int HiddenCount);
+
 /// <summary>An asset a quick-check scan matched, before disposed ones are set aside (spec §6.19).</summary>
 public sealed record QuickCheckCandidate(Guid Id, string? AssetNumber, string Name, AssetStatus Status);
 

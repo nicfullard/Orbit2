@@ -76,7 +76,7 @@ public static class PermissionCatalog
             "Admin > Activity Log, and the list_activity tool. At Department only your department's entries.",
             InsightGroup, DeptAll),
         new(Permission.AssetsView, "View assets",
-            "See assets and their checks, comments, files and activity, and comment on them and attach files to them. Own = assets assigned to you; Department = the assets your department manages, plus the ones you hold.",
+            "See assets and their checks, comments, files, activity and task history, comment on them, attach files to them and choose them as the asset a task is about. Own = assets assigned to you; Department = the assets your department manages, plus the ones you hold.",
             AssetsGroup, OwnDeptAll),
         new(Permission.AssetsCreate, "Register assets",
             "Register new assets in the department, or in any department at All departments.",

@@ -59,6 +59,10 @@
                         {
                             <span class="badge text-bg-light border">@t.Project.Name</span>
                         }
+                        @if (t.Asset is not null)
+                        {
+                            <span class="badge text-bg-light border fw-normal" title="The asset this task is about">@Ui.Truncate(Ui.AssetLabel(t.Asset), 40)</span>
+                        }
                         <span class="badge @Ui.PriorityBadge(t.Priority)">@t.Priority</span>
                         @if (t.Status == TaskItemStatus.Cancelled)
                         {

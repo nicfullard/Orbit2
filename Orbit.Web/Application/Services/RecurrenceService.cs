@@ -13,6 +13,7 @@ public sealed class RecurrenceService(
     ApplicationDbContext db,
     IActorProvider actors,
     AuditService audit,
+    AssetService assets,
     ILogger<RecurrenceService> logger)
 {
     // --- RRULE evaluation ------------------------------------------------------------------
@@ -82,7 +83,7 @@ public sealed class RecurrenceService(
     // --- definitions CRUD ---------------------------------------------------------------------
 
     private static IQueryable<RecurringTaskDefinition> WithIncludes(IQueryable<RecurringTaskDefinition> q) => q
-        .Include(r => r.Department).Include(r => r.Project).ThenInclude(p => p!.Department).Include(r => r.Assignee).Include(r => r.CreatedBy);
+        .Include(r => r.Department).Include(r => r.Project).ThenInclude(p => p!.Department).Include(r => r.Assignee).Include(r => r.Asset).Include(r => r.CreatedBy);
 
     public async Task<IReadOnlyList<RecurringTaskDefinition>> ListAsync(RecurringFilter f, CancellationToken ct = default)
     {
@@ -113,6 +114,7 @@ public sealed class RecurrenceService(
         AccessPolicy.Require(AccessPolicy.CanCreateTaskIn(actor, departmentId), "You don't have permission to create recurring tasks in this department.");
         await RequireOpenDepartmentAsync(departmentId, ct);
         await ValidateAssigneeAsync(input.AssigneeId, departmentId, ct);
+        await assets.CheckLinkAsync(input.AssetId, null, ct);
         if (input.LeadTimeDays is < 0 or > 365) throw new ValidationException("Lead time must be between 0 and 365 days.");
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -125,6 +127,7 @@ public sealed class RecurrenceService(
             DepartmentId = departmentId,
             Priority = input.Priority,
             AssigneeId = input.AssigneeId,
+            AssetId = input.AssetId,
             RecurrenceRule = rule,
             StartDate = input.StartDate,
             LeadTimeDays = input.LeadTimeDays,
@@ -139,7 +142,7 @@ public sealed class RecurrenceService(
 
         db.RecurringTaskDefinitions.Add(def);
         audit.Add(actor, AuditEntity.RecurringTaskDefinition, def.Id, AuditAction.Created, departmentId, def.Title,
-            new { def.Title, def.RecurrenceRule, def.StartDate, def.NextRunDate, def.LeadTimeDays, def.ProjectId, def.DepartmentId, def.AssigneeId });
+            new { def.Title, def.RecurrenceRule, def.StartDate, def.NextRunDate, def.LeadTimeDays, def.ProjectId, def.DepartmentId, def.AssigneeId, def.AssetId });
         await db.SaveChangesAsync(ct);
         return await GetAsync(def.Id, ct);
     }
@@ -161,6 +164,7 @@ public sealed class RecurrenceService(
             await RequireOpenDepartmentAsync(departmentId, ct);
         }
         await ValidateAssigneeAsync(input.AssigneeId, departmentId, ct);
+        await assets.CheckLinkAsync(input.AssetId, def.AssetId, ct); // a kept asset isn't re-checked (§6.19)
         if (input.LeadTimeDays is < 0 or > 365) throw new ValidationException("Lead time must be between 0 and 365 days.");
 
         var changes = new ChangeSet()
@@ -170,6 +174,7 @@ public sealed class RecurrenceService(
             .Track("departmentId", def.DepartmentId, departmentId)
             .Track("priority", def.Priority, input.Priority)
             .Track("assigneeId", def.AssigneeId, input.AssigneeId)
+            .Track("assetId", def.AssetId, input.AssetId)
             .Track("recurrenceRule", def.RecurrenceRule, rule)
             .Track("startDate", def.StartDate, input.StartDate)
             .Track("leadTimeDays", def.LeadTimeDays, input.LeadTimeDays);
@@ -181,6 +186,7 @@ public sealed class RecurrenceService(
         def.DepartmentId = departmentId;
         def.Priority = input.Priority;
         def.AssigneeId = input.AssigneeId;
+        def.AssetId = input.AssetId;
         def.LeadTimeDays = input.LeadTimeDays;
         if (changes.Contains("recurrenceRule") || changes.Contains("startDate"))
         {
@@ -296,6 +302,8 @@ public sealed class RecurrenceService(
 
         var projectId = def.Project is { Status: not ProjectStatus.Archived } ? def.ProjectId : null;
         var assigneeId = def.Assignee is { IsActive: true, IsSystemAccount: false } ? def.AssigneeId : null;
+        // A disposed asset is no longer worked on (§6.19): the task is generated without it, as an archived project is left off.
+        var assetId = def.Asset is { Status: not AssetStatus.Disposed } ? def.AssetId : null;
         var now = DateTime.UtcNow;
         var task = new TaskItem
         {
@@ -304,6 +312,7 @@ public sealed class RecurrenceService(
             Description = def.Description,
             DepartmentId = def.DepartmentId,
             ProjectId = projectId,
+            AssetId = assetId,
             Priority = def.Priority,
             AssigneeId = assigneeId,
             DueDate = due,
@@ -318,7 +327,7 @@ public sealed class RecurrenceService(
         db.Tasks.Add(task);
         def.LastGeneratedAt = now;
         audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.Generated, def.DepartmentId, task.Title,
-            new { recurringTaskDefinitionId = def.Id, dueDate = due, task.Priority, task.AssigneeId, task.ProjectId });
+            new { recurringTaskDefinitionId = def.Id, dueDate = due, task.Priority, task.AssigneeId, task.ProjectId, task.AssetId });
         return task;
     }
 

@@ -59,6 +59,46 @@ public class AssetRulesTests
         Assert.Contains("3 checks", AssetRules.DeleteBlocker(3));
     }
 
+    /// <summary>AST-024 (the rule half): an asset with linked tasks, or a recurring task about it, can't be deleted either.</summary>
+    [Fact]
+    public void An_asset_with_linked_tasks_or_recurring_tasks_cannot_be_deleted()
+    {
+        Assert.Null(AssetRules.DeleteBlocker(0, 0, 0));
+        Assert.Equal("This asset has a linked task on record, so it can't be deleted. Dispose of it instead.", AssetRules.DeleteBlocker(0, 1));
+        Assert.Contains("2 linked tasks", AssetRules.DeleteBlocker(0, 2));
+        Assert.Contains("a recurring task", AssetRules.DeleteBlocker(0, 0, 1));
+        Assert.Contains("a check, 4 linked tasks and 2 recurring tasks", AssetRules.DeleteBlocker(1, 4, 2));
+    }
+
+    /// <summary>
+    /// AST-023 (the rule half): a task can be linked to an asset the caller can see that isn't disposed. Damaged and lost assets are
+    /// exactly the ones tasks are raised about, so only disposal refuses.
+    /// </summary>
+    [Fact]
+    public void A_task_links_to_a_visible_asset_that_is_not_disposed()
+    {
+        foreach (var status in new[] { AssetStatus.Active, AssetStatus.InStorage, AssetStatus.Damaged, AssetStatus.Lost })
+            AssetRules.RequireLinkable(new Asset { Name = "Van", Status = status }, canView: true);
+
+        var disposed = Assert.Throws<ValidationException>(() =>
+            AssetRules.RequireLinkable(new Asset { AssetNumber = "FA-1", Name = "Old van", Status = AssetStatus.Disposed }, canView: true));
+        Assert.Equal("\"FA-1 - Old van\" is disposed, so a task can't be linked to it.", disposed.Message);
+        var hidden = Assert.Throws<ValidationException>(() => AssetRules.RequireLinkable(new Asset { Name = "Van" }, canView: false));
+        Assert.Contains("permission to see that asset", hidden.Message);
+    }
+
+    /// <summary>AST-025: a scan or typed text picks an asset outright when it is exactly its ERP number or serial number, ignoring case and spaces.</summary>
+    [Fact]
+    public void A_scan_matches_the_asset_number_or_serial_exactly()
+    {
+        Assert.True(AssetRules.MatchesScan("FA-004211", "SN123", " fa-004211 "));
+        Assert.True(AssetRules.MatchesScan(null, " SN123 ", "sn123"));
+        Assert.False(AssetRules.MatchesScan("FA-004211", "SN123", "SN12"));
+        Assert.False(AssetRules.MatchesScan("FA-004211", null, "004211"));
+        Assert.False(AssetRules.MatchesScan(null, null, "anything"));
+        Assert.False(AssetRules.MatchesScan("FA-004211", "SN123", "  "));
+    }
+
     /// <summary>AST-016: an issue found needs notes; a check can't be dated in the future.</summary>
     [Fact]
     public void Checks_need_notes_for_an_issue_and_no_future_date()

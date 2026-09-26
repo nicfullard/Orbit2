@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Orbit.Application;
+using Orbit.Application.Assets;
 using Orbit.Application.Models;
 using Orbit.Application.Services;
+using Orbit.Data.Entities;
 
 namespace Orbit.Pages.Tasks;
 
@@ -22,6 +24,13 @@ public sealed class TaskFormLookups
     public IReadOnlyList<SelectListItem> Sprints { get; init; } = [];
     /// <summary>Parent task options (§6.15), each carrying its project and department so the form can filter them client-side.</summary>
     public IReadOnlyList<ParentCandidate> Parents { get; init; } = [];
+    /// <summary>The asset picker is offered to whoever can see assets (assets.view, §6.19); the service checks the asset chosen.</summary>
+    public bool CanPickAsset { get; init; }
+    /// <summary>The chosen asset's number and name, for the picker's chip - or the read-only line for someone without the picker.</summary>
+    public string? SelectedAssetLabel { get; init; }
+
+    /// <summary>The asset a task or recurring task is linked to now, as the builders below take it.</summary>
+    public static AssetRef? RefOf(Asset? asset) => asset is null ? null : new AssetRef(asset.Id, asset.AssetNumber, asset.Name);
 
     /// <summary>Lookups without the Parent task picker - for the recurring-definition form, which shares these fields but has no parent (§6.15).</summary>
     public static Task<TaskFormLookups> BuildAsync(
@@ -30,12 +39,15 @@ public sealed class TaskFormLookups
         ProjectService projects,
         UserDirectoryService users,
         SprintService sprints,
+        AssetService assets,
         TaskForm form,
+        AssetRef? currentAsset,
         CancellationToken ct) =>
-        BuildAsync(actor, departments, projects, users, sprints, null, form, null, ct);
+        BuildAsync(actor, departments, projects, users, sprints, null, assets, form, null, currentAsset, ct);
 
     /// <param name="structure">Supplies the Parent task options; null leaves the picker empty.</param>
     /// <param name="existingTaskId">The task being edited, so it is not offered as its own parent.</param>
+    /// <param name="currentAsset">The asset the task is linked to now, named on the form even when the caller can't see it.</param>
     public static async Task<TaskFormLookups> BuildAsync(
         Actor actor,
         DepartmentService departments,
@@ -43,8 +55,10 @@ public sealed class TaskFormLookups
         UserDirectoryService users,
         SprintService sprints,
         TaskStructureService? structure,
+        AssetService assets,
         TaskForm form,
         Guid? existingTaskId,
+        AssetRef? currentAsset,
         CancellationToken ct)
     {
         var canChooseDepartment = actor.CanAnywhere(Permission.TasksCreate);
@@ -85,6 +99,14 @@ public sealed class TaskFormLookups
             parents.Insert(0, new ParentCandidate(current.Id, current.Title, current.ProjectId, current.Project?.Name, current.DepartmentId, current.Department.Name));
         }
 
+        // The chip names the asset chosen: the current link whoever can see it, or another asset the caller can see.
+        string? assetLabel = null;
+        if (form.AssetId is Guid assetId)
+        {
+            var chosen = currentAsset?.Id == assetId ? currentAsset : await assets.GetRefAsync(assetId, ct);
+            assetLabel = chosen is null ? "(an asset you can't see)" : AssetRules.Label(chosen.AssetNumber, chosen.Name);
+        }
+
         return new TaskFormLookups
         {
             Actor = actor,
@@ -93,7 +115,9 @@ public sealed class TaskFormLookups
             Projects = projectItems,
             Assignees = assigneeItems,
             Sprints = sprintItems,
-            Parents = parents
+            Parents = parents,
+            CanPickAsset = actor.Has(Permission.AssetsView),
+            SelectedAssetLabel = assetLabel
         };
     }
 }

@@ -4,6 +4,13 @@
 @{
     var form = ViewData["Form"] as RecurringForm ?? new RecurringForm();
     var priorityItems = Ui.EnumItems<TaskPriority>(form.Priority);
+    var showAsset = Model.CanPickAsset || form.AssetId is not null;
+    var firstRowCol = Model.CanChooseDepartment && showAsset ? "col-md-4" : "col-md-6";
+    var assetPicker = new Orbit.Pages.Assets.AssetPickerVm
+    {
+        Id = "asset-picker", FieldName = "Form.AssetId", SearchUrl = Url.Page("/Assets/Lookup")!,
+        SelectedId = form.AssetId, SelectedLabel = Model.SelectedAssetLabel, Label = "The asset each generated task is about"
+    };
 }
 
 <div asp-validation-summary="ModelOnly" class="text-danger mb-2"></div>
@@ -17,7 +24,7 @@
     <textarea class="form-control" id="Form_Description" name="Form.Description" rows="3">@form.Description</textarea>
 </div>
 <div class="row g-3">
-    <div class="col-md-6">
+    <div class="@firstRowCol">
         <label class="form-label" for="Form_ProjectId">Project</label>
         <select class="form-select js-project-select" id="Form_ProjectId" name="Form.ProjectId" data-department-target="#Form_DepartmentId">
             @foreach (var o in Model.Projects)
@@ -28,7 +35,7 @@
     </div>
     @if (Model.CanChooseDepartment)
     {
-        <div class="col-md-6">
+        <div class="@firstRowCol">
             <label class="form-label" for="Form_DepartmentId">Department</label>
             <select class="form-select js-department-select" id="Form_DepartmentId" name="Form.DepartmentId" asp-items="Model.Departments" data-assignee-target="#Form_AssigneeId"></select>
             <div class="form-text">Default: the project's department, or your own when there is no project. Generated tasks belong to this department.</div>
@@ -37,6 +44,23 @@
     else
     {
         <input type="hidden" name="Form.DepartmentId" value="@form.DepartmentId" />
+    }
+    @if (showAsset)
+    {
+        <div class="@firstRowCol">
+            @if (Model.CanPickAsset)
+            {
+                <label class="form-label" for="asset-picker-input">Asset <span class="text-muted">(optional)</span></label>
+                <partial name="/Pages/Assets/_AssetPicker.cshtml" model="assetPicker" />
+                <div class="form-text">Each generated task is about this asset - a monthly vehicle inspection, say. Left off once the asset is disposed.</div>
+            }
+            else
+            {
+                <span class="form-label d-block">Asset</span>
+                <div class="form-control-plaintext py-0">@Model.SelectedAssetLabel</div>
+                <input type="hidden" name="Form.AssetId" value="@form.AssetId" />
+            }
+        </div>
     }
 </div>
 <div class="row g-3 mt-0">

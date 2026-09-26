@@ -81,7 +81,7 @@ scopes below it, and a role with no grants sees nothing.
 | `audit.view` | Dept / All | Admin > Activity Log and `list_activity` | - | - |
 | `users.manage`, `roles.manage`, `api_keys.manage` | All, reserved to the built-in role | Users, roles, API keys | - | - |
 | `departments.manage`, `calendar.manage`, `directory.manage`, `agents.manage` | All | Departments, working calendar, directory (LDAP) settings, Orbit Agents | - | - |
-| `assets.view` | Own / Dept / All | See assets, comment, attach (Own: the assets you hold; Dept: the ones your department manages, plus yours) | Own | Dept |
+| `assets.view` | Own / Dept / All | See assets, comment, attach, link them to tasks (Own: the assets you hold; Dept: the ones your department manages, plus yours) | Own | Dept |
 | `assets.create` | Dept / All | Register assets | - | Dept |
 | `assets.edit` | Dept / All | Edit assets: status, disposal, type, properties, location, holders; delete one registered in error | - | Dept |
 | `assets.check` | Own / Dept / All | Record asset checks (Own: "Confirm I have it" on the assets you hold) | Own | Dept |
@@ -166,6 +166,10 @@ one-off: nothing is kept in step with AD afterwards.
   in place of `taskId`. Types and locations are created and changed with `create_/update_asset_type` and
   `create_/update_asset_location` (Configure assets permission); a type's properties can be added and changed over MCP,
   all or nothing per call, but deleting one (which deletes its values) is web-UI only.
+- A task can be about one asset: `create_task` / `update_task` take `assetId` (GUID or ERP asset number; `"none"`
+  unlinks it on `update_task`), `list_tasks` filters on it, task results carry `assetId` and `asset`, and `get_asset`
+  returns the asset's task history (`tasks`, with `tasksVisible` / `tasksNotVisible`). The key can link only an asset
+  it can see that isn't disposed.
 - Tasks can be subtasks (`parentTaskId`) and can depend on each other (`add_dependency`: FS, SS, FF or SF
   plus a lag in days, spec §6.15). Links gate status changes - the successor can't start / finish until the
   predecessor has - and a parent can't close while a subtask is open; `get_task` reports what a task is
@@ -188,7 +192,7 @@ A deliberate action, never automatic (spec §6.17): **Run critical path analysis
 
 ## Assets
 
-The asset register (spec §6.19) - laptops, vehicles, tools, equipment - is separate from tasks and projects. Each
+The asset register (spec §6.19) - laptops, vehicles, tools, equipment - sits beside tasks and projects. Each
 asset is managed by one department, which defines its own **asset types** (each with its own properties and check
 interval) and **locations** under **Assets > Asset types / Locations**. An asset is named by its name and may carry
 its number in the ERP asset register (optional - not every asset is on the ERP system - and unique ignoring case
@@ -200,6 +204,14 @@ held by deactivated users are flagged and filterable; disposing of an asset remo
 number) after another, and each records today's OK check on the asset without leaving the scan box.
 **Copy** on an asset's page opens the Register form filled from that asset, for a batch of identical items: the ERP
 asset number, serial number and holders are left blank, and a copy of a disposed asset starts Active.
+
+**Tasks about an asset.** A task (or a recurring task) can name the asset it is about in its optional **Asset**
+field, beside Project. The field is a type-ahead rather than a dropdown, so it copes with any size of register: type
+part of a name, ERP number, serial number, make, model, holder or location and pick from the top 20 matches, or scan
+the asset's label - an exact serial or ERP number followed by Enter picks it at once. It offers the assets you can
+see (**View assets**), never disposed ones. The asset's page then has a **Tasks** card - its task history, open tasks
+first - and the Tasks list can be filtered by asset. An asset with linked tasks can't be deleted; dispose of it
+instead.
 
 ## Reports
 

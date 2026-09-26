@@ -54,6 +54,8 @@ public class Asset
     public ICollection<AssetPropertyValue> PropertyValues { get; set; } = new List<AssetPropertyValue>();
     public ICollection<Comment> Comments { get; set; } = new List<Comment>();
     public ICollection<Attachment> Attachments { get; set; } = new List<Attachment>();
+    /// <summary>The tasks about this asset: its task history. An asset with linked tasks (or recurring definitions) can't be deleted.</summary>
+    public ICollection<TaskItem> Tasks { get; set; } = new List<TaskItem>();
 }
 
 /// <summary>One person holding an asset (§6.19). Earlier assignments are in the asset's audit history.</summary>

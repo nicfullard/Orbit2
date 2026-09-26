@@ -1,0 +1,26 @@
+@using Orbit.Pages.Assets
+@model AssetPickerVm
+@* The asset picker (spec §6.19): the chosen asset as a chip, and a type-ahead search. Behaviour in site.js (the type-ahead pickers, "single" mode). *@
+<div class="person-picker js-picker" id="@Model.Id" data-search-url="@Model.SearchUrl" data-field-name="@Model.FieldName" data-mode="single">
+    <div class="d-flex flex-wrap gap-1 js-picker-chips">
+        @if (Model.SelectedId is Guid selected)
+        {
+            <span class="badge rounded-pill text-bg-light border person-chip js-picker-chip" data-id="@selected" data-name="@Model.SelectedLabel">
+                <span class="fw-semibold">@Model.SelectedLabel</span>
+                <input type="hidden" name="@Model.FieldName" value="@selected" />
+                <button type="button" class="btn-close ms-1 js-picker-remove" aria-label="Remove @Model.SelectedLabel"></button>
+            </span>
+        }
+        @if (Model.EmptyText is not null)
+        {
+            <span class="text-muted small mb-1 js-picker-empty @(Model.SelectedId is null ? "" : "d-none")">@Model.EmptyText</span>
+        }
+    </div>
+    <div class="position-relative">
+        <input type="search" id="@(Model.Id)-input" class="form-control @(Model.Small ? "form-control-sm" : "") js-picker-input" autocomplete="off" spellcheck="false"
+               role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="@(Model.Id)-results"
+               aria-label="@Model.Label" placeholder="@Model.Placeholder" />
+        <ul class="list-group position-absolute w-100 shadow-sm person-picker-results js-picker-results d-none" id="@(Model.Id)-results" role="listbox"></ul>
+    </div>
+    <div class="visually-hidden js-picker-status" aria-live="polite"></div>
+</div>

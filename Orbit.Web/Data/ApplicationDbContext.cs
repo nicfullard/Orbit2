@@ -106,6 +106,10 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             // Subtasks (§6.15): a self-reference. A parent with children can't be deleted from under them.
             b.HasOne(t => t.ParentTask).WithMany(p => p.Children)
                 .HasForeignKey(t => t.ParentTaskId).OnDelete(DeleteBehavior.Restrict);
+            // The asset the task is about (§6.19): an asset with linked tasks can't be deleted, only disposed of.
+            b.HasOne(t => t.Asset).WithMany(a => a.Tasks)
+                .HasForeignKey(t => t.AssetId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(t => t.AssetId);
             b.HasIndex(t => t.ParentTaskId);
             b.HasIndex(t => t.StartDate);
             b.HasIndex(t => t.ProjectId);
@@ -151,8 +155,11 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
                 .HasForeignKey(r => r.ProjectId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(r => r.Assignee).WithMany()
                 .HasForeignKey(r => r.AssigneeId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(r => r.Asset).WithMany()
+                .HasForeignKey(r => r.AssetId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(r => r.CreatedBy).WithMany()
                 .HasForeignKey(r => r.CreatedById).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(r => r.AssetId);
             b.HasIndex(r => new { r.Active, r.NextRunDate });
         });
 

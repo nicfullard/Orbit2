@@ -31,6 +31,10 @@ public class DetailsModel(
     public IReadOnlyList<Comment> Comments { get; private set; } = [];
     public IReadOnlyList<Attachment> Attachments { get; private set; } = [];
     public IReadOnlyList<AuditLog> Activity { get; private set; } = [];
+    /// <summary>The tasks about this asset that the viewer can see, and how many others there are (§6.19).</summary>
+    public AssetTaskHistory TaskHistory { get; private set; } = new([], 0, 0);
+    /// <summary>Show the whole history on the Tasks list (tasks.view at any scope), where the asset is a filter.</summary>
+    public bool CanListTasks { get; private set; }
     public bool IsAssigned { get; private set; }
     public bool CanEdit { get; private set; }
     /// <summary>Register a copy (§6.19): assets.create reaching the asset's department, whose types and locations the copy uses.</summary>
@@ -43,6 +47,8 @@ public class DetailsModel(
     public bool WarrantyExpired { get; private set; }
     public bool WarrantyExpiring { get; private set; }
     public AttachmentOptions AttachmentLimits => attachmentOptions.Value;
+    /// <summary>How many linked tasks the Tasks card lists before pointing to the Tasks list.</summary>
+    public const int TaskHistoryShown = 15;
 
     /// <summary>An upload may exceed the default request body limit; raise it before the files are read (see Uploads).</summary>
     public override void OnPageHandlerSelected(PageHandlerSelectedContext context)
@@ -64,6 +70,8 @@ public class DetailsModel(
         Values = Asset.PropertyValues.ToDictionary(v => v.AssetTypePropertyId, v => v.Value);
         MissingRequired = AssetPropertyRules.MissingRequired(Asset.AssetType.Properties, Values);
         Duplicates = await assets.PossibleDuplicatesAsync(Asset, ct);
+        TaskHistory = await assets.TaskHistoryAsync(Asset, TaskHistoryShown, ct);
+        CanListTasks = Actor.Has(Permission.TasksView);
         WarrantyExpired = assets.WarrantyExpired(Asset);
         WarrantyExpiring = assets.WarrantyExpiring(Asset);
         Comments = await comments.ListForAssetAsync(id, ct);

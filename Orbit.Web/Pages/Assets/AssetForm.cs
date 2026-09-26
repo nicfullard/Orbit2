@@ -113,6 +113,27 @@ public sealed class PersonPickerVm
     public string Label { get; init; } = "Search for a person";
 }
 
+/// <summary>
+/// The asset picker (spec §6.19): at most one asset as a chip over a type-ahead search against /Assets/Lookup, so it works with any
+/// number of assets. The chip carries a hidden <see cref="FieldName"/> input; × clears it, so nothing is posted and the field is null.
+/// A scanned ERP number or serial number followed by Enter picks the asset that matches it exactly.
+/// </summary>
+public sealed class AssetPickerVm
+{
+    public required string Id { get; init; }
+    public required string FieldName { get; init; }
+    public required string SearchUrl { get; init; }
+    public Guid? SelectedId { get; init; }
+    /// <summary>The chosen asset's number and name, or a stand-in when the caller can't see it.</summary>
+    public string? SelectedLabel { get; init; }
+    /// <summary>Shown above the box while nothing is chosen; null shows nothing, so the box lines up with the fields beside it.</summary>
+    public string? EmptyText { get; init; }
+    public string Placeholder { get; init; } = "Search by name, number, serial, holder or location...";
+    public string Label { get; init; } = "Search for an asset";
+    /// <summary>Smaller controls, for a filter bar.</summary>
+    public bool Small { get; init; }
+}
+
 /// <summary>The type-driven property fields (spec §6.19), rendered in the form and re-rendered when the type changes.</summary>
 public sealed class AssetPropertyFieldsVm
 {

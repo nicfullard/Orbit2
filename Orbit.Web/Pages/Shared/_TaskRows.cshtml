@@ -92,6 +92,10 @@ else
                             {
                                 <div class="small text-muted" title="Subtask of @t.ParentTask.Title">in: @Ui.Truncate(t.ParentTask.Title, 60)</div>
                             }
+                            @if (t.Asset is not null)
+                            {
+                                <div class="small text-muted" title="The asset this task is about">asset: @Ui.Truncate(Ui.AssetLabel(t.Asset), 60)</div>
+                            }
                         </td>
                         @if (Model.ShowProject)
                         {

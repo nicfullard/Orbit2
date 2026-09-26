@@ -13,7 +13,8 @@ public class EditModel(
     DepartmentService departments,
     ProjectService projects,
     UserDirectoryService users,
-    SprintService sprints) : OrbitPageModel
+    SprintService sprints,
+    AssetService assets) : OrbitPageModel
 {
     [BindProperty] public RecurringForm Form { get; set; } = new();
     public RecurringTaskDefinition Definition { get; private set; } = null!;
@@ -25,7 +26,7 @@ public class EditModel(
         Definition = await recurrence.GetAsync(id, ct);
         AccessPolicy.Require(AccessPolicy.CanEditRecurring(actor, Definition), "You don't have permission to edit this recurring task.");
         Form = RecurringForm.From(Definition);
-        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, Form.AsTaskForm(), ct);
+        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, assets, Form.AsTaskForm(), TaskFormLookups.RefOf(Definition.Asset), ct);
         return Page();
     }
 
@@ -44,7 +45,7 @@ public class EditModel(
             }
             catch (ValidationException ex) { ModelState.AddModelError(string.Empty, ex.Message); }
         }
-        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, Form.AsTaskForm(), ct);
+        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, assets, Form.AsTaskForm(), TaskFormLookups.RefOf(Definition.Asset), ct);
         return Page();
     }
 }

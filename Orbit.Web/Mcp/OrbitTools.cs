@@ -59,10 +59,12 @@ public sealed class OrbitTools(
         [Description("Planned start date as yyyy-MM-dd (not after the due date).")] string? startDate = null,
         [Description("Parent task id (GUID) to create this as a subtask. The parent must be on the same project (or, for a standalone task, be a standalone task in the same department) and still open.")] string? parentTaskId = null,
         [Description("Estimated effort in minutes, e.g. 90 for an hour and a half. Omit or 0 for no estimate.")] int? estimateMinutes = null,
+        [Description("The asset the task is about - a repair, a service, a replacement: its id (GUID) or ERP asset number. It must be an asset the key can see that isn't disposed; the task then appears in the asset's task history (get_asset).")] string? assetId = null,
         CancellationToken ct = default) => Run(async () =>
     {
         var input = new TaskInput
         {
+            AssetId = string.IsNullOrWhiteSpace(assetId) ? null : await assets.ResolveIdAsync(assetId, ct),
             Title = title,
             Description = description,
             ProjectId = ParseGuid(projectId, "projectId"),
@@ -138,12 +140,14 @@ public sealed class OrbitTools(
         [Description("Free-text search over title and description.")] string? search = null,
         [Description("Only tasks on the day plan for this date (yyyy-MM-dd), or the literal \"today\".")] string? plannedFor = null,
         [Description("Only the direct subtasks of this task id (GUID).")] string? parentTaskId = null,
+        [Description("Only tasks about this asset: its id (GUID) or ERP asset number - the asset's task history.")] string? assetId = null,
         [Description("Page number, starting at 1.")] int page = 1,
         [Description("Page size (1-200). Default 50.")] int pageSize = 50,
         CancellationToken ct = default) => Run(async () =>
     {
         var filter = new TaskFilter
         {
+            AssetId = string.IsNullOrWhiteSpace(assetId) ? null : await assets.ResolveIdAsync(assetId, ct),
             ProjectId = ParseGuid(projectId, "projectId"),
             DepartmentId = ParseGuid(departmentId, "departmentId"),
             Status = ParseEnum<TaskItemStatus>(status, "status"),
@@ -169,7 +173,7 @@ public sealed class OrbitTools(
 
     [McpServerTool(Name = "update_task"), Description(
         "Update any field of a task. Only the arguments you pass change; omit an argument to leave it as is. " +
-        "Pass the literal string \"none\" to clear assigneeId, dueDate, startDate, parentTaskId, estimateMinutes, projectId, sprintId or plannedFor (sprintId \"none\" moves the task to the backlog; " +
+        "Pass the literal string \"none\" to clear assigneeId, dueDate, startDate, parentTaskId, estimateMinutes, projectId, sprintId, assetId or plannedFor (sprintId \"none\" moves the task to the backlog; " +
         "plannedFor \"none\" takes it off the day plan, plannedFor \"today\" puts it on today's plan - closed tasks can't be planned). " +
         "A key whose Edit tasks permission is scoped to Own can only edit tasks the Claude user created or is assigned; that covers every field, including setting status to Done or Cancelled. " +
         "departmentId moves the task to another department (needs Edit tasks for that department); if that differs from the project's department the task " +
@@ -190,12 +194,14 @@ public sealed class OrbitTools(
         [Description("Planned start date yyyy-MM-dd (not after the due date), or \"none\" to clear.")] string? startDate = null,
         [Description("Parent task id (GUID) to make this a subtask (same project, or same department for standalone tasks), or \"none\" to detach it. A status change gated by a dependency, or closing a parent with open subtasks, is rejected with the reason.")] string? parentTaskId = null,
         [Description("Estimated effort in minutes (e.g. 90), or \"none\" to clear the estimate.")] string? estimateMinutes = null,
+        [Description("The asset the task is about: its id (GUID) or ERP asset number, or \"none\" to unlink it. A new asset must be one the key can see that isn't disposed; the current one is kept as it is when omitted.")] string? assetId = null,
         CancellationToken ct = default) => Run(async () =>
     {
         var id = await TaskIdAsync(taskId, ct);
         var current = await tasks.GetAsync(id, ct);
         var input = new TaskInput
         {
+            AssetId = IsClear(assetId) ? null : string.IsNullOrWhiteSpace(assetId) ? current.AssetId : await assets.ResolveIdAsync(assetId, ct),
             Title = title ?? current.Title,
             Description = description ?? current.Description,
             ProjectId = IsClear(projectId) ? null : ParseGuid(projectId, "projectId") ?? current.ProjectId,
@@ -626,7 +632,9 @@ public sealed class OrbitTools(
     [McpServerTool(Name = "get_asset"), Description(
         "Get one asset in full: its fields, purchase and warranty details, its type's properties with their values (and any required ones missing), " +
         "who holds it and since when, its checks newest first with the next check due, flags (check overdue, last check not OK, warranty expired, " +
-        "possible duplicates by serial number), its attachments (read one with get_attachment) and how many comments it has (read them with list_comments).")]
+        "possible duplicates by serial number), its attachments (read one with get_attachment), how many comments it has (read them with list_comments) " +
+        "and its task history: the tasks about it that the key can see (open ones first, then the newest, at most 50 - list_tasks with assetId pages " +
+        "through them all), with tasksVisible and tasksNotVisible counts.")]
     public Task<string> GetAsset(
         [Description("Asset id (GUID), or its ERP asset number when it has one.")] string assetId,
         CancellationToken ct = default) => Run(async () =>
@@ -636,7 +644,8 @@ public sealed class OrbitTools(
         var files = await attachments.ListForAssetAsync(id, ct);
         var commentCount = (await comments.ListForAssetAsync(id, ct)).Count;
         var duplicates = await assets.PossibleDuplicatesAsync(asset, ct);
-        return AssetDto(asset, files, commentCount, duplicates);
+        var history = await assets.TaskHistoryAsync(asset, 50, ct);
+        return AssetDto(asset, files, commentCount, duplicates, history);
     });
 
     [McpServerTool(Name = "create_asset"), Description(
@@ -1109,6 +1118,8 @@ public sealed class OrbitTools(
         department = t.Department?.Name,
         projectId = t.ProjectId,
         project = t.Project?.Name,
+        assetId = t.AssetId,
+        asset = t.Asset is null ? null : Orbit.Application.Assets.AssetRules.Label(t.Asset.AssetNumber, t.Asset.Name),
         assigneeId = t.AssigneeId,
         assignee = t.Assignee?.DisplayName,
         createdById = t.CreatedById,
@@ -1224,7 +1235,8 @@ public sealed class OrbitTools(
     }
 
     /// <summary>An asset in full, as get_asset / create_asset / update_asset return it (§6.19).</summary>
-    private object AssetDto(Asset a, IReadOnlyList<Attachment> files, int commentCount, IReadOnlyList<AssetRef> duplicates)
+    /// <param name="history">The asset's task history, which get_asset reports; null (and left out) elsewhere.</param>
+    private object AssetDto(Asset a, IReadOnlyList<Attachment> files, int commentCount, IReadOnlyList<AssetRef> duplicates, AssetTaskHistory? history = null)
     {
         var item = assets.Item(a);
         var values = a.PropertyValues.ToDictionary(v => v.AssetTypePropertyId, v => v.Value);
@@ -1255,7 +1267,14 @@ public sealed class OrbitTools(
                 possibleDuplicates = duplicates.Select(d => new { id = d.Id, assetNumber = d.AssetNumber, name = d.Name }).ToList()
             },
             attachments = files.Select(AttachmentDto).ToList(),
-            commentCount
+            commentCount,
+            tasks = history?.Tasks.Select(t => new
+            {
+                id = t.Id, number = t.Number, title = t.Title, status = t.Status, departmentId = t.DepartmentId, department = t.Department?.Name,
+                assigneeId = t.AssigneeId, assignee = t.Assignee?.DisplayName, dueDate = t.DueDate, createdAt = t.CreatedAt, completedAt = t.CompletedAt
+            }).ToList(),
+            tasksVisible = history?.VisibleCount,
+            tasksNotVisible = history?.HiddenCount
         };
     }
 

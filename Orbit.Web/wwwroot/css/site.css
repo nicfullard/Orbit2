@@ -373,6 +373,10 @@ body {
 [data-bs-theme="dark"] .person-chip .btn-close {
   filter: invert(1) grayscale(100%) brightness(200%);
 }
+/* The asset picker's one chip sits above the search box; with none chosen the box lines up with the fields beside it. */
+.person-picker[data-mode="single"] .person-chip {
+  margin-bottom: .25rem;
+}
 .person-picker-results {
   z-index: 1050;
   max-height: 18rem;

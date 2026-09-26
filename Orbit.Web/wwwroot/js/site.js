@@ -339,10 +339,13 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 })();
 
-// People picker (spec §6.19): the people chosen as chips, and a type-ahead search against the server (data-search-url?q=,
-// at most 20 people, so it works however many people Orbit has). In "multi" mode each chip carries a hidden input the form
-// posts; in "submit" mode picking someone fills the picker's hidden field and posts its form at once (the asset page's
-// "Assign someone"). Keyboard: Up/Down move through the results, Enter picks, Escape closes. Adds and removes are announced.
+// Type-ahead pickers (spec §6.19): the people picker and the asset picker. The choices are chips over a search against the server
+// (data-search-url?q=, at most 20 matches, so it works however many people or assets Orbit has). In "multi" mode each chip carries
+// a hidden input the form posts; in "single" mode there is at most one chip, and picking replaces it (× leaves none, so nothing is
+// posted); in "submit" mode picking fills the picker's hidden field and posts its form at once (the asset page's "Assign someone").
+// A match is { id, name, detail, tag, exact }; the people search's email and department stand in for detail and tag.
+// Keyboard: Up/Down move through the results, Enter picks, Escape closes. Enter straight after typing or scanning searches at once
+// and picks the one match flagged exact (a scanned serial or ERP number); Enter never submits the form. Changes are announced.
 (function () {
   function withParam(url, name, value) {
     return url + (url.indexOf('?') < 0 ? '?' : '&') + name + '=' + encodeURIComponent(value || '');
@@ -361,15 +364,19 @@ document.addEventListener('DOMContentLoaded', function () {
     var chips = root.querySelector('.js-picker-chips');
     var status = root.querySelector('.js-picker-status');
     var submitMode = root.dataset.mode === 'submit';
-    var timer = null, items = [], active = -1, seq = 0;
+    var singleMode = root.dataset.mode === 'single';
+    var timer = null, items = [], active = -1, seq = 0, shownFor = null;
 
     function say(message) { if (status) status.textContent = message; }
+    function chipList() { return root.querySelectorAll('.js-picker-chip'); }
     function chosenIds() {
-      return Array.prototype.map.call(root.querySelectorAll('.person-chip'), function (c) { return c.dataset.id; });
+      return Array.prototype.map.call(chipList(), function (c) { return c.dataset.id; });
     }
+    function detailOf(p) { return p.detail !== undefined ? p.detail : [p.email, p.department].filter(Boolean).join(' · '); }
+    function tagOf(p) { return p.tag !== undefined ? p.tag : p.department; }
     function updateEmpty() {
       var empty = root.querySelector('.js-picker-empty');
-      if (empty) empty.classList.toggle('d-none', root.querySelectorAll('.person-chip').length > 0);
+      if (empty) empty.classList.toggle('d-none', chipList().length > 0);
     }
     function close() {
       list.classList.add('d-none');
@@ -378,6 +385,7 @@ document.addEventListener('DOMContentLoaded', function () {
       input.removeAttribute('aria-activedescendant');
       items = [];
       active = -1;
+      shownFor = null;
     }
     function highlight(index) {
       var options = list.querySelectorAll('[role="option"]');
@@ -390,34 +398,36 @@ document.addEventListener('DOMContentLoaded', function () {
       input.setAttribute('aria-activedescendant', options[active].id);
       options[active].scrollIntoView({ block: 'nearest' });
     }
-    function render(people, query) {
+    function render(matches, query) {
       list.innerHTML = '';
-      items = people;
+      items = matches;
       active = -1;
-      if (!people.length) {
-        list.appendChild(text('li', 'list-group-item small text-muted', 'No one matches "' + query + '".'));
+      shownFor = query;
+      if (!matches.length) {
+        list.appendChild(text('li', 'list-group-item small text-muted', (root.dataset.noMatch || 'Nothing matches') + ' "' + query + '".'));
       }
-      people.forEach(function (p, i) {
+      matches.forEach(function (p, i) {
         var li = text('li', 'list-group-item list-group-item-action py-1 small');
         li.id = root.id + '-option-' + i;
         li.setAttribute('role', 'option');
         li.setAttribute('aria-selected', 'false');
         li.dataset.index = i;
         li.appendChild(text('span', 'fw-semibold', p.name));
-        var detail = [p.email, p.department].filter(Boolean).join(' · ');
+        var detail = detailOf(p);
         if (detail) li.appendChild(text('span', 'text-muted ms-2', detail));
         list.appendChild(li);
       });
       list.classList.remove('d-none');
       input.setAttribute('aria-expanded', 'true');
-      if (people.length) highlight(0);
+      if (matches.length) highlight(0);
     }
     function addChip(p) {
-      var chip = text('span', 'badge rounded-pill text-bg-light border person-chip');
+      var chip = text('span', 'badge rounded-pill text-bg-light border person-chip js-picker-chip');
       chip.dataset.id = p.id;
       chip.dataset.name = p.name;
       chip.appendChild(text('span', 'fw-semibold', p.name));
-      if (p.department) chip.appendChild(text('span', 'text-muted fw-normal ms-1', p.department));
+      var tag = tagOf(p);
+      if (tag) chip.appendChild(text('span', 'text-muted fw-normal ms-1', tag));
       var hidden = document.createElement('input');
       hidden.type = 'hidden';
       hidden.name = root.dataset.fieldName;
@@ -442,22 +452,27 @@ document.addEventListener('DOMContentLoaded', function () {
         if (form.requestSubmit) form.requestSubmit(); else form.submit();
         return;
       }
+      if (singleMode) Array.prototype.forEach.call(chipList(), function (c) { c.remove(); });
       addChip(p);
       input.value = '';
       close();
-      say(p.name + ' added.');
+      say(p.name + (singleMode ? ' chosen.' : ' added.'));
       input.focus();
     }
-    function search() {
+    // pickExact: Enter was pressed, so a single match flagged exact (a scan) is chosen straight away.
+    function search(pickExact) {
       var query = input.value.trim();
       if (!query) { close(); return; }
       var mine = ++seq;
       fetch(withParam(root.dataset.searchUrl, 'q', query), { credentials: 'same-origin', headers: { Accept: 'application/json' } })
         .then(function (r) { return r.ok ? r.json() : []; })
-        .then(function (people) {
+        .then(function (matches) {
           if (mine !== seq || input.value.trim() !== query) return; // a newer search is on its way
-          var taken = chosenIds();
-          render(people.filter(function (p) { return taken.indexOf(p.id) < 0; }), query);
+          var taken = singleMode ? [] : chosenIds();
+          matches = matches.filter(function (p) { return taken.indexOf(p.id) < 0; });
+          var exact = matches.filter(function (p) { return p.exact; });
+          if (pickExact && exact.length === 1) { choose(exact[0]); return; }
+          render(matches, query);
         })
         .catch(function () { close(); });
     }
@@ -470,7 +485,13 @@ document.addEventListener('DOMContentLoaded', function () {
       var open = !list.classList.contains('d-none');
       if (e.key === 'ArrowDown') { e.preventDefault(); if (open) highlight(active + 1); else search(); }
       else if (e.key === 'ArrowUp') { if (open) { e.preventDefault(); highlight(active - 1); } }
-      else if (e.key === 'Enter') { e.preventDefault(); if (open && active >= 0) choose(items[active]); }
+      else if (e.key === 'Enter') {
+        e.preventDefault();
+        // The list on show is for what is in the box: pick its highlighted match. Otherwise (typed or scanned faster than the
+        // search) search now, and pick an exact match.
+        if (open && active >= 0 && shownFor === input.value.trim()) choose(items[active]);
+        else { clearTimeout(timer); search(true); }
+      }
       else if (e.key === 'Escape') { if (open) { e.preventDefault(); close(); } }
     });
     input.addEventListener('blur', function () { setTimeout(close, 150); });
@@ -484,7 +505,7 @@ document.addEventListener('DOMContentLoaded', function () {
       chips.addEventListener('click', function (e) {
         var button = e.target.closest('.js-picker-remove');
         if (!button) return;
-        var chip = button.closest('.person-chip');
+        var chip = button.closest('.js-picker-chip');
         say(chip.dataset.name + ' removed.');
         chip.remove();
         updateEmpty();
@@ -493,7 +514,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
   document.addEventListener('DOMContentLoaded', function () {
-    document.querySelectorAll('.js-person-picker').forEach(setup);
+    document.querySelectorAll('.js-picker').forEach(setup);
   });
 })();
 

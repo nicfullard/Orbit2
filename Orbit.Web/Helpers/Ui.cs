@@ -85,6 +85,9 @@ public static class Ui
         _ => "text-bg-light"
     };
 
+    /// <summary>How a task names its asset (§6.19): the ERP number and name, or just the name.</summary>
+    public static string AssetLabel(Asset asset) => Orbit.Application.Assets.AssetRules.Label(asset.AssetNumber, asset.Name);
+
     public static string CheckOutcomeBadge(AssetCheckOutcome o) => o switch
     {
         AssetCheckOutcome.Ok => "text-bg-success",
