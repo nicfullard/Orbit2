@@ -9,7 +9,8 @@ public enum ReportKind
     MeanTimeToRespond,
     MeanTimeToResolve,
     TimeByPerson,
-    EstimateAccuracy
+    EstimateAccuracy,
+    ProjectStatus
 }
 
 public sealed record ReportFilter(DateTime FromUtc, DateTime ToUtc, Guid? ProjectId, Guid? DepartmentId);
@@ -74,6 +75,80 @@ public sealed record TaskEstimateRow(Guid TaskId, string Number, string Title, i
     public bool IsOver => EstimateMinutes is int e && ActualMinutes > e;
 }
 
+/// <summary>What the project status report (§12) needs to know about a project. <see cref="Status"/> is its status now.</summary>
+public sealed record ProjectFacts(
+    Guid Id, string Number, string Name, ProjectStatus Status, string DepartmentName, string OwnerName,
+    DateTime CreatedAt, DateOnly? TargetDate);
+
+/// <summary>One change of a project's status, read from its audit trail.</summary>
+public sealed record ProjectStatusChange(Guid ProjectId, DateTime At, ProjectStatus From, ProjectStatus To);
+
+/// <summary>A project's status over a report's period, rebuilt from its status changes (§12 Project status).</summary>
+public sealed record ProjectStatusHistory(
+    ProjectStatus AtStart, ProjectStatus AtEnd, ProjectStatus Current, IReadOnlyList<ProjectStatusChange> Changes)
+{
+    /// <summary>Active or On Hold at some point in the period.</summary>
+    public bool WasOpen => AtStart.IsOpen() || Changes.Any(c => c.To.IsOpen());
+}
+
+/// <summary>A task on a project: <see cref="PeriodMinutes"/> is all time logged on it in the range, <c>Task.TotalMinutes</c> all to date.</summary>
+public sealed record ProjectTaskFacts(
+    TaskTimeFacts Task, Guid ProjectId, DateOnly? DueDate, DateTime CreatedAt, DateTime? CompletedAt, int PeriodMinutes);
+
+/// <summary>One person's time on one project: in the range, and to date.</summary>
+public sealed record ProjectPersonTime(Guid ProjectId, Guid UserId, int PeriodMinutes, int TotalMinutes);
+
+/// <summary>
+/// Project status (§12): every project in the range - open at some point in it, or with task or time activity in it -
+/// closed ones included. <see cref="StatusCounts"/> counts the projects by their status at the end of the range.
+/// </summary>
+public sealed record ProjectStatusReport(
+    IReadOnlyList<ProjectStatusRow> Rows, ProjectStatusTotals Total, IReadOnlyList<ProjectStatusCount> StatusCounts);
+
+/// <summary>How many projects ended the range in a status, and how many of those changed to it during the range.</summary>
+public sealed record ProjectStatusCount(ProjectStatus Status, int Count, int ChangedInPeriod);
+
+/// <summary>The task counts of a project (or all of them): now, apart from the two "in period" counts.</summary>
+public sealed record ProjectTaskCounts(
+    int Total, int Open, int Blocked, int Overdue, int Done, int Cancelled, int CreatedInPeriod, int DoneInPeriod)
+{
+    public static readonly ProjectTaskCounts None = new(0, 0, 0, 0, 0, 0, 0, 0);
+
+    public int PercentDone => Total == 0 ? 0 : (int)Math.Round(Done * 100.0 / Total);
+
+    public ProjectTaskCounts Plus(ProjectTaskCounts o) => new(Total + o.Total, Open + o.Open, Blocked + o.Blocked,
+        Overdue + o.Overdue, Done + o.Done, Cancelled + o.Cancelled, CreatedInPeriod + o.CreatedInPeriod, DoneInPeriod + o.DoneInPeriod);
+}
+
+public sealed record ProjectStatusTotals(
+    int Projects, ProjectTaskCounts Tasks, int LoggedInPeriodMinutes, int LoggedToDateMinutes, EstimateComparison Estimate);
+
+/// <summary>
+/// One project. <see cref="Schedule"/> is its latest critical path analysis (§6.17), only while the project is open;
+/// <see cref="IsPastTarget"/> is an open project whose target date has gone by.
+/// </summary>
+public sealed record ProjectStatusRow(
+    ProjectFacts Project, ProjectStatusHistory Status, bool CreatedInPeriod, ProjectTaskCounts Tasks,
+    int LoggedInPeriodMinutes, int LoggedToDateMinutes, EstimateComparison Estimate, bool IsPastTarget,
+    CriticalPathSummary? Schedule, IReadOnlyList<ProjectPersonRow> People, IReadOnlyList<ProjectTaskRow> TaskRows);
+
+/// <summary>
+/// A person on a project: their assigned tasks (open now, done in the range) and the estimates of those that aren't
+/// Cancelled, against the time they logged on the project. <see cref="UserId"/> null is the Unassigned row.
+/// </summary>
+public sealed record ProjectPersonRow(
+    Guid? UserId, string Name, int OpenTasks, int DoneInPeriod, int EstimatedTasks, int EstimatedMinutes,
+    int LoggedInPeriodMinutes, int LoggedToDateMinutes);
+
+/// <summary>A task in a project's list: <see cref="PeriodMinutes"/> is everyone's time on it in the range, <see cref="TotalMinutes"/> to date.</summary>
+public sealed record ProjectTaskRow(
+    Guid TaskId, string Number, string Title, TaskItemStatus Status, string Assignee, DateOnly? DueDate, bool IsOverdue,
+    int? EstimateMinutes, int PeriodMinutes, int TotalMinutes, bool CreatedInPeriod, bool DoneInPeriod)
+{
+    public bool IsCancelled => Status == TaskItemStatus.Cancelled;
+    public bool IsOver => !IsCancelled && EstimateMinutes is int e && TotalMinutes > e;
+}
+
 public sealed record ReportDefinition(ReportKind Kind, string Title, string Description);
 
 public static class ReportCatalog
@@ -91,7 +166,9 @@ public static class ReportCatalog
         new(ReportKind.TimeByPerson, "Time by person",
             "Time each person logged in the period, and for the tasks they worked on, each task's estimate against all time logged on it to date."),
         new(ReportKind.EstimateAccuracy, "Estimate accuracy",
-            "Tasks completed in the period, grouped by assignee: the estimate against all time logged on them.")
+            "Tasks completed in the period, grouped by assignee: the estimate against all time logged on them."),
+        new(ReportKind.ProjectStatus, "Project status",
+            "Every project open or active in the period, closed ones included: its status and status changes, tasks, schedule, and estimated and logged time by person.")
     ];
 
     public static ReportDefinition Get(ReportKind kind) => All.First(r => r.Kind == kind);

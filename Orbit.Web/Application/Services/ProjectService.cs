@@ -45,12 +45,14 @@ public sealed class ProjectService(NumberingService numbering, ApplicationDbCont
     /// Open projects within the caller's projects.view scope, for pickers - without the read-only shared ones (§6.2.1),
     /// which a task can't be filed under anyway. <paramref name="includeProjectId"/> adds one specific project regardless,
     /// so an edit form can keep a task on the project it is already on (e.g. a cross-department task).
+    /// <paramref name="includeArchived"/> lists archived projects too, for the Reports filter, which looks back in time.
     /// </summary>
-    public async Task<IReadOnlyList<Project>> ListOpenForPickerAsync(Guid? departmentId = null, Guid? includeProjectId = null, CancellationToken ct = default)
+    public async Task<IReadOnlyList<Project>> ListOpenForPickerAsync(
+        Guid? departmentId = null, Guid? includeProjectId = null, bool includeArchived = false, CancellationToken ct = default)
     {
         var actor = await actors.GetAsync(ct);
         var q = Scoping.Projects(db.Projects.AsNoTracking().Include(p => p.Department)
-            .Where(p => p.Status != ProjectStatus.Archived), actor, includeShared: false);
+            .Where(p => includeArchived || p.Status != ProjectStatus.Archived), actor, includeShared: false);
         if (departmentId is Guid d) q = q.Where(p => p.DepartmentId == d);
         var list = await q.OrderBy(p => p.Department.Name).ThenBy(p => p.Name).ToListAsync(ct);
         if (includeProjectId is Guid keep && list.All(p => p.Id != keep))

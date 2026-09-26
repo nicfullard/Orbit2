@@ -6,7 +6,7 @@ using Orbit.Data.Entities;
 namespace Orbit.Application.Services;
 
 /// <summary>Operational reports (§12). Aggregates are computed in SQL and returned as plain DTOs.</summary>
-public sealed class ReportingService(ApplicationDbContext db, IActorProvider actors)
+public sealed class ReportingService(ApplicationDbContext db, IActorProvider actors, CriticalPathService criticalPath)
 {
     private const string ClaudeName = "Claude";
 
@@ -133,6 +133,78 @@ public sealed class ReportingService(ApplicationDbContext db, IActorProvider act
         return TimeReportRules.EstimateAccuracy(done, id => Name(id, names, "Unassigned"));
     }
 
+    /// <summary>
+    /// Every project in the period - open at some point in it, or with a task created or completed or time logged in it -
+    /// closed ones included (§12 Project status). A department selects the projects it owns, whose figures cover the whole
+    /// project, other departments' tasks on it included. Status changes come from the project audit trail.
+    /// </summary>
+    public async Task<ProjectStatusReport> ProjectStatusAsync(ReportFilter f, CancellationToken ct = default)
+    {
+        var actor = await RequireReportsAsync(ct);
+        var from = DateOnly.FromDateTime(f.FromUtc);
+        var to = DateOnly.FromDateTime(f.ToUtc);
+        var projects = await Apply(db.Projects.AsNoTracking(), f, actor)
+            .Where(p => p.CreatedAt < f.ToUtc)
+            .Select(p => new ProjectFacts(p.Id, p.Number, p.Name, p.Status, p.Department.Name,
+                p.Owner.IsSystemAccount ? ClaudeName : p.Owner.DisplayName, p.CreatedAt, p.TargetDate))
+            .ToListAsync(ct);
+        if (projects.Count == 0)
+            return ProjectReportRules.Build([], new Dictionary<Guid, ProjectStatusHistory>(), [], [],
+                new Dictionary<Guid, CriticalPathSummary>(), _ => "", f.FromUtc, f.ToUtc, DateOnly.FromDateTime(DateTime.UtcNow));
+
+        // Only changes from the start of the period on are needed to rebuild the status over it.
+        var ids = projects.Select(p => p.Id).ToList();
+        var audit = await db.AuditLogs.AsNoTracking()
+            .Where(a => a.EntityType == AuditEntity.Project && ids.Contains(a.EntityId) && a.Timestamp >= f.FromUtc
+                && (a.Action == AuditAction.Updated || a.Action == AuditAction.Archived))
+            .Select(a => new { a.EntityId, a.Timestamp, a.Details })
+            .ToListAsync(ct);
+        var changes = audit
+            .Select(a => ProjectReportRules.TryReadStatusChange(a.Details, out var was, out var now)
+                ? new ProjectStatusChange(a.EntityId, a.Timestamp, was, now) : null)
+            .OfType<ProjectStatusChange>()
+            .ToLookup(c => c.ProjectId);
+        var histories = projects.ToDictionary(p => p.Id,
+            p => ProjectReportRules.History(p.Status, changes[p.Id], f.FromUtc, f.ToUtc));
+
+        // A project closed throughout the period is still in it when work went on under it.
+        var closed = histories.Where(h => !h.Value.WasOpen).Select(h => (Guid?)h.Key).ToList();
+        var active = new HashSet<Guid>();
+        if (closed.Count > 0)
+            active.UnionWith((await db.TimeEntries
+                    .Where(e => closed.Contains(e.Task.ProjectId) && e.Date >= from && e.Date < to)
+                    .Select(e => e.Task.ProjectId)
+                    .Union(db.Tasks
+                        .Where(t => closed.Contains(t.ProjectId) && ((t.CreatedAt >= f.FromUtc && t.CreatedAt < f.ToUtc)
+                            || (t.Status == TaskItemStatus.Done && t.CompletedAt >= f.FromUtc && t.CompletedAt < f.ToUtc)))
+                        .Select(t => t.ProjectId))
+                    .ToListAsync(ct))
+                .OfType<Guid>());
+        var included = projects.Where(p => ProjectReportRules.Includes(histories[p.Id], active.Contains(p.Id))).ToList();
+        var includedIds = included.Select(p => (Guid?)p.Id).ToList();
+
+        var tasks = await db.Tasks.AsNoTracking()
+            .Where(t => includedIds.Contains(t.ProjectId))
+            .Select(t => new ProjectTaskFacts(
+                new TaskTimeFacts(t.Id, t.Number, t.Title, t.Status, t.AssigneeId, t.EstimateMinutes,
+                    t.TimeEntries.Sum(e => (int?)e.DurationMinutes) ?? 0),
+                t.ProjectId!.Value, t.DueDate, t.CreatedAt, t.CompletedAt,
+                t.TimeEntries.Where(e => e.Date >= from && e.Date < to).Sum(e => (int?)e.DurationMinutes) ?? 0))
+            .ToListAsync(ct);
+        var time = await db.TimeEntries.AsNoTracking()
+            .Where(e => includedIds.Contains(e.Task.ProjectId))
+            .GroupBy(e => new { e.Task.ProjectId, e.UserId })
+            .Select(g => new ProjectPersonTime(g.Key.ProjectId!.Value, g.Key.UserId,
+                g.Sum(e => e.Date >= from && e.Date < to ? e.DurationMinutes : 0), g.Sum(e => e.DurationMinutes)))
+            .ToListAsync(ct);
+        var schedules = await criticalPath.LatestSummariesAsync(
+            included.Where(p => p.Status.IsOpen()).Select(p => p.Id).ToList(), ct);
+        var names = await NamesAsync(tasks.Select(t => t.Task.AssigneeId).Concat(time.Select(t => (Guid?)t.UserId)), ct);
+
+        return ProjectReportRules.Build(included, histories, tasks, time, schedules, id => Name(id, names, "Unassigned"),
+            f.FromUtc, f.ToUtc, DateOnly.FromDateTime(DateTime.UtcNow));
+    }
+
     private static IQueryable<TaskTimeFacts> Facts(IQueryable<TaskItem> q) =>
         q.Select(t => new TaskTimeFacts(t.Id, t.Number, t.Title, t.Status, t.AssigneeId, t.EstimateMinutes,
             t.TimeEntries.Sum(e => (int?)e.DurationMinutes) ?? 0));
@@ -153,6 +225,15 @@ public sealed class ReportingService(ApplicationDbContext db, IActorProvider act
         var departmentId = RestrictedDepartment(actor) ?? f.DepartmentId;
         if (f.ProjectId is Guid p) q = q.Where(t => t.ProjectId == p);
         if (departmentId is Guid d) q = q.Where(t => t.DepartmentId == d);
+        return q;
+    }
+
+    /// <summary>A project belongs to its own department, whichever departments its tasks are filed in (§12 Project status).</summary>
+    private static IQueryable<Project> Apply(IQueryable<Project> q, ReportFilter f, Actor actor)
+    {
+        var departmentId = RestrictedDepartment(actor) ?? f.DepartmentId;
+        if (f.ProjectId is Guid p) q = q.Where(x => x.Id == p);
+        if (departmentId is Guid d) q = q.Where(x => x.DepartmentId == d);
         return q;
     }
 

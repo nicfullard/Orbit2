@@ -11,13 +11,14 @@ public static class ReportPdfBuilder
     public sealed record Table(
         IReadOnlyList<string> Headers, IReadOnlyList<IReadOnlyList<string>> Rows, string? Caption = null, IReadOnlyList<float>? Widths = null);
 
-    public static byte[] Build(string title, string subtitle, IReadOnlyList<Table> tables)
+    /// <summary>An A4 document of <paramref name="tables"/>; <paramref name="landscape"/> turns the page for a wide table.</summary>
+    public static byte[] Build(string title, string subtitle, IReadOnlyList<Table> tables, bool landscape = false)
     {
         return Document.Create(container =>
         {
             container.Page(page =>
             {
-                page.Size(PageSizes.A4);
+                page.Size(landscape ? PageSizes.A4.Landscape() : PageSizes.A4);
                 page.Margin(36);
                 page.DefaultTextStyle(x => x.FontSize(10));
 

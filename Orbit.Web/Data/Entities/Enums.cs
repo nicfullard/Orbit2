@@ -156,6 +156,9 @@ public static class TaskStatusExtensions
         _ => status.ToString()
     };
 
+    /// <summary>Active and On Hold projects are still running; Completed and Archived ones are closed.</summary>
+    public static bool IsOpen(this ProjectStatus status) => status is ProjectStatus.Active or ProjectStatus.OnHold;
+
     public static string Label(this AuthSource source) => source switch
     {
         AuthSource.Ldap => "Directory (LDAP)",

@@ -228,6 +228,16 @@ reports:
 - **Estimate accuracy** - tasks completed in the period, grouped by assignee: estimated against actual time, the
   variance, and how many ran over. Expand a row to see its tasks, largest overrun first.
 
+And one about projects:
+
+- **Project status** - every project that was open at some point in the period or had work on it (tasks created or
+  completed, time logged), closed ones included. Each row gives the status at the end of the period and any changes
+  during it (read from the audit trail), progress, open, overdue and blocked tasks, tasks created and done in the
+  period, time logged in the period and to date, estimated against actual time, and the target date with the project
+  buffer from the latest critical path analysis. Expand a project for estimated and logged time by person and the tasks
+  that are open or were worked on. A department filter picks the projects the department owns, with the whole
+  project's figures. The PDF is landscape. The report's project filter also lists archived projects.
+
 ## Configuration
 
 See `Orbit.Web/appsettings.json` for defaults and `deploy/orbit.env.example` for the production environment

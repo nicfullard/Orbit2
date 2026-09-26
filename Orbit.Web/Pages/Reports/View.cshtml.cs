@@ -23,6 +23,7 @@ public class ViewModel(ReportingService reporting, ProjectService projects, Depa
     public MeanTimeReport? MeanTime { get; private set; }
     public TimeByPersonReport? TimeByPerson { get; private set; }
     public EstimateAccuracyReport? EstimateAccuracy { get; private set; }
+    public ProjectStatusReport? ProjectReport { get; private set; }
     public IReadOnlyList<SelectListItem> ProjectItems { get; private set; } = [];
     public IReadOnlyList<SelectListItem> DepartmentItems { get; private set; } = [];
     public string FilterSummary { get; private set; } = string.Empty;
@@ -30,8 +31,9 @@ public class ViewModel(ReportingService reporting, ProjectService projects, Depa
     public async Task OnGetAsync(CancellationToken ct)
     {
         await RunAsync(ct);
-        ProjectItems = (await projects.ListOpenForPickerAsync(ct: ct))
-            .Select(p => new SelectListItem($"{p.Department.Name} / {p.Name}", p.Id.ToString(), p.Id == ProjectId)).ToList();
+        ProjectItems = (await projects.ListOpenForPickerAsync(includeArchived: true, ct: ct))
+            .Select(p => new SelectListItem($"{p.Department.Name} / {p.Name}{(p.Status == ProjectStatus.Archived ? " (archived)" : "")}",
+                p.Id.ToString(), p.Id == ProjectId)).ToList();
         if (CanChooseDepartment)
             DepartmentItems = (await departments.ListAsync(true, ct))
                 .Select(d => new SelectListItem(d.Name, d.Id.ToString(), d.Id == DepartmentId)).ToList();
@@ -54,7 +56,8 @@ public class ViewModel(ReportingService reporting, ProjectService projects, Depa
         }
         if (TimeByPerson is not null) tables.AddRange(TimeByPersonTables(TimeByPerson));
         if (EstimateAccuracy is not null) tables.AddRange(EstimateAccuracyTables(EstimateAccuracy));
-        var bytes = ReportPdfBuilder.Build(Definition.Title, FilterSummary, tables);
+        if (ProjectReport is not null) tables.AddRange(ProjectStatusTables(ProjectReport));
+        var bytes = ReportPdfBuilder.Build(Definition.Title, FilterSummary, tables, landscape: ProjectReport is not null);
         var fileName = $"orbit-{Kind.ToString().ToLowerInvariant()}-{From:yyyyMMdd}-{To:yyyyMMdd}.pdf";
         return File(bytes, "application/pdf", fileName);
     }
@@ -117,6 +120,77 @@ public class ViewModel(ReportingService reporting, ProjectService projects, Depa
         }
     }
 
+    /// <summary>"12 projects: 8 Active · 1 On Hold · 3 Completed (2 in the period)", by status at the end of the period.</summary>
+    public static string StatusCounts(ProjectStatusReport r) =>
+        $"{r.Rows.Count} {(r.Rows.Count == 1 ? "project" : "projects")}: " + string.Join(" · ", r.StatusCounts.Select(c =>
+            $"{c.Count} {c.Status.Label()}" + (c.ChangedInPeriod > 0 ? $" ({c.ChangedInPeriod} in the period)" : "")));
+
+    /// <summary>"Active → Completed 2026-09-12".</summary>
+    public static string Change(ProjectStatusChange c) => $"{c.From.Label()} → {c.To.Label()} {c.At:yyyy-MM-dd}";
+
+    public static string Progress(ProjectTaskCounts t) => t.Total == 0 ? "No tasks" : $"{t.Done}/{t.Total} done";
+
+    public static string Date(DateOnly? d) => d is DateOnly x ? x.ToString("yyyy-MM-dd") : "-";
+
+    /// <summary>The people's estimate reads "-" when none of their tasks has one.</summary>
+    public static string Estimated(ProjectPersonRow p) => p.EstimatedTasks == 0 ? "-" : TimeFormat.Minutes(p.EstimatedMinutes);
+
+    private static IEnumerable<ReportPdfBuilder.Table> ProjectStatusTables(ProjectStatusReport r)
+    {
+        static string Open(ProjectTaskCounts t)
+        {
+            var notes = new List<string>();
+            if (t.Overdue > 0) notes.Add($"{t.Overdue} overdue");
+            if (t.Blocked > 0) notes.Add($"{t.Blocked} blocked");
+            return notes.Count == 0 ? t.Open.ToString() : $"{t.Open}\n{string.Join(", ", notes)}";
+        }
+        static string Status(ProjectStatusHistory h)
+        {
+            var lines = new List<string> { h.AtEnd.Label() };
+            lines.AddRange(h.Changes.Select(Change));
+            if (h.Current != h.AtEnd) lines.Add($"now {h.Current.Label()}");
+            return string.Join("\n", lines);
+        }
+        static string Schedule(ProjectStatusRow p)
+        {
+            var lines = new List<string> { Date(p.Project.TargetDate) + (p.IsPastTarget ? " (past)" : "") };
+            if (p.Schedule is { } s)
+                lines.Add($"Buffer {s.BufferStatus.Label()}" + (s.IsStale ? " (out of date)" : ""));
+            return string.Join("\n", lines);
+        }
+
+        var rows = r.Rows.Select(p => (IReadOnlyList<string>)
+            [$"{p.Project.Number} {p.Project.Name}\n{p.Project.DepartmentName} · {p.Project.OwnerName}", Status(p.Status),
+             Progress(p.Tasks), Open(p.Tasks), p.Tasks.CreatedInPeriod.ToString(), p.Tasks.DoneInPeriod.ToString(),
+             TimeFormat.Minutes(p.LoggedInPeriodMinutes), TimeFormat.Minutes(p.LoggedToDateMinutes), Estimated(p.Estimate),
+             Variance(p.Estimate), Schedule(p)]).ToList();
+        if (rows.Count > 0)
+            rows.Add(["All projects", "", Progress(r.Total.Tasks), Open(r.Total.Tasks), r.Total.Tasks.CreatedInPeriod.ToString(),
+                r.Total.Tasks.DoneInPeriod.ToString(), TimeFormat.Minutes(r.Total.LoggedInPeriodMinutes),
+                TimeFormat.Minutes(r.Total.LoggedToDateMinutes), Estimated(r.Total.Estimate), Variance(r.Total.Estimate), ""]);
+        yield return new(["Project", "Status", "Progress", "Open", "Created", "Done", "Logged", "To date", "Estimated", "Variance", "Target"],
+            rows, r.Rows.Count == 0 ? null : StatusCounts(r), [3, 2.4f, 1.5f, 1.4f, 1.3f, 1, 1.3f, 1.3f, 1.5f, 1.9f, 1.6f]);
+
+        foreach (var p in r.Rows.Where(p => p.People.Count > 0 || p.TaskRows.Count > 0))
+        {
+            var name = $"{p.Project.Number} {p.Project.Name}";
+            var people = p.People.Select(x => (IReadOnlyList<string>)
+                [x.Name, x.OpenTasks.ToString(), x.DoneInPeriod.ToString(), Estimated(x),
+                 TimeFormat.Minutes(x.LoggedInPeriodMinutes), TimeFormat.Minutes(x.LoggedToDateMinutes)]).ToList();
+            people.Add(["Total", p.Tasks.Open.ToString(), p.Tasks.DoneInPeriod.ToString(), Estimated(p.Estimate),
+                TimeFormat.Minutes(p.LoggedInPeriodMinutes), TimeFormat.Minutes(p.LoggedToDateMinutes)]);
+            yield return new(["Person", "Open tasks", "Done in period", "Estimated", "Logged in period", "Logged to date"],
+                people, $"{name}: people", [3.4f, 1.2f, 1.4f, 1.4f, 1.5f, 1.5f]);
+
+            yield return new(["Task", "Status", "Assignee", "Due", "Estimate", "Logged in period", "Logged to date", ""],
+                p.TaskRows.Select(t => (IReadOnlyList<string>)
+                    [$"{t.Number} {t.Title}", t.Status.Label(), t.Assignee, Date(t.DueDate) + (t.IsOverdue ? " (overdue)" : ""),
+                     Estimate(t.EstimateMinutes), TimeFormat.Minutes(t.PeriodMinutes), TimeFormat.Minutes(t.TotalMinutes),
+                     Marker(t.Status, t.EstimateMinutes, t.IsOver)]).ToList(),
+                $"{name}: tasks", [5, 1.3f, 2, 1.7f, 1.2f, 1.4f, 1.4f, 1.6f]);
+        }
+    }
+
     private async Task RunAsync(CancellationToken ct)
     {
         var actor = await actors.GetAsync(ct);
@@ -141,6 +215,7 @@ public class ViewModel(ReportingService reporting, ProjectService projects, Depa
             case ReportKind.MeanTimeToResolve: MeanTime = await reporting.MeanTimeToResolveAsync(filter, ct); break;
             case ReportKind.TimeByPerson: TimeByPerson = await reporting.TimeByPersonAsync(filter, ct); break;
             case ReportKind.EstimateAccuracy: EstimateAccuracy = await reporting.EstimateAccuracyAsync(filter, ct); break;
+            case ReportKind.ProjectStatus: ProjectReport = await reporting.ProjectStatusAsync(filter, ct); break;
         }
 
         var parts = new List<string> { $"{From:yyyy-MM-dd} to {To:yyyy-MM-dd}" };

@@ -1,0 +1,217 @@
+@model ProjectStatusReport
+@using Orbit.Pages.Reports
+@{
+    string VarianceClass(int v) => v > 0 ? "text-warning-emphasis" : v < 0 ? "text-success-emphasis" : "";
+}
+
+@if (Model.Rows.Count == 0)
+{
+    <p class="text-muted fst-italic p-3 mb-0">No projects in the selected period.</p>
+}
+else
+{
+    <div class="small px-3 py-2 border-bottom">@ViewModel.StatusCounts(Model)</div>
+    <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+        <thead class="table-light">
+            <tr>
+                <th>Project</th>
+                <th title="The status at the end of the period, and any changes during it">Status</th>
+                <th style="width:10%">Progress</th>
+                <th class="text-end" title="Open tasks now">Open</th>
+                <th class="text-end" title="Tasks created in the period">Created</th>
+                <th class="text-end" title="Tasks set to Done in the period">Done</th>
+                <th class="text-end" title="Time logged in the period, and all time logged to date">Logged</th>
+                <th class="text-end" title="The estimates of the project's tasks that have one (cancelled tasks aside)">Estimated</th>
+                <th class="text-end" title="All time logged on the estimated tasks to date, against their estimates">Variance</th>
+                <th class="ps-3" title="Target date, and the project buffer at the latest critical path analysis">Schedule</th>
+            </tr>
+        </thead>
+        <tbody>
+            @for (var i = 0; i < Model.Rows.Count; i++)
+            {
+                var r = Model.Rows[i];
+                var p = r.Project;
+                var t = r.Tasks;
+                var id = $"project-status-{i}";
+                <tr>
+                    <td>
+                        <a asp-page="/Projects/Details" asp-route-id="@p.Id" class="text-decoration-none">@p.Number</a> @p.Name
+                        <div class="small text-muted">@p.DepartmentName · @(p.OwnerName)@(r.CreatedInPeriod ? $" · created {p.CreatedAt:yyyy-MM-dd}" : "")</div>
+                        @if (r.People.Count > 0 || r.TaskRows.Count > 0)
+                        {
+                            <a class="small" href="#@id" data-bs-toggle="collapse" role="button" aria-expanded="false" aria-controls="@id">People and tasks</a>
+                        }
+                    </td>
+                    <td>
+                        <span class="badge @Ui.ProjectStatusBadge(r.Status.AtEnd)">@r.Status.AtEnd.Label()</span>
+                        @foreach (var c in r.Status.Changes)
+                        {
+                            <div class="small text-muted text-nowrap">@ViewModel.Change(c)</div>
+                        }
+                        @if (r.Status.Current != r.Status.AtEnd)
+                        {
+                            <div class="small text-muted">now @r.Status.Current.Label()</div>
+                        }
+                    </td>
+                    <td>
+                        <div class="small">@ViewModel.Progress(t)</div>
+                        @if (t.Total > 0)
+                        {
+                            <div class="progress" style="height:.5rem"><div class="progress-bar bg-success" role="progressbar" style="width:@t.PercentDone%"></div></div>
+                        }
+                    </td>
+                    <td class="text-end">
+                        @t.Open
+                        @if (t.Overdue > 0) { <div class="small text-danger">@t.Overdue overdue</div> }
+                        @if (t.Blocked > 0) { <div class="small text-danger">@t.Blocked blocked</div> }
+                    </td>
+                    <td class="text-end">@t.CreatedInPeriod</td>
+                    <td class="text-end">@t.DoneInPeriod</td>
+                    <td class="text-end">
+                        <span class="fw-semibold">@TimeFormat.Minutes(r.LoggedInPeriodMinutes)</span>
+                        <div class="small text-muted text-nowrap">@TimeFormat.Minutes(r.LoggedToDateMinutes) to date</div>
+                    </td>
+                    <td class="text-end">@ViewModel.Estimated(r.Estimate)</td>
+                    <td class="text-end">
+                        <span class="@VarianceClass(r.Estimate.VarianceMinutes)">@ViewModel.Variance(r.Estimate)</span>
+                        @if (r.Estimate.OverTasks > 0) { <div class="small text-muted">@r.Estimate.OverTasks over estimate</div> }
+                    </td>
+                    <td class="ps-3">
+                        @if (p.TargetDate is DateOnly target)
+                        {
+                            <span class="@(r.IsPastTarget ? "text-danger fw-semibold" : "")" title="Target date">@ViewModel.Date(target)</span>
+                            @if (r.IsPastTarget) { <div class="small text-danger">past target</div> }
+                        }
+                        else
+                        {
+                            <span class="text-muted">No target</span>
+                        }
+                        @if (r.Schedule is { } s)
+                        {
+                            <div>
+                                <span class="badge @Ui.BufferStatusBadge(s.BufferStatus)" title="Project buffer at the critical path analysis of @s.RunAt.ToString("yyyy-MM-dd")">Buffer @s.BufferStatus.Label()</span>
+                            </div>
+                            @if (s.PlannedCompletion is DateOnly planned) { <div class="small text-muted text-nowrap">planned @ViewModel.Date(planned)</div> }
+                            @if (s.IsStale) { <div class="small text-muted" title="The schedule has changed since the analysis was run">analysis out of date</div> }
+                        }
+                    </td>
+                </tr>
+                @if (r.People.Count > 0 || r.TaskRows.Count > 0)
+                {
+                    <tr class="collapse" id="@id">
+                        <td colspan="10" class="p-0">
+                            <table class="table table-sm small mb-0">
+                                <thead>
+                                    <tr class="text-muted">
+                                        <th class="ps-4">Person</th>
+                                        <th class="text-end" title="Open tasks assigned to them now">Open tasks</th>
+                                        <th class="text-end" title="Their tasks set to Done in the period">Done in period</th>
+                                        <th class="text-end" title="The estimates of the tasks assigned to them (cancelled tasks aside)">Estimated</th>
+                                        <th class="text-end" title="Their time on the project in the period">Logged in period</th>
+                                        <th class="text-end" title="Their time on the project to date">Logged to date</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var x in r.People)
+                                    {
+                                        <tr>
+                                            <td class="ps-4 @(x.UserId is null ? "text-muted fst-italic" : "")">@x.Name</td>
+                                            <td class="text-end">@x.OpenTasks</td>
+                                            <td class="text-end">@x.DoneInPeriod</td>
+                                            <td class="text-end">@ViewModel.Estimated(x)</td>
+                                            <td class="text-end">@TimeFormat.Minutes(x.LoggedInPeriodMinutes)</td>
+                                            <td class="text-end">@TimeFormat.Minutes(x.LoggedToDateMinutes)</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <th class="ps-4">Total</th>
+                                        <th class="text-end">@t.Open</th>
+                                        <th class="text-end">@t.DoneInPeriod</th>
+                                        <th class="text-end">@ViewModel.Estimated(r.Estimate)</th>
+                                        <th class="text-end">@TimeFormat.Minutes(r.LoggedInPeriodMinutes)</th>
+                                        <th class="text-end">@TimeFormat.Minutes(r.LoggedToDateMinutes)</th>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                            @if (r.TaskRows.Count > 0)
+                            {
+                                <table class="table table-sm small mb-0 border-top">
+                                    <thead>
+                                        <tr class="text-muted">
+                                            <th class="ps-4">Task</th>
+                                            <th>Status</th>
+                                            <th>Assignee</th>
+                                            <th>Due</th>
+                                            <th class="text-end">Estimate</th>
+                                            <th class="text-end" title="Everyone's time on the task in the period">Logged in period</th>
+                                            <th class="text-end" title="All time logged on the task to date, by anyone">Logged to date</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var x in r.TaskRows)
+                                        {
+                                            <tr>
+                                                <td class="ps-4"><a asp-page="/Tasks/Details" asp-route-id="@x.TaskId" class="text-decoration-none">@x.Number</a> @x.Title</td>
+                                                <td><span class="badge @Ui.StatusBadge(x.Status)">@x.Status.Label()</span></td>
+                                                <td>@x.Assignee</td>
+                                                <td class="text-nowrap @(x.IsOverdue ? "text-danger fw-semibold" : "")" title="@(x.IsOverdue ? "Overdue" : null)">@ViewModel.Date(x.DueDate)</td>
+                                                <td class="text-end">@ViewModel.Estimate(x.EstimateMinutes)</td>
+                                                <td class="text-end">@TimeFormat.Minutes(x.PeriodMinutes)</td>
+                                                <td class="text-end">@TimeFormat.Minutes(x.TotalMinutes)</td>
+                                                <td>
+                                                    @if (x.IsOver)
+                                                    {
+                                                        <span class="badge text-bg-warning" title="More time has been logged than was estimated">Over estimate</span>
+                                                    }
+                                                    else if (ViewModel.Marker(x.Status, x.EstimateMinutes, x.IsOver) is { Length: > 0 } note)
+                                                    {
+                                                        <span class="text-muted">@note</span>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            }
+                        </td>
+                    </tr>
+                }
+            }
+        </tbody>
+        <tfoot>
+            <tr class="table-light">
+                <th>All projects</th>
+                <th></th>
+                <th class="small fw-semibold">@ViewModel.Progress(Model.Total.Tasks)</th>
+                <th class="text-end">
+                    @Model.Total.Tasks.Open
+                    @if (Model.Total.Tasks.Overdue > 0) { <div class="small text-danger fw-normal">@Model.Total.Tasks.Overdue overdue</div> }
+                    @if (Model.Total.Tasks.Blocked > 0) { <div class="small text-danger fw-normal">@Model.Total.Tasks.Blocked blocked</div> }
+                </th>
+                <th class="text-end">@Model.Total.Tasks.CreatedInPeriod</th>
+                <th class="text-end">@Model.Total.Tasks.DoneInPeriod</th>
+                <th class="text-end">
+                    @TimeFormat.Minutes(Model.Total.LoggedInPeriodMinutes)
+                    <div class="small text-muted fw-normal text-nowrap">@TimeFormat.Minutes(Model.Total.LoggedToDateMinutes) to date</div>
+                </th>
+                <th class="text-end">@ViewModel.Estimated(Model.Total.Estimate)</th>
+                <th class="text-end @VarianceClass(Model.Total.Estimate.VarianceMinutes)">@ViewModel.Variance(Model.Total.Estimate)</th>
+                <th></th>
+            </tr>
+        </tfoot>
+    </table>
+    </div>
+    <div class="small text-muted px-3 py-2 border-top">
+        Every project open at some point in the period, or with a task created or completed or time logged in it, closed
+        ones included. Status is the project's at the end of the period, with any changes during it and, if it has changed
+        since, what it is now. Progress, open, overdue and blocked are as things stand now; created and done count the
+        period. Estimated and variance compare the estimated tasks (cancelled ones aside) with all time logged on them to
+        date. The buffer is from the project's latest critical path analysis, shown while the project is open. Open
+        <em>People and tasks</em> for estimated and logged time by person, and the tasks that are open or were worked on in
+        the period.
+    </div>
+}

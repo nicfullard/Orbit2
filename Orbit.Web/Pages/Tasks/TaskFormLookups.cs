@@ -72,7 +72,7 @@ public sealed class TaskFormLookups
         }
 
         var projectItems = new List<DepartmentedOption> { new(string.Empty, "(standalone task)", null, form.ProjectId is null) };
-        projectItems.AddRange((await projects.ListOpenForPickerAsync(null, form.ProjectId, ct))
+        projectItems.AddRange((await projects.ListOpenForPickerAsync(null, form.ProjectId, ct: ct))
             .Select(p => new DepartmentedOption(p.Id.ToString(),
                 seesEverywhere ? $"{p.Department.Name} / {p.Name}" : p.Name,
                 p.DepartmentId, p.Id == form.ProjectId)));

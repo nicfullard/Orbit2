@@ -98,6 +98,50 @@ public sealed class CriticalPathService(
             a.BufferRemainingDays, a.BufferConsumptionPercent, a.CriticalTaskCount, a.NearCriticalTaskCount, a.WarningCount);
     }
 
+    /// <summary>
+    /// The headline of each project's latest analysis, keyed by project, for projects the caller has already been allowed
+    /// to see (the Project status report, §12); projects never analysed are left out. Out of date is decided as in
+    /// <see cref="LatestAsync"/>, over all the projects' tasks and links in two queries and one calendar.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<Guid, CriticalPathSummary>> LatestSummariesAsync(
+        IReadOnlyCollection<Guid> projectIds, CancellationToken ct = default)
+    {
+        if (projectIds.Count == 0) return new Dictionary<Guid, CriticalPathSummary>();
+        var ids = projectIds.Distinct().ToList();
+        var latest = (await db.CriticalPathAnalyses.AsNoTracking()
+                .Where(a => ids.Contains(a.ProjectId)
+                    && a.RunAt == db.CriticalPathAnalyses.Where(b => b.ProjectId == a.ProjectId).Max(b => b.RunAt))
+                .Select(a => new
+                {
+                    a.Id, a.ProjectId, a.RunAt, a.PlannedCompletionDate, a.TargetDateAtRun, a.BufferStatus, a.BufferRemainingDays,
+                    a.BufferConsumptionPercent, a.CriticalTaskCount, a.NearCriticalTaskCount, a.WarningCount, a.InputFingerprint,
+                    a.Project.TargetDate, a.Project.RequiredBufferWorkingDays
+                })
+                .ToListAsync(ct))
+            .DistinctBy(a => a.ProjectId)
+            .ToList();
+        if (latest.Count == 0) return new Dictionary<Guid, CriticalPathSummary>();
+
+        var analysed = latest.Select(a => (Guid?)a.ProjectId).ToList();
+        // The fingerprint reads only these fields of a task.
+        var tasks = (await db.Tasks.AsNoTracking().Where(t => analysed.Contains(t.ProjectId))
+                .Select(t => new TaskItem { Id = t.Id, ProjectId = t.ProjectId, Status = t.Status, StartDate = t.StartDate, DueDate = t.DueDate })
+                .ToListAsync(ct))
+            .ToLookup(t => t.ProjectId!.Value);
+        var links = (await db.TaskDependencies.AsNoTracking().Where(l => analysed.Contains(l.Successor.ProjectId))
+                .Select(l => new { l.Successor.ProjectId, Link = l })
+                .ToListAsync(ct))
+            .ToLookup(x => x.ProjectId!.Value, x => x.Link);
+        var calendar = await calendars.BuildAsync(ct);
+
+        return latest.ToDictionary(a => a.ProjectId, a =>
+        {
+            var fingerprint = ScheduleFingerprint.Compute(tasks[a.ProjectId], links[a.ProjectId], a.TargetDate, a.RequiredBufferWorkingDays, calendar);
+            return new CriticalPathSummary(a.Id, a.RunAt, fingerprint != a.InputFingerprint, a.PlannedCompletionDate, a.TargetDateAtRun,
+                a.BufferStatus, a.BufferRemainingDays, a.BufferConsumptionPercent, a.CriticalTaskCount, a.NearCriticalTaskCount, a.WarningCount);
+        });
+    }
+
     private async Task<CriticalPathView?> LatestAsync(Project project, CancellationToken ct)
     {
         var row = await db.CriticalPathAnalyses.AsNoTracking()
