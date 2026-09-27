@@ -88,6 +88,11 @@ else
                             {
                                 <span class="badge text-bg-warning ms-1" title="@waiting.Reason">Gated</span>
                             }
+                            @if (Model.CarryOvers is not null && Model.CarryOvers.TryGetValue(t.Id, out var carried))
+                            {
+                                <span class="badge @(carried >= DayPlanRules.RepeatedCarryOvers ? "text-bg-danger" : "text-bg-light border") ms-1"
+                                      title="Carried over to a later day's plan @carried time@(carried == 1 ? "" : "s")">Carried over @(carried)&times;</span>
+                            }
                             @if (t.ParentTask is not null)
                             {
                                 <div class="small text-muted" title="Subtask of @t.ParentTask.Title">in: @Ui.Truncate(t.ParentTask.Title, 60)</div>

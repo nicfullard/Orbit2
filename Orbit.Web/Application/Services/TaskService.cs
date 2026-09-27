@@ -456,7 +456,15 @@ public sealed class TaskService(
         List<TaskItem> unfinished = previous is null ? [] : await leftOver.Where(t => t.PlannedFor == previous)
             .OrderBy(t => t.Assignee == null).ThenBy(t => t.Assignee!.DisplayName).ThenByDescending(EnumOrder.ByTaskPriority)
             .ToListAsync(ct);
-        return new DayPlan { Date = date, Planned = planned, PreviousDate = previous, Unfinished = unfinished };
+
+        // How often each of them has slipped to a later day, from their Planned audit rows - one query for the page.
+        var ids = planned.Concat(unfinished).Select(t => t.Id).ToList();
+        var entries = ids.Count == 0 ? [] : await db.AuditLogs.AsNoTracking()
+            .Where(a => a.EntityType == AuditEntity.Task && a.Action == AuditAction.Planned && ids.Contains(a.EntityId))
+            .Select(a => new { a.EntityId, a.Details })
+            .ToListAsync(ct);
+        var carryOvers = DayPlanRules.CountCarryOvers(entries.Select(a => (a.EntityId, (string?)a.Details)));
+        return new DayPlan { Date = date, Planned = planned, PreviousDate = previous, Unfinished = unfinished, CarryOvers = carryOvers };
     }
 
     /// <summary>Plan tasks into a sprint (or back to the backlog with a null sprint). Returns the number moved.</summary>

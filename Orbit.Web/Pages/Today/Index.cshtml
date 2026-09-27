@@ -8,7 +8,8 @@
     {
         Tasks = list, Actor = Model.Actor, ReturnUrl = returnUrl, Today = Model.Today,
         ShowDepartment = Model.Actor.CanAnywhere(Permission.TasksView), ShowSprint = true, ShowPlanToday = true, ShowEstimate = true,
-        QuickEditAssignees = Model.QuickEditAssignees, SelectionFormId = selectionFormId, Waiting = Model.Waiting
+        QuickEditAssignees = Model.QuickEditAssignees, SelectionFormId = selectionFormId, Waiting = Model.Waiting,
+        CarryOvers = plan.CarryOvers
     };
     var unfinishedRows = Rows(plan.Unfinished, "carryForm");
     var leftOverWhen = plan.PreviousDate == Model.Today.AddDays(-1) ? "yesterday" : $"on {Ui.Day(plan.PreviousDate)}";

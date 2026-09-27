@@ -32,6 +32,8 @@ public sealed class TaskRowsVm
     public string? SelectionFormId { get; init; }
     /// <summary>Tasks whose next move is gated by a dependency (§6.15), with the reason for the Gated badge. Null = badge not computed.</summary>
     public IReadOnlyDictionary<Guid, WaitingSummary>? Waiting { get; init; }
+    /// <summary>How many times each task has been carried over on the day plan (§6.12), for the "Carried over" badge. Null = badge not computed.</summary>
+    public IReadOnlyDictionary<Guid, int>? CarryOvers { get; init; }
     public string? EmptyMessage { get; init; }
     public DateOnly Today { get; init; } = DateOnly.FromDateTime(DateTime.UtcNow);
 }

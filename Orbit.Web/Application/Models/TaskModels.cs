@@ -79,6 +79,8 @@ public sealed class DayPlan
     public DateOnly? PreviousDate { get; init; }
     /// <summary>Open tasks still sitting on PreviousDate's plan - candidates to carry over.</summary>
     public IReadOnlyList<TaskItem> Unfinished { get; init; } = [];
+    /// <summary>How many times each task in Planned or Unfinished has been carried over to a later day's plan; absent = never.</summary>
+    public IReadOnlyDictionary<Guid, int> CarryOvers { get; init; } = new Dictionary<Guid, int>();
     public int DoneCount => Planned.Count(t => t.Status == TaskItemStatus.Done);
     public int OpenCount => Planned.Count(t => t.IsOpen);
     public int OverdueCount => Planned.Count(t => t.IsOverdue(Date));
