@@ -18,7 +18,10 @@
             <span class="badge text-bg-light border fs-6 fw-normal">Subtasks of one task <a class="ms-1" asp-page="/Tasks/Index">clear</a></span>
         }
     </h1>
-    <a class="btn btn-primary btn-sm" asp-page="/Tasks/Create">New task</a>
+    @if (Model.Actor.Has(Permission.TasksCreate))
+    {
+        <a class="btn btn-primary btn-sm" asp-page="/Tasks/Create">New task</a>
+    }
 </div>
 
 <form method="get" class="card mb-3">

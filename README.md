@@ -93,7 +93,8 @@ The navbar follows the same grants: Today and My Tasks need **Edit tasks**, Task
 projects**, Backlog and Sprints **Plan tasks**, Recurring **Create tasks**, My Time **Log time** and Assets **View
 assets**, each at any scope. Hiding a link blocks nothing - the pages keep their own rules. The Dashboard is always
 there and adapts: someone who can view tasks but not edit them sees their department's (or company's) work read-only,
-and someone who can't see tasks gets links to what they can use.
+and someone who can't see tasks gets links to what they can use. **New task** shows only with **Create tasks** and
+**New project** only with **Create projects**, and the create pages behind them need the same permission.
 
 A role with any grant at Department scope needs its users and keys to belong to a department. The same rules
 are enforced in `AccessPolicy` and `Scoping` for signed-in users and for API keys; grants are read from the

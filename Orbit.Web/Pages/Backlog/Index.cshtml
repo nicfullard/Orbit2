@@ -13,7 +13,10 @@
         <h1 class="h3 mb-0">Backlog <span class="text-muted fs-6">@Model.Result.TotalCount</span></h1>
         <div class="text-muted small">Open tasks not yet planned into a sprint. Select tasks and choose a sprint to plan them.</div>
     </div>
-    <a class="btn btn-primary btn-sm" asp-page="/Tasks/Create">New task</a>
+    @if (Model.Actor.Has(Permission.TasksCreate))
+    {
+        <a class="btn btn-primary btn-sm" asp-page="/Tasks/Create">New task</a>
+    }
 </div>
 
 <form method="get" class="card mb-3">

@@ -111,6 +111,8 @@ builder.Services.AddRazorPages(options =>
         options.Conventions.AuthorizeFolder("/Admin/Calendar", Policies.Permission(Permission.CalendarManage));
         options.Conventions.AuthorizeFolder("/Admin/Activity", Policies.Permission(Permission.AuditView));
         options.Conventions.AuthorizeFolder("/Reports", Policies.Permission(Permission.ReportsView));
+        options.Conventions.AuthorizePage("/Tasks/Create", Policies.Permission(Permission.TasksCreate));
+        options.Conventions.AuthorizePage("/Projects/Create", Policies.Permission(Permission.ProjectsCreate));
         options.Conventions.AuthorizePage("/Sprints/Create", Policies.Permission(Permission.SprintsManage));
         options.Conventions.AuthorizePage("/Sprints/Edit", Policies.Permission(Permission.SprintsManage));
         // Assets (§6.19): the page door opens on the permission at any scope; the services apply the scope.

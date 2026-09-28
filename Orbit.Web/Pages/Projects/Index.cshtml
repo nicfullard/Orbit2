@@ -18,7 +18,10 @@
             <div class="text-muted small">Projects marked <span class="badge text-bg-info">Shared</span> are owned by another department but have tasks for yours.</div>
         }
     </div>
-    <a class="btn btn-primary btn-sm" asp-page="/Projects/Create">New project</a>
+    @if (actor.Has(Permission.ProjectsCreate))
+    {
+        <a class="btn btn-primary btn-sm" asp-page="/Projects/Create">New project</a>
+    }
 </div>
 
 <form method="get" class="card mb-3">

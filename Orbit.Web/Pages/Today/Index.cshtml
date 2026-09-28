@@ -31,7 +31,10 @@
                 </select>
             </form>
         }
-        <a class="btn btn-primary btn-sm" asp-page="/Tasks/Create">New task</a>
+        @if (Model.Actor.Has(Permission.TasksCreate))
+        {
+            <a class="btn btn-primary btn-sm" asp-page="/Tasks/Create">New task</a>
+        }
     </div>
 </div>
 
