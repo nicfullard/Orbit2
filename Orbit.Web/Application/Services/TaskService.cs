@@ -24,6 +24,7 @@ public sealed class TaskService(
         .Include(t => t.Project).ThenInclude(p => p!.Department)
         .Include(t => t.Assignee)
         .Include(t => t.CreatedBy)
+        .Include(t => t.RequestedFor)
         .Include(t => t.Sprint)
         .Include(t => t.Asset)
         .Include(t => t.RecurringTaskDefinition);
@@ -123,10 +124,8 @@ public sealed class TaskService(
         DependencyRules.RequireDatesInOrder(input.StartDate, input.DueDate);
         var parent = await structure.ValidateParentAsync(null, input.ParentTaskId, input.ProjectId, departmentId, childOpen: !status.IsClosed(), ct);
 
-        var now = DateTime.UtcNow;
         var task = new TaskItem
         {
-            Number = await numbering.NextAsync(NumberingService.TaskPrefix, now, ct),
             Title = title,
             Description = Clean(input.Description),
             DepartmentId = departmentId,
@@ -141,25 +140,86 @@ public sealed class TaskService(
             DueDate = input.DueDate,
             SprintId = input.SprintId,
             Source = source,
-            CreatedById = actor.UserId,
-            CreatedAt = now,
-            UpdatedAt = now,
             IdempotencyKey = Clean(input.IdempotencyKey)
         };
-        ApplyStatus(task, status, now);
-
-        db.Tasks.Add(task);
-        audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.Created, departmentId, task.Title, new
-        {
-            task.Number, task.Title, task.Status, task.Priority, task.Type, task.EstimateMinutes, task.ProjectId, task.DepartmentId, task.AssigneeId,
-            task.ParentTaskId, task.StartDate, task.DueDate, task.Source, task.SprintId, task.AssetId
-        });
-        await db.SaveChangesAsync(ct);
+        await InsertAsync(actor, task, status, null, ct);
 
         if (assignee is not null && assignee.Id != actor.UserId)
             await notifications.TaskAssignedAsync(task, assignee, actor, ct);
 
         return await GetAsync(task.Id, ct);
+    }
+
+    /// <summary>
+    /// File the task a request flow composed (§6.20) in the flow's department. The right to do so is requests.submit, not tasks.create
+    /// there: the flow decides what is filed, so anyone may ask another department for help. The requester is the creator; there is
+    /// no assignee, project or sprint, so the task waits in the department's unassigned work. A retry with the same idempotency key
+    /// returns the task already filed. Returns the saved task without re-reading it through <see cref="GetAsync"/>, which the
+    /// requester's own tasks.view may not allow.
+    /// </summary>
+    public async Task<TaskItem> CreateRequestAsync(RequestTaskInput input, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        AccessPolicy.Require(AccessPolicy.CanSubmitRequests(actor), "You don't have permission to log requests.");
+        var title = RequireTitle(input.Title);
+
+        var key = Clean(input.IdempotencyKey);
+        if (key is not null)
+        {
+            var existing = await db.Tasks.Include(t => t.Department).FirstOrDefaultAsync(t => t.IdempotencyKey == key, ct);
+            if (existing is not null)
+            {
+                AccessPolicy.Require(existing.CreatedById == actor.UserId && existing.Source == TaskSource.Request, "That request key is already in use.");
+                return existing;
+            }
+        }
+        await RequireOpenDepartmentAsync(input.DepartmentId, ct);
+        await assets.CheckLinkAsync(input.AssetId, null, ct);
+        DependencyRules.RequireDatesInOrder(null, input.DueDate);
+        if (input.RequestedForId is Guid forId)
+        {
+            var person = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == forId, ct)
+                ?? throw new ValidationException("The person the request is for doesn't exist.");
+            if (!person.IsActive || person.IsSystemAccount) throw new ValidationException("A request can only be for an active person.");
+            AccessPolicy.Require(AccessPolicy.CanRequestFor(actor, person.Id, person.DepartmentId),
+                "You can only log requests for yourself or for people in your department.");
+        }
+
+        var task = new TaskItem
+        {
+            Title = title,
+            Description = Clean(input.Description),
+            DepartmentId = input.DepartmentId,
+            AssetId = input.AssetId,
+            Priority = input.Priority,
+            Type = input.Type,
+            DueDate = input.DueDate,
+            Source = TaskSource.Request,
+            RequestedForId = input.RequestedForId,
+            IdempotencyKey = key
+        };
+        await InsertAsync(actor, task, TaskItemStatus.Todo, input.RequestDetails, ct);
+        await db.Entry(task).Reference(t => t.Department).LoadAsync(ct);
+        return task;
+    }
+
+    /// <summary>Number, stamp and save a new task with its Created audit entry - the part every way of creating a task shares.</summary>
+    private async Task InsertAsync(Actor actor, TaskItem task, TaskItemStatus status, object? request, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        task.Number = await numbering.NextAsync(NumberingService.TaskPrefix, now, ct);
+        task.CreatedById = actor.UserId;
+        task.CreatedAt = now;
+        task.UpdatedAt = now;
+        ApplyStatus(task, status, now);
+
+        db.Tasks.Add(task);
+        audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.Created, task.DepartmentId, task.Title, new
+        {
+            task.Number, task.Title, task.Status, task.Priority, task.Type, task.EstimateMinutes, task.ProjectId, task.DepartmentId, task.AssigneeId,
+            task.ParentTaskId, task.StartDate, task.DueDate, task.Source, task.SprintId, task.AssetId, task.RequestedForId, request
+        });
+        await db.SaveChangesAsync(ct);
     }
 
     /// <summary>Full edit: the input is the complete new state (null assignee/due date/sprint clears them).</summary>

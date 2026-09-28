@@ -1,0 +1,16 @@
+@model int
+@* The three steps of logging a request (spec §6.20): the model is the current one, 1 to 3; 4 = all done. The flow page's script
+   moves the current step between 2 and 3 as the requester reaches the review. *@
+@{
+    var steps = new[] { "Choose a request", "Answer the questions", "Review and log it" };
+}
+<ol class="request-steps js-request-steps" aria-label="Steps">
+    @for (var i = 0; i < steps.Length; i++)
+    {
+        var n = i + 1;
+        var state = n < Model ? "is-done" : n == Model ? "is-current" : "";
+        <li class="@state" data-step="@n" aria-current="@(n == Model ? "step" : null)">
+            <span class="request-step-number" aria-hidden="true">@(n < Model ? "✓" : n.ToString())</span>@steps[i]
+        </li>
+    }
+</ol>

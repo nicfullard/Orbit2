@@ -1,0 +1,194 @@
+@page "{id:guid}"
+@model Orbit.Pages.RequestCatalogue.OptionModel
+@using Orbit.Application.Requests
+@using Orbit.Pages.RequestCatalogue
+@{
+    var o = Model.Option;
+    var c = o.Category;
+    ViewData["Title"] = $"Configure {o.Title}";
+    var isFlow = o.Kind == RequestOptionKind.Flow;
+    var live = RequestRules.IsLive(o);
+    var n = Model.NewQuestion;
+
+    // What a question's answer does beyond the description - one question at most fills each task field.
+    string? Fills(RequestQuestion q) => q.QuestionType switch
+    {
+        RequestQuestionType.Urgency => "Sets the priority",
+        RequestQuestionType.Asset => "Sets the task's asset",
+        RequestQuestionType.User => "Sets who it's for",
+        RequestQuestionType.Date when q.SetsDueDate => "Sets the due date",
+        _ => null
+    };
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/RequestCatalogue/Index">Request flows</a></li>
+        <li class="breadcrumb-item"><a asp-page="/RequestCatalogue/Category" asp-route-id="@c.Id">@c.Title</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@o.Title</li>
+    </ol>
+</nav>
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div>
+        <h1 class="h3 mb-1">
+            @o.Title
+            @if (o.IsArchived) { <span class="badge text-bg-secondary fs-6 align-middle">Archived</span> }
+            else if (!live) { <span class="badge text-bg-warning fs-6 align-middle">Not offered yet</span> }
+        </h1>
+        <div class="text-muted small">
+            An option under <strong>@c.Title</strong> (@c.Department.Name).
+            @if (isFlow) { <text>Requests logged through it are filed with @c.Department.Name as @o.TaskType tasks.</text> }
+            else { <text>It opens a web page.</text> }
+        </div>
+    </div>
+    @if (live && isFlow && Model.CanSubmit)
+    {
+        <a class="btn btn-outline-secondary btn-sm" asp-page="/Requests/Flow" asp-route-id="@o.Id">Try the flow</a>
+    }
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-5">
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Option</div>
+            <div class="card-body">
+                <form method="post" asp-route-id="@o.Id">
+                    @if (Model.SaveError is not null) { <div class="text-danger mb-2">@Model.SaveError</div> }
+                    <partial name="_OptionFields" model="@(new OptionFieldsVm { Form = Model.Form, Prefix = "form" })" />
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </form>
+                <hr />
+                <div class="d-flex flex-wrap gap-2">
+                    <form method="post" asp-page-handler="Archive" asp-route-id="@o.Id" asp-route-archived="@(!o.IsArchived)">
+                        <button class="btn btn-outline-secondary btn-sm" type="submit">@(o.IsArchived ? "Restore option" : "Archive option")</button>
+                    </form>
+                    <form method="post" asp-page-handler="Delete" asp-route-id="@o.Id"
+                          data-confirm="Delete the option &quot;@o.Title&quot;@(o.Questions.Count > 0 ? $" and its {o.Questions.Count} questions" : "")? Requests already logged keep their answers.">
+                        <button class="btn btn-outline-danger btn-sm" type="submit">Delete option</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        @if (!isFlow)
+        {
+            <div class="card mb-3">
+                <div class="card-body text-muted">
+                    A link has no questions: choosing it opens <span class="text-break">@o.Url</span> in a new tab.
+                    @if (Model.Questions.Count > 0) { <text>It keeps its @Model.Questions.Count earlier questions in case it becomes a flow again.</text> }
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="card mb-3">
+                <div class="card-header fw-semibold">Questions <span class="text-muted fw-normal">(@Model.Questions.Count)</span></div>
+                <div class="card-body">
+                    <p class="small text-muted">
+                        Asked one at a time, in this order. Every answer goes into the task's description, and the first line of the first Text
+                        answer into its title. An Urgency answer also sets the task's priority, an Asset its asset, a User who the request
+                        is for, and a Date marked "sets the due date" its due date - one question each. A User question lists the people
+                        the person asking may log for; someone who logs only their own requests isn't asked, and it is answered as them.
+                    </p>
+                    @if (Model.Questions.Count == 0)
+                    {
+                        <div class="alert alert-warning py-2 small">The flow isn't offered until it has at least one question.</div>
+                    }
+                    @for (var i = 0; i < Model.Questions.Count; i++)
+                    {
+                        var q = Model.Questions[i];
+                        var key = q.Id.ToString("N");
+                        var formId = $"qform-{key}";
+                        <div class="border rounded p-2 mb-2" id="question-@key">
+                            <form method="post" asp-page-handler="UpdateQuestion" asp-route-id="@o.Id" asp-route-questionId="@q.Id" id="@formId" class="row g-2">
+                                <div class="col-12">
+                                    <label class="form-label small mb-0" for="prompt-@key">Question @(i + 1)</label>
+                                    <input class="form-control form-control-sm" id="prompt-@key" name="question.Prompt" value="@q.Prompt" maxlength="@RequestRules.MaxPromptLength" required />
+                                </div>
+                                <div class="col-sm-5">
+                                    <label class="form-label small mb-0" for="type-@key">Answer</label>
+                                    <select class="form-select form-select-sm js-question-type" id="type-@key" name="question.QuestionType">
+                                        @foreach (var t in Enum.GetValues<RequestQuestionType>()) { <option value="@t" selected="@(t == q.QuestionType)">@t.Label()</option> }
+                                    </select>
+                                </div>
+                                <div class="col-sm-7 d-flex flex-wrap align-items-end gap-3 pb-1">
+                                    <div class="form-check mb-0">
+                                        <input class="form-check-input" type="checkbox" id="req-@key" name="question.IsRequired" value="true" checked="@q.IsRequired" />
+                                        <label class="form-check-label small" for="req-@key">Required</label>
+                                    </div>
+                                    <div class="form-check mb-0" data-for-type="Date">
+                                        <input class="form-check-input" type="checkbox" id="due-@key" name="question.SetsDueDate" value="true" checked="@q.SetsDueDate" />
+                                        <label class="form-check-label small" for="due-@key">Sets the due date</label>
+                                    </div>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label small mb-0" for="help-@key">Help text <span class="text-muted">(optional)</span></label>
+                                    <input class="form-control form-control-sm" id="help-@key" name="question.HelpText" value="@q.HelpText" maxlength="@RequestRules.MaxHelpTextLength" />
+                                </div>
+                                <div class="col-12" data-for-type="Choice">
+                                    <label class="form-label small mb-0" for="choices-@key">Answers to choose from, one per line</label>
+                                    <textarea class="form-control form-control-sm" id="choices-@key" name="question.Choices" rows="3">@string.Join("\n", q.Choices)</textarea>
+                                </div>
+                            </form>
+                            <div class="d-flex flex-wrap gap-2 align-items-center mt-2">
+                                <button class="btn btn-sm btn-outline-primary py-0" type="submit" form="@formId">Save</button>
+                                <form method="post" asp-page-handler="MoveQuestion" asp-route-id="@o.Id" asp-route-questionId="@q.Id" asp-route-direction="-1">
+                                    <button class="btn btn-sm btn-outline-secondary py-0" type="submit" disabled="@(i == 0)" title="Move up" aria-label="Move question @(i + 1) up">&uarr;</button>
+                                </form>
+                                <form method="post" asp-page-handler="MoveQuestion" asp-route-id="@o.Id" asp-route-questionId="@q.Id" asp-route-direction="1">
+                                    <button class="btn btn-sm btn-outline-secondary py-0" type="submit" disabled="@(i == Model.Questions.Count - 1)" title="Move down" aria-label="Move question @(i + 1) down">&darr;</button>
+                                </form>
+                                <form method="post" asp-page-handler="DeleteQuestion" asp-route-id="@o.Id" asp-route-questionId="@q.Id" data-confirm="Delete the question &quot;@q.Prompt&quot;?">
+                                    <button class="btn btn-sm btn-outline-danger py-0" type="submit">Delete</button>
+                                </form>
+                                @if (Fills(q) is string fills) { <span class="badge bg-info-subtle text-info-emphasis border ms-auto">@fills</span> }
+                            </div>
+                        </div>
+                    }
+
+                    <h2 class="h6 mt-3">Add a question</h2>
+                    <form method="post" asp-page-handler="AddQuestion" asp-route-id="@o.Id" class="row g-2 border rounded p-2 mx-0">
+                        @if (Model.AddError is not null) { <div class="col-12 text-danger small">@Model.AddError</div> }
+                        <div class="col-12">
+                            <label class="form-label small mb-0" for="new-prompt">Question</label>
+                            <input class="form-control form-control-sm" id="new-prompt" name="question.Prompt" value="@n.Prompt" maxlength="@RequestRules.MaxPromptLength" required placeholder="e.g. What's the problem?" />
+                        </div>
+                        <div class="col-sm-5">
+                            <label class="form-label small mb-0" for="new-type">Answer</label>
+                            <select class="form-select form-select-sm js-question-type" id="new-type" name="question.QuestionType">
+                                @foreach (var t in Enum.GetValues<RequestQuestionType>()) { <option value="@t" selected="@(t == n.QuestionType)">@t.Label()</option> }
+                            </select>
+                        </div>
+                        <div class="col-sm-7 d-flex flex-wrap align-items-end gap-3 pb-1">
+                            <div class="form-check mb-0">
+                                <input class="form-check-input" type="checkbox" id="new-required" name="question.IsRequired" value="true" checked="@n.IsRequired" />
+                                <label class="form-check-label small" for="new-required">Required</label>
+                            </div>
+                            <div class="form-check mb-0" data-for-type="Date">
+                                <input class="form-check-input" type="checkbox" id="new-due" name="question.SetsDueDate" value="true" checked="@n.SetsDueDate" />
+                                <label class="form-check-label small" for="new-due">Sets the due date</label>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small mb-0" for="new-help">Help text <span class="text-muted">(optional)</span></label>
+                            <input class="form-control form-control-sm" id="new-help" name="question.HelpText" value="@n.HelpText" maxlength="@RequestRules.MaxHelpTextLength" placeholder="e.g. Describe what happened, and any message you saw." />
+                        </div>
+                        <div class="col-12" data-for-type="Choice">
+                            <label class="form-label small mb-0" for="new-choices">Answers to choose from, one per line</label>
+                            <textarea class="form-control form-control-sm" id="new-choices" name="question.Choices" rows="3" placeholder="Just me&#10;My team&#10;Everyone">@n.Choices</textarea>
+                        </div>
+                        <div class="col-12">
+                            <button class="btn btn-sm btn-primary" type="submit">Add question</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/requests.js" asp-append-version="true"></script>
+}

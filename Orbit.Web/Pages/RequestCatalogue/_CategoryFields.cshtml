@@ -1,0 +1,52 @@
+@using Orbit.Pages.RequestCatalogue
+@using Orbit.Application.Requests
+@model CategoryFieldsVm
+@* A request category's fields (spec §6.20), on the add form and the edit page. The icon and colour are radio buttons drawn as tiles. *@
+@{
+    var f = Model.Form;
+    var p = Model.Prefix;
+    var icon = RequestIcons.IsChoice(f.Icon) ? f.Icon : RequestIcons.Default;
+}
+@if (Model.Departments is { } departments)
+{
+    <div class="mb-3">
+        <label class="form-label" for="@(p)_DepartmentId">Department</label>
+        <select class="form-select" id="@(p)_DepartmentId" name="@(p).DepartmentId" required>
+            @foreach (var d in departments)
+            {
+                <option value="@d.Id" selected="@(d.Id == f.DepartmentId)">@d.Name</option>
+            }
+        </select>
+        <div class="form-text">Requests logged under this category are filed with this department. It can't be changed later.</div>
+    </div>
+}
+<div class="mb-3">
+    <label class="form-label" for="@(p)_Title">Title</label>
+    <input class="form-control" id="@(p)_Title" name="@(p).Title" value="@f.Title" maxlength="@RequestRules.MaxCategoryTitleLength" required placeholder="e.g. Report a problem" />
+</div>
+<div class="mb-3">
+    <label class="form-label" for="@(p)_Description">Description</label>
+    <textarea class="form-control" id="@(p)_Description" name="@(p).Description" rows="2" maxlength="@RequestRules.MaxDescriptionLength" placeholder="e.g. Something is broken, not working or has gone wrong.">@f.Description</textarea>
+</div>
+<fieldset class="mb-3">
+    <legend class="form-label fs-6 mb-1">Icon</legend>
+    <div class="request-icon-picker">
+        @foreach (var (name, label) in RequestIcons.Choices)
+        {
+            var id = $"{p}_icon_{name}";
+            <input type="radio" class="btn-check" name="@(p).Icon" id="@id" value="@name" checked="@(name == icon)" autocomplete="off" />
+            <label class="btn btn-outline-secondary" for="@id" title="@label">@RequestIcons.Svg(name, 18)<span class="visually-hidden">@label</span></label>
+        }
+    </div>
+</fieldset>
+<fieldset class="mb-3">
+    <legend class="form-label fs-6 mb-1">Colour</legend>
+    <div class="d-flex flex-wrap gap-1">
+        @foreach (var colour in Enum.GetValues<RequestColour>())
+        {
+            var id = $"{p}_colour_{colour}";
+            <input type="radio" class="btn-check" name="@(p).Colour" id="@id" value="@colour" checked="@(colour == f.Colour)" autocomplete="off" />
+            <label class="btn btn-sm btn-outline-secondary @RequestIcons.ColourClass(colour)" for="@id"><span class="request-swatch me-1"></span>@colour</label>
+        }
+    </div>
+</fieldset>

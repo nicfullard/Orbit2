@@ -31,11 +31,13 @@ public static class PermissionCatalog
     public const string PlanningGroup = "Planning";
     public const string InsightGroup = "Reports and audit";
     public const string AssetsGroup = "Assets";
+    public const string RequestsGroup = "Requests";
     public const string AdministrationGroup = "Administration";
 
     private static readonly PermissionScope[] OwnDeptAll = [PermissionScope.Own, PermissionScope.Department, PermissionScope.All];
     private static readonly PermissionScope[] DeptAll = [PermissionScope.Department, PermissionScope.All];
     private static readonly PermissionScope[] AllOnlyScopes = [PermissionScope.All];
+    private static readonly PermissionScope[] OwnDept = [PermissionScope.Own, PermissionScope.Department];
 
     public static readonly IReadOnlyList<PermissionDefinition> All =
     [
@@ -90,6 +92,12 @@ public static class PermissionCatalog
         new(Permission.AssetsConfigure, "Configure assets",
             "Manage the department's asset types (with their properties and check intervals) and asset locations; every department's at All departments.",
             AssetsGroup, DeptAll),
+        new(Permission.RequestsSubmit, "Log requests",
+            "Log requests through any department's request flows (the Requests page), whatever your Create tasks reach, and see the requests logged by you or for you, with their status. Own = for yourself: a flow's \"who is it for\" question is answered as you. Department = also for anyone in your department. Opening a request's task follows View tasks, which covers tasks you created from Own up.",
+            RequestsGroup, OwnDept),
+        new(Permission.RequestsConfigure, "Configure request flows",
+            "Manage the department's request categories, their options (question flows and links) and each flow's questions; every department's at All departments.",
+            RequestsGroup, DeptAll),
         new(Permission.UsersManage, "Manage users",
             "Create users, change their role, department and sign-in method, deactivate, unlock and reset passwords.",
             AdministrationGroup, AllOnlyScopes, SystemAdministratorOnly: true),

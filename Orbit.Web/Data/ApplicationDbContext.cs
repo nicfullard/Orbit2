@@ -34,6 +34,9 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<AssetType> AssetTypes => Set<AssetType>();
     public DbSet<AssetTypeProperty> AssetTypeProperties => Set<AssetTypeProperty>();
     public DbSet<AssetPropertyValue> AssetPropertyValues => Set<AssetPropertyValue>();
+    public DbSet<RequestCategory> RequestCategories => Set<RequestCategory>();
+    public DbSet<RequestOption> RequestOptions => Set<RequestOption>();
+    public DbSet<RequestQuestion> RequestQuestions => Set<RequestQuestion>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -99,6 +102,10 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
                 .HasForeignKey(t => t.AssigneeId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(t => t.CreatedBy).WithMany(u => u.CreatedTasks)
                 .HasForeignKey(t => t.CreatedById).OnDelete(DeleteBehavior.Restrict);
+            // Who a request is for (§6.20); users are deactivated, never deleted.
+            b.HasOne(t => t.RequestedFor).WithMany()
+                .HasForeignKey(t => t.RequestedForId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(t => t.RequestedForId);
             b.HasOne(t => t.Sprint).WithMany(s => s.Tasks)
                 .HasForeignKey(t => t.SprintId).OnDelete(DeleteBehavior.SetNull);
             b.HasOne(t => t.RecurringTaskDefinition).WithMany(r => r.GeneratedTasks)
@@ -398,6 +405,38 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
                 .HasForeignKey(v => v.AssetTypePropertyId).OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(v => new { v.AssetId, v.AssetTypePropertyId }).IsUnique();
             b.HasIndex(v => v.AssetTypePropertyId);
+        });
+
+        // --- Requests (§6.20). A category belongs to a department; options and questions die with their parent. Titles are unique
+        // ignoring case - a category's within its department, an option's within its category - through lower() expression indexes
+        // created in SQL by the AddRequests migration; the service checks the same rule first.
+        builder.Entity<RequestCategory>(b =>
+        {
+            b.Property(c => c.Title).HasMaxLength(100).IsRequired();
+            b.Property(c => c.Description).HasMaxLength(500);
+            b.Property(c => c.Icon).HasMaxLength(32).IsRequired();
+            b.HasOne(c => c.Department).WithMany()
+                .HasForeignKey(c => c.DepartmentId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(c => c.DepartmentId);
+        });
+
+        builder.Entity<RequestOption>(b =>
+        {
+            b.Property(o => o.Title).HasMaxLength(150).IsRequired();
+            b.Property(o => o.Description).HasMaxLength(500);
+            b.Property(o => o.Url).HasMaxLength(2000);
+            b.HasOne(o => o.Category).WithMany(c => c.Options)
+                .HasForeignKey(o => o.CategoryId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(o => o.CategoryId);
+        });
+
+        builder.Entity<RequestQuestion>(b =>
+        {
+            b.Property(q => q.Prompt).HasMaxLength(300).IsRequired();
+            b.Property(q => q.HelpText).HasMaxLength(500);
+            b.HasOne(q => q.Option).WithMany(o => o.Questions)
+                .HasForeignKey(q => q.OptionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(q => q.OptionId);
         });
 
         // Store every enum as its name so the database is readable and filterable in SQL.

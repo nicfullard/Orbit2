@@ -31,7 +31,7 @@ Inside `Orbit.Web/`, folders stand in for the layers of spec §11, and namespace
 | `Mcp/` | `OrbitTools` - the 32 MCP tools, mapped onto the same services the UI uses |
 | `Jobs/` | Quartz.NET jobs: recurring-task generation and due-date notifications, cron-scheduled from `Jobs:*` |
 | `Reporting/` | QuestPDF report rendering |
-| `Pages/` | Razor Pages UI (dashboard, tasks, projects, backlog, sprints, recurring, time, assets, admin, reports) |
+| `Pages/` | Razor Pages UI (dashboard, tasks, projects, backlog, sprints, recurring, time, assets, requests, admin, reports) |
 | `Areas/Identity/` | Overrides of the default Identity UI (login, self-registration disabled, no self-delete) |
 | `Migrations/` | EF Core migrations |
 
@@ -86,13 +86,15 @@ scopes below it, and a role with no grants sees nothing.
 | `assets.edit` | Dept / All | Edit assets: status, disposal, type, properties, location, holders; delete one registered in error | - | Dept |
 | `assets.check` | Own / Dept / All | Record asset checks (Own: "Confirm I have it" on the assets you hold) | Own | Dept |
 | `assets.configure` | Dept / All | The department's asset types (with properties and check intervals) and locations | - | Dept |
+| `requests.submit` | Own / Dept | Log requests through any department's request flows, and see the ones logged by or for you (Own: for yourself; Dept: also for anyone in your department) | Own | Own |
+| `requests.configure` | Dept / All | The department's request categories, options and questions | - | Dept |
 
 A role with any grant at Department scope needs its users and keys to belong to a department. The same rules
 are enforced in `AccessPolicy` and `Scoping` for signed-in users and for API keys; grants are read from the
 database on every request, so a role edit applies at once. Upgrading an existing database renames the old
 fixed roles in place (`SystemAdmin` becomes the built-in System Administrator) and gives Member and Department
-Admin the grants above, so nobody's rights change. The asset permissions arrived later; the migration that added
-them gave their defaults to the roles still named Member and Department Admin.
+Admin the grants above, so nobody's rights change. The asset and request permissions arrived later; the migrations
+that added them gave their defaults to the roles still named Member and Department Admin.
 
 A project is owned by one department, but someone whose role may create tasks in every department can file
 tasks under it for other departments (unassigned, or assigned to someone in that department). Each such task
@@ -212,6 +214,24 @@ the asset's label - an exact serial or ERP number followed by Enter picks it at 
 see (**View assets**), never disposed ones. The asset's page then has a **Tasks** card - its task history, open tasks
 first - and the Tasks list can be filtered by asset. An asset with linked tasks can't be deleted; dispose of it
 instead.
+
+## Requests
+
+**Requests** (spec §6.20, navbar link on **Log requests**) is where anyone asks a department for something. Pick a
+tile (*Report a problem*, *Request something new*...), then an option. An option is either a **link** to a page
+elsewhere, for self-service, or a **flow**: its questions one at a time (text, number, date, a choice, one of the
+assets you hold or a description of something else, how urgent it is, and who it is for), an optional step to attach
+files, and a review. The request is then logged as an unassigned task in the department that owns the category. The
+answers go in the task's description, the urgency sets its priority, the asset its asset, the person it is for its
+*Requested for*, and a date question marked *sets the due date* its due date. The flow's configurer sets the task's
+type. **Who it is for** lists the people you may log for: with **Log requests** at Own that is just you, so the
+question is skipped; at Department, anyone in your department. **Your requests** on the same page lists what you
+have logged and what was logged for you, with its status; the task lists don't show it, since a request usually
+belongs to another department.
+
+Each department runs its own catalogue (**Configure** on the Requests page, **Configure request flows**): categories
+with an icon and colour, options, and each flow's questions. A department with none can load a generic example
+catalogue to start from. Request tasks carry the source *Request*, and the Tasks list and `list_tasks` filter on it.
 
 ## Reports
 

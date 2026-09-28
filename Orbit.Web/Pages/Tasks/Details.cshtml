@@ -554,6 +554,10 @@
                     <dt class="col-5">Estimate</dt><dd class="col-7">@(t.EstimateMinutes is int estimate ? TimeFormat.Minutes(estimate) : "-")</dd>
                     <dt class="col-5">Planned for</dt><dd class="col-7">@Ui.Day(t.PlannedFor)@(t.PlannedFor == today ? " (today)" : "")</dd>
                     <dt class="col-5">Created by</dt><dd class="col-7">@Ui.AuthorName(t.CreatedBy) <span class="text-muted">@Ui.When(t.CreatedAt)</span></dd>
+                    @if (t.RequestedFor is not null)
+                    {
+                        <dt class="col-5">Requested for</dt><dd class="col-7">@t.RequestedFor.DisplayName</dd>
+                    }
                     <dt class="col-5">Updated</dt><dd class="col-7">@Ui.When(t.UpdatedAt)</dd>
                     <dt class="col-5">First responded</dt><dd class="col-7">@Ui.When(t.FirstRespondedAt)</dd>
                     <dt class="col-5">Completed</dt><dd class="col-7">@Ui.When(t.CompletedAt)</dd>

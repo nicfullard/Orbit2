@@ -1,0 +1,47 @@
+@using Orbit.Pages.RequestCatalogue
+@using Orbit.Application.Requests
+@model OptionFieldsVm
+@* A request option's fields (spec §6.20). What it does decides the rest: a link's web address, or a flow's task type and files step
+   (requests.js shows the ones that apply). *@
+@{
+    var f = Model.Form;
+    var p = Model.Prefix;
+}
+<div class="mb-3">
+    <label class="form-label" for="@(p)_Title">Title</label>
+    <input class="form-control" id="@(p)_Title" name="@(p).Title" value="@f.Title" maxlength="@RequestRules.MaxOptionTitleLength" required placeholder="e.g. Something isn't working" />
+</div>
+<div class="mb-3">
+    <label class="form-label" for="@(p)_Description">Description</label>
+    <textarea class="form-control" id="@(p)_Description" name="@(p).Description" rows="2" maxlength="@RequestRules.MaxDescriptionLength">@f.Description</textarea>
+</div>
+<div class="mb-3">
+    <label class="form-label" for="@(p)_Kind">When chosen</label>
+    <select class="form-select js-option-kind" id="@(p)_Kind" name="@(p).Kind">
+        @foreach (var kind in Enum.GetValues<RequestOptionKind>())
+        {
+            <option value="@kind" selected="@(kind == f.Kind)">@kind.Label()</option>
+        }
+    </select>
+</div>
+<div class="mb-3" data-for-kind="Link">
+    <label class="form-label" for="@(p)_Url">Web address</label>
+    <input type="text" inputmode="url" class="form-control" id="@(p)_Url" name="@(p).Url" value="@f.Url" maxlength="@RequestRules.MaxUrlLength" placeholder="https://..." />
+    <div class="form-text">Opens in a new tab.</div>
+</div>
+<div data-for-kind="Flow">
+    <div class="mb-3">
+        <label class="form-label" for="@(p)_TaskType">Task type</label>
+        <select class="form-select" id="@(p)_TaskType" name="@(p).TaskType">
+            @foreach (var type in Enum.GetValues<TaskType>())
+            {
+                <option value="@type" selected="@(type == f.TaskType)">@type</option>
+            }
+        </select>
+        <div class="form-text">Every request logged through this flow is a task of this type. The person asking doesn't choose it.</div>
+    </div>
+    <div class="form-check mb-3">
+        <input class="form-check-input" type="checkbox" id="@(p)_AllowAttachments" name="@(p).AllowAttachments" value="true" checked="@f.AllowAttachments" />
+        <label class="form-check-label" for="@(p)_AllowAttachments">Offer a step to attach files</label>
+    </div>
+</div>

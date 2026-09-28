@@ -44,12 +44,51 @@ public enum TaskType
 /// <summary>
 /// Where a task originated. <see cref="Recurring"/> is an addition to the spec's Manual/Api pair
 /// so tasks spawned by the recurring-task job are distinguishable from human- and Claude-created ones.
+/// <see cref="Request"/> is a task logged through a department's request flow (§6.20).
 /// </summary>
 public enum TaskSource
 {
     Manual,
     Api,
-    Recurring
+    Recurring,
+    Request
+}
+
+/// <summary>What choosing a request option does (§6.20): walk through its questions and log a task, or open a web page.</summary>
+public enum RequestOptionKind
+{
+    Flow,
+    Link
+}
+
+/// <summary>The kind of answer a request question takes (§6.20).</summary>
+public enum RequestQuestionType
+{
+    Text,
+    Number,
+    Date,
+    /// <summary>One of the assets the person holds, or a description of something else. A picked asset becomes the task's asset.</summary>
+    Asset,
+    /// <summary>How urgent the request is, one of the four task priorities; it becomes the task's priority.</summary>
+    Urgency,
+    Choice,
+    /// <summary>
+    /// Who the request is for: a person the requester may log for (requests.submit scope). It becomes the task's RequestedForId. At
+    /// Own scope it isn't asked - the answer is the requester.
+    /// </summary>
+    User
+}
+
+/// <summary>A request category's accent colour (§6.20); each has a light and a dark value in site.css.</summary>
+public enum RequestColour
+{
+    Blue,
+    Red,
+    Orange,
+    Green,
+    Purple,
+    Teal,
+    Grey
 }
 
 public enum SprintStatus
@@ -198,6 +237,25 @@ public static class TaskStatusExtensions
     {
         AssetPropertyType.YesNo => "Yes / No",
         _ => type.ToString()
+    };
+
+    public static string Label(this RequestQuestionType type) => type switch
+    {
+        RequestQuestionType.Text => "Text",
+        RequestQuestionType.Number => "Number",
+        RequestQuestionType.Date => "Date",
+        RequestQuestionType.Asset => "Asset",
+        RequestQuestionType.Urgency => "Urgency",
+        RequestQuestionType.Choice => "Choice (pick one)",
+        RequestQuestionType.User => "User (who it's for)",
+        _ => type.ToString()
+    };
+
+    public static string Label(this RequestOptionKind kind) => kind switch
+    {
+        RequestOptionKind.Flow => "Questions, then log a task",
+        RequestOptionKind.Link => "Open a web page",
+        _ => kind.ToString()
     };
 
     /// <summary>The conventional two-letter code: FS, SS, FF, SF.</summary>

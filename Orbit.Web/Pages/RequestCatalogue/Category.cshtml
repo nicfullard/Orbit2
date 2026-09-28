@@ -1,0 +1,133 @@
+@page "{id:guid}"
+@model Orbit.Pages.RequestCatalogue.CategoryModel
+@using Orbit.Application.Requests
+@using Orbit.Pages.RequestCatalogue
+@{
+    var c = Model.Category;
+    ViewData["Title"] = $"Configure {c.Title}";
+    var options = c.Options.ToList();
+    var liveCount = options.Count(RequestRules.IsLive);
+    var offered = !c.IsArchived && !c.Department.IsArchived && liveCount > 0;
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/RequestCatalogue/Index">Request flows</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@c.Title</li>
+    </ol>
+</nav>
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div class="d-flex align-items-center gap-3 @RequestIcons.ColourClass(c.Colour)">
+        <span class="request-icon request-icon-sm">@RequestIcons.Svg(c.Icon, 24)</span>
+        <div>
+            <h1 class="h3 mb-0">
+                @c.Title
+                @if (c.IsArchived) { <span class="badge text-bg-secondary fs-6 align-middle">Archived</span> }
+            </h1>
+            <div class="text-muted small">A request category of <strong>@c.Department.Name</strong>: requests logged under it are filed with @c.Department.Name.</div>
+        </div>
+    </div>
+    @if (offered && Model.CanSubmit)
+    {
+        <a class="btn btn-outline-secondary btn-sm" asp-page="/Requests/Category" asp-route-id="@c.Id">See it on the Requests page</a>
+    }
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-5">
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Category</div>
+            <div class="card-body">
+                <form method="post" asp-route-id="@c.Id">
+                    @if (Model.SaveError is not null) { <div class="text-danger mb-2">@Model.SaveError</div> }
+                    <partial name="_CategoryFields" model="@(new CategoryFieldsVm { Form = Model.Form, Prefix = "form" })" />
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </form>
+                <hr />
+                <div class="d-flex flex-wrap gap-2">
+                    @if (c.IsArchived)
+                    {
+                        <form method="post" asp-page-handler="Archive" asp-route-id="@c.Id" asp-route-archived="false">
+                            <button class="btn btn-outline-success btn-sm" type="submit">Restore category</button>
+                        </form>
+                    }
+                    else
+                    {
+                        <form method="post" asp-page-handler="Archive" asp-route-id="@c.Id" asp-route-archived="true"
+                              data-confirm="Archive this category? It and its options stop being offered; nothing is deleted.">
+                            <button class="btn btn-outline-secondary btn-sm" type="submit">Archive category</button>
+                        </form>
+                    }
+                    <form method="post" asp-page-handler="Delete" asp-route-id="@c.Id"
+                          data-confirm="@(options.Count == 0 ? $"Delete the category \"{c.Title}\"?" : $"Delete the category \"{c.Title}\" with its {options.Count} {(options.Count == 1 ? "option" : "options")} and their questions? Requests already logged keep their answers.")">
+                        <button class="btn btn-outline-danger btn-sm" type="submit">Delete category</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Options <span class="text-muted fw-normal">(@options.Count, @liveCount offered)</span></div>
+            @if (options.Count == 0)
+            {
+                <div class="card-body text-muted fst-italic">No options yet. The category is offered once it has one that is ready.</div>
+            }
+            else
+            {
+                <ul class="list-group list-group-flush">
+                    @for (var i = 0; i < options.Count; i++)
+                    {
+                        var o = options[i];
+                        var live = RequestRules.IsLive(o);
+                        <li class="list-group-item d-flex flex-wrap align-items-center gap-2 @(o.IsArchived ? "text-muted" : "")">
+                            <div class="flex-grow-1" style="min-width: 12rem">
+                                <a asp-page="/RequestCatalogue/Option" asp-route-id="@o.Id" class="fw-semibold text-decoration-none">@o.Title</a>
+                                @if (o.IsArchived) { <span class="badge text-bg-secondary">Archived</span> }
+                                else if (!live) { <span class="badge text-bg-warning" title="A flow is offered once it has at least one question">Not offered yet</span> }
+                                <div class="small text-muted">
+                                    @if (o.Kind == RequestOptionKind.Link)
+                                    {
+                                        <text>Link to </text><span class="text-break">@Ui.Truncate(o.Url, 60)</span>
+                                    }
+                                    else
+                                    {
+                                        @(o.Questions.Count == 1 ? "1 question" : $"{o.Questions.Count} questions")<text> · task type @o.TaskType</text>
+                                    }
+                                </div>
+                            </div>
+                            <div class="d-flex flex-wrap gap-1">
+                                <form method="post" asp-page-handler="MoveOption" asp-route-id="@c.Id" asp-route-optionId="@o.Id" asp-route-direction="-1">
+                                    <button class="btn btn-sm btn-outline-secondary py-0" type="submit" disabled="@(i == 0)" title="Move up" aria-label="Move @o.Title up">&uarr;</button>
+                                </form>
+                                <form method="post" asp-page-handler="MoveOption" asp-route-id="@c.Id" asp-route-optionId="@o.Id" asp-route-direction="1">
+                                    <button class="btn btn-sm btn-outline-secondary py-0" type="submit" disabled="@(i == options.Count - 1)" title="Move down" aria-label="Move @o.Title down">&darr;</button>
+                                </form>
+                                <form method="post" asp-page-handler="ArchiveOption" asp-route-id="@c.Id" asp-route-optionId="@o.Id" asp-route-archived="@(!o.IsArchived)">
+                                    <button class="btn btn-sm btn-outline-secondary py-0" type="submit">@(o.IsArchived ? "Restore" : "Archive")</button>
+                                </form>
+                                <a class="btn btn-sm btn-outline-primary py-0" asp-page="/RequestCatalogue/Option" asp-route-id="@o.Id">@(o.Kind == RequestOptionKind.Flow ? "Edit and questions" : "Edit")</a>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Add an option</div>
+            <div class="card-body">
+                <form method="post" asp-page-handler="AddOption" asp-route-id="@c.Id">
+                    @if (Model.AddError is not null) { <div class="text-danger mb-2">@Model.AddError</div> }
+                    <partial name="_OptionFields" model="@(new OptionFieldsVm { Form = Model.NewOption, Prefix = "option" })" />
+                    <button type="submit" class="btn btn-primary">Add option</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/requests.js" asp-append-version="true"></script>
+}

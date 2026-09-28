@@ -1,0 +1,128 @@
+@page
+@model Orbit.Pages.RequestCatalogue.IndexModel
+@using Orbit.Application.Requests
+@using Orbit.Pages.RequestCatalogue
+@{
+    ViewData["Title"] = "Configure requests";
+    var groups = Model.Categories.GroupBy(c => c.DepartmentId).ToList();
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        @if (AccessPolicy.CanSubmitRequests(Model.Actor))
+        {
+            <li class="breadcrumb-item"><a asp-page="/Requests/Index">Requests</a></li>
+        }
+        <li class="breadcrumb-item active" aria-current="page">Configure</li>
+    </ol>
+</nav>
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div>
+        <h1 class="h3 mb-1">Request flows</h1>
+        <div class="text-muted small">
+            What each department offers on the Requests page: categories of options, each either a flow of questions that logs a task with
+            the department, or a link to a page elsewhere.
+        </div>
+    </div>
+    @if (AccessPolicy.CanSubmitRequests(Model.Actor))
+    {
+        <a class="btn btn-outline-secondary btn-sm" asp-page="/Requests/Index">Open the Requests page</a>
+    }
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-8">
+        @if (groups.Count == 0)
+        {
+            <div class="card mb-3">
+                <div class="card-body text-muted fst-italic">
+                    No request categories yet. Add one, or start from the example and change it to suit.
+                </div>
+            </div>
+        }
+        @foreach (var g in groups)
+        {
+            var dept = g.First().Department;
+            var list = g.OrderBy(c => c.DisplayOrder).ThenBy(c => c.Title).ToList();
+            <div class="card mb-3">
+                <div class="card-header fw-semibold">
+                    @dept.Name
+                    @if (dept.IsArchived) { <span class="badge text-bg-secondary ms-1">Archived department</span> }
+                </div>
+                <ul class="list-group list-group-flush">
+                    @for (var i = 0; i < list.Count; i++)
+                    {
+                        var c = list[i];
+                        var live = c.Options.Count(RequestRules.IsLive);
+                        <li class="list-group-item d-flex flex-wrap align-items-center gap-3 @(c.IsArchived ? "text-muted" : "")">
+                            <span class="request-option-icon @RequestIcons.ColourClass(c.Colour)">@RequestIcons.Svg(c.Icon, 20)</span>
+                            <div class="flex-grow-1" style="min-width: 12rem">
+                                <a asp-page="/RequestCatalogue/Category" asp-route-id="@c.Id" class="fw-semibold text-decoration-none">@c.Title</a>
+                                @if (c.IsArchived) { <span class="badge text-bg-secondary">Archived</span> }
+                                <div class="small text-muted">
+                                    @c.Options.Count @(c.Options.Count == 1 ? "option" : "options")@if (c.Options.Count > 0) { <text>, @live offered</text> }
+                                    @if (!string.IsNullOrWhiteSpace(c.Description)) { <text> · @Ui.Truncate(c.Description, 80)</text> }
+                                </div>
+                            </div>
+                            <div class="d-flex gap-1">
+                                <form method="post" asp-page-handler="Move" asp-route-id="@c.Id" asp-route-direction="-1">
+                                    <button class="btn btn-sm btn-outline-secondary py-0" type="submit" disabled="@(i == 0)" title="Move up" aria-label="Move @c.Title up">&uarr;</button>
+                                </form>
+                                <form method="post" asp-page-handler="Move" asp-route-id="@c.Id" asp-route-direction="1">
+                                    <button class="btn btn-sm btn-outline-secondary py-0" type="submit" disabled="@(i == list.Count - 1)" title="Move down" aria-label="Move @c.Title down">&darr;</button>
+                                </form>
+                                <a class="btn btn-sm btn-outline-primary py-0" asp-page="/RequestCatalogue/Category" asp-route-id="@c.Id">Edit</a>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            </div>
+        }
+    </div>
+
+    <div class="col-lg-4">
+        @if (Model.Departments.Count > 0)
+        {
+            <div class="card mb-3">
+                <div class="card-header fw-semibold">Add a category</div>
+                <div class="card-body">
+                    <form method="post" asp-page-handler="Add">
+                        @if (Model.AddError is not null) { <div class="text-danger mb-2">@Model.AddError</div> }
+                        <partial name="_CategoryFields" model="@(new CategoryFieldsVm { Form = Model.NewCategory, Prefix = "category", Departments = Model.Everywhere ? Model.Departments : null })" />
+                        @if (!Model.Everywhere) { <input type="hidden" name="category.DepartmentId" value="@Model.Departments[0].Id" /> }
+                        <button type="submit" class="btn btn-primary">Add category</button>
+                    </form>
+                </div>
+            </div>
+        }
+        @if (Model.EmptyDepartments.Count > 0)
+        {
+            <div class="card mb-3">
+                <div class="card-header fw-semibold">Start from the example</div>
+                <div class="card-body">
+                    <p class="small text-muted">
+                        Loads @RequestExample.Catalogue.Count categories of everyday requests - report a problem, change something, request
+                        something new, help - with their questions, as a starting point to change or delete. Only into a department with no categories yet.
+                    </p>
+                    <form method="post" asp-page-handler="Example" data-confirm="Load the example request flows? You can change or delete everything afterwards.">
+                        @if (Model.EmptyDepartments.Count == 1)
+                        {
+                            <input type="hidden" name="departmentId" value="@Model.EmptyDepartments[0].Id" />
+                            <button type="submit" class="btn btn-outline-primary">Load the example into @Model.EmptyDepartments[0].Name</button>
+                        }
+                        else
+                        {
+                            <label class="form-label small" for="example-department">Department</label>
+                            <div class="d-flex gap-2">
+                                <select class="form-select form-select-sm" id="example-department" name="departmentId">
+                                    @foreach (var d in Model.EmptyDepartments) { <option value="@d.Id" selected="@(d.Id == Model.Actor.DepartmentId)">@d.Name</option> }
+                                </select>
+                                <button type="submit" class="btn btn-sm btn-outline-primary text-nowrap">Load example</button>
+                            </div>
+                        }
+                    </form>
+                </div>
+            </div>
+        }
+    </div>
+</div>

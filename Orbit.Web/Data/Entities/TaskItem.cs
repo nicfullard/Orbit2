@@ -35,6 +35,12 @@ public class TaskItem
     public Guid? CreatedById { get; set; }
     public ApplicationUser? CreatedBy { get; set; }
     public TaskSource Source { get; set; } = TaskSource.Manual;
+    /// <summary>
+    /// For a task logged through a request flow (spec §6.20): the person it is for, from the flow's User question - the requester
+    /// themselves, or at Department scope a colleague. Null when the flow asks no such question. They see it under Your requests.
+    /// </summary>
+    public Guid? RequestedForId { get; set; }
+    public ApplicationUser? RequestedFor { get; set; }
     /// <summary>The planned start (spec §6.15) - the left end of a Gantt bar; never after <see cref="DueDate"/>. The actual start stays <see cref="FirstRespondedAt"/>.</summary>
     public DateOnly? StartDate { get; set; }
     public DateOnly? DueDate { get; set; }

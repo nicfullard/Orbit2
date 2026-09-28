@@ -1,0 +1,249 @@
+@page "{id:guid}"
+@model Orbit.Pages.Requests.FlowModel
+@using Orbit.Application.Assets
+@using Orbit.Application.Requests
+@{
+    var o = Model.Option;
+    var c = o.Category;
+    ViewData["Title"] = o.Title;
+    var questions = o.Questions.OrderBy(q => q.DisplayOrder).ToList();
+    // Someone who logs requests only for themselves isn't asked who it's for: the server answers as them, and the review says so.
+    var skipped = Model.AsksWhoFor ? [] : questions.Where(q => q.QuestionType == RequestQuestionType.User).ToList();
+    var asked = questions.Except(skipped).ToList();
+    var today = DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd");
+    var limits = Model.AttachmentLimits;
+    var held = Model.HeldAssets;
+
+    // What tells two of a person's assets apart: "Laptop · Head office · Damaged".
+    string AssetDetail(AssetPickerItem h) =>
+        string.Join(" · ", new[] { h.TypeName, h.LocationName, h.Status == AssetStatus.Active ? null : h.Status.Label() }.OfType<string>());
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Requests/Index">Requests</a></li>
+        <li class="breadcrumb-item"><a asp-page="/Requests/Category" asp-route-id="@c.Id">@c.Title</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@o.Title</li>
+    </ol>
+</nav>
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div class="d-flex align-items-center gap-3 @RequestIcons.ColourClass(c.Colour)">
+        <span class="request-icon request-icon-sm">@RequestIcons.Svg(c.Icon, 24)</span>
+        <div>
+            <h1 class="h3 mb-0">@o.Title</h1>
+            <div class="text-muted">
+                @if (!string.IsNullOrWhiteSpace(o.Description)) { @o.Description <text> · </text> }
+                Goes to @c.Department.Name
+            </div>
+        </div>
+    </div>
+    @if (Model.CanConfigure)
+    {
+        <a class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1" asp-page="/RequestCatalogue/Option" asp-route-id="@o.Id">@RequestIcons.Svg("gear", 14) Configure</a>
+    }
+</div>
+
+<partial name="_Steps" model="2" />
+
+@if (Model.GeneralError is not null)
+{
+    <div class="alert alert-danger request-flow" role="alert">@Model.GeneralError</div>
+}
+else if (Model.Errors.Count > 0)
+{
+    <div class="alert alert-danger request-flow" role="alert">
+        @(Model.Errors.Count == 1 ? "One answer needs attention." : $"{Model.Errors.Count} answers need attention.") It's marked below.
+    </div>
+}
+
+<form method="post" enctype="multipart/form-data" asp-route-id="@o.Id" class="request-flow js-request-flow">
+    <input type="hidden" name="IdempotencyKey" value="@Model.IdempotencyKey" />
+    <div class="card">
+        <div class="card-header bg-transparent js-wizard-only">
+            <div class="d-flex justify-content-between gap-2 small text-muted mb-1">
+                <span class="js-step-counter" aria-live="polite"></span>
+            </div>
+            <div class="progress" role="progressbar" aria-label="Progress through the request" aria-valuemin="0" aria-valuemax="100">
+                <div class="progress-bar js-step-bar"></div>
+            </div>
+        </div>
+        <div class="card-body p-3 p-md-4">
+            @foreach (var q in asked)
+            {
+                var key = q.Id.ToString("N");
+                var name = $"Answers[{q.Id}].Value";
+                var answer = Model.AnswerFor(q.Id);
+                var error = Model.Errors.GetValueOrDefault(q.Id);
+                var describedBy = string.Join(' ', new[] { q.HelpText is null ? null : $"help-{key}", $"error-{key}" }.OfType<string>());
+                <fieldset class="request-question js-step" id="step-@key" data-has-error="@(error is null ? null : "true")"
+                          data-asset-required="@(q.QuestionType == RequestQuestionType.Asset && q.IsRequired ? "true" : null)">
+                    <legend tabindex="-1">
+                        @q.Prompt
+                        @if (!q.IsRequired) { <span class="text-muted fw-normal fs-6">(optional)</span> }
+                    </legend>
+                    @if (q.HelpText is not null)
+                    {
+                        <p class="text-muted mb-3" id="help-@key">@q.HelpText</p>
+                    }
+                    @switch (q.QuestionType)
+                    {
+                        case RequestQuestionType.Number:
+                            <input type="number" step="any" inputmode="decimal" class="form-control" style="max-width: 14rem" id="q-@key" name="@name"
+                                   value="@answer.Value" required="@q.IsRequired" aria-describedby="@describedBy" aria-label="@q.Prompt" />
+                            break;
+                        case RequestQuestionType.Date:
+                            <input type="date" class="form-control" style="max-width: 14rem" id="q-@key" name="@name" value="@answer.Value"
+                                   min="@(q.SetsDueDate ? today : null)" required="@q.IsRequired" aria-describedby="@describedBy" aria-label="@q.Prompt" />
+                            @if (q.SetsDueDate)
+                            {
+                                <div class="form-text">The request will be due on this date.</div>
+                            }
+                            break;
+                        case RequestQuestionType.Urgency:
+                            <div class="request-choices">
+                                @foreach (var p in Enum.GetValues<TaskPriority>())
+                                {
+                                    var rid = $"q-{key}-{p}";
+                                    <input type="radio" class="btn-check" name="@name" id="@rid" value="@p" autocomplete="off"
+                                           checked="@(answer.Value == p.ToString())" required="@q.IsRequired" aria-describedby="@describedBy" />
+                                    <label class="btn btn-outline-secondary request-urgency-@p.ToString().ToLowerInvariant()" for="@rid">
+                                        <span class="fw-semibold js-choice-label">@p</span>
+                                        <span class="small js-choice-detail">@RequestRules.UrgencyMeaning(p)</span>
+                                    </label>
+                                }
+                            </div>
+                            break;
+                        case RequestQuestionType.Choice when q.Choices.Count <= RequestRules.ChoiceButtonsUpTo:
+                            <div class="request-choices @(q.Choices.Count > 2 ? "request-choices-2" : "")">
+                                @for (var i = 0; i < q.Choices.Count; i++)
+                                {
+                                    var rid = $"q-{key}-{i}";
+                                    <input type="radio" class="btn-check" name="@name" id="@rid" value="@q.Choices[i]" autocomplete="off"
+                                           checked="@(string.Equals(answer.Value, q.Choices[i], StringComparison.OrdinalIgnoreCase))" required="@q.IsRequired" aria-describedby="@describedBy" />
+                                    <label class="btn btn-outline-secondary" for="@rid"><span class="js-choice-label">@q.Choices[i]</span></label>
+                                }
+                            </div>
+                            break;
+                        case RequestQuestionType.Choice:
+                            <select class="form-select" style="max-width: 28rem" id="q-@key" name="@name" required="@q.IsRequired" aria-describedby="@describedBy" aria-label="@q.Prompt">
+                                <option value="">Choose...</option>
+                                @foreach (var choice in q.Choices)
+                                {
+                                    <option value="@choice" selected="@(string.Equals(answer.Value, choice, StringComparison.OrdinalIgnoreCase))">@choice</option>
+                                }
+                            </select>
+                            break;
+                        case RequestQuestionType.User:
+                            // The person logging it first, and chosen until they pick someone else.
+                            var forId = Guid.TryParse(answer.Value, out var posted) ? posted : Model.MyId;
+                            if (Model.People.Count <= RequestRules.ChoiceButtonsUpTo)
+                            {
+                                <div class="request-choices @(Model.People.Count > 1 ? "request-choices-2" : "")">
+                                    @foreach (var person in Model.People)
+                                    {
+                                        var rid = $"q-{key}-{person.Id:N}";
+                                        <input type="radio" class="btn-check" name="@name" id="@rid" value="@person.Id" autocomplete="off"
+                                               checked="@(person.Id == forId)" required="@q.IsRequired" aria-describedby="@describedBy" />
+                                        <label class="btn btn-outline-secondary" for="@rid">
+                                            <span class="fw-semibold js-choice-label">@person.Name@(person.Id == Model.MyId ? " (you)" : "")</span>
+                                            <span class="small js-choice-detail">@person.Email</span>
+                                        </label>
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <select class="form-select" style="max-width: 28rem" id="q-@key" name="@name" required="@q.IsRequired" aria-describedby="@describedBy" aria-label="@q.Prompt">
+                                    <option value="">Choose...</option>
+                                    @foreach (var person in Model.People)
+                                    {
+                                        <option value="@person.Id" selected="@(person.Id == forId)">@person.Name@(person.Id == Model.MyId ? " (you)" : "")@(person.Email is null ? "" : $" - {person.Email}")</option>
+                                    }
+                                </select>
+                            }
+                            break;
+                        case RequestQuestionType.Asset when held.Count > 0:
+                            // After a refused post, the card chosen: an asset still listed, or "Something else" when only a description came back.
+                            var pickedId = answer.AssetId is Guid pa && held.Any(h => h.Id == pa) ? pa : (Guid?)null;
+                            <div class="request-choices @(held.Count > 1 ? "request-choices-2" : "")">
+                                @foreach (var h in held)
+                                {
+                                    var rid = $"q-{key}-{h.Id:N}";
+                                    <input type="radio" class="btn-check js-asset-choice" name="Answers[@q.Id].AssetId" id="@rid" value="@h.Id" autocomplete="off"
+                                           checked="@(h.Id == pickedId)" aria-describedby="@describedBy" />
+                                    <label class="btn btn-outline-secondary" for="@rid">
+                                        <span class="fw-semibold js-choice-label">@AssetRules.Label(h.AssetNumber, h.Name)</span>
+                                        <span class="small js-choice-detail">@AssetDetail(h)</span>
+                                    </label>
+                                }
+                                <input type="radio" class="btn-check js-asset-choice" name="Answers[@q.Id].AssetId" id="q-@(key)-other" value="" data-describe="true"
+                                       autocomplete="off" checked="@(pickedId is null && !string.IsNullOrEmpty(answer.Value))" aria-describedby="@describedBy" />
+                                <label class="btn btn-outline-secondary request-choice-other" for="q-@(key)-other">
+                                    <span class="fw-semibold js-choice-label">Something else</span>
+                                    <span class="small js-choice-detail">Not one of yours, or not listed: describe it</span>
+                                </label>
+                            </div>
+                            <div class="mt-3 js-asset-describe">
+                                <label class="form-label small text-muted mb-1" for="q-@key">Describe it: its name, asset number or where it is</label>
+                                <input type="text" class="form-control js-asset-text" id="q-@key" name="@name" value="@answer.Value"
+                                       maxlength="@RequestRules.MaxAssetTextLength" aria-describedby="@describedBy" />
+                            </div>
+                            break;
+                        case RequestQuestionType.Asset:
+                            <p class="small text-muted mb-2">You don't have any assets assigned to you, so describe the one you mean.</p>
+                            <label class="form-label small text-muted mb-1" for="q-@key">Its name, asset number or where it is</label>
+                            <input type="text" class="form-control js-asset-text" id="q-@key" name="@name" value="@answer.Value"
+                                   maxlength="@RequestRules.MaxAssetTextLength" aria-describedby="@describedBy" />
+                            break;
+                        default:
+                            <textarea class="form-control" id="q-@key" name="@name" rows="4" maxlength="@RequestRules.MaxTextAnswerLength"
+                                      required="@q.IsRequired" aria-describedby="@describedBy" aria-label="@q.Prompt">@answer.Value</textarea>
+                            break;
+                    }
+                    <div class="text-danger small mt-2 js-step-error" id="error-@key">@error</div>
+                </fieldset>
+            }
+
+            @if (o.AllowAttachments)
+            {
+                <fieldset class="request-question js-step" id="step-files" data-files="true">
+                    <legend tabindex="-1">Anything to attach? <span class="text-muted fw-normal fs-6">(optional)</span></legend>
+                    <p class="text-muted mb-3" id="help-files">
+                        Screenshots, photos or documents that help explain. Up to @limits.MaxFilesPerUpload files, @limits.MaxFileSizeMb MB each.
+                    </p>
+                    @if (Model.FilesDropped)
+                    {
+                        <div class="alert alert-warning py-2 small">Choose your files again: they can't be kept while the answers are checked.</div>
+                    }
+                    <input type="file" class="form-control js-files" name="files" multiple aria-describedby="help-files error-files" aria-label="Files to attach" />
+                    <div class="text-danger small mt-2 js-step-error" id="error-files"></div>
+                </fieldset>
+            }
+
+            <section class="js-review-step js-wizard-only" aria-labelledby="review-heading" hidden>
+                <h2 class="h5" id="review-heading" tabindex="-1">Check your request</h2>
+                <p class="text-muted small">
+                    It goes to <strong>@c.Department.Name</strong> as a new task. You can follow it under <em>Your requests</em> on the Requests page.
+                </p>
+                @foreach (var q in skipped)
+                {
+                    <dl class="request-review mb-0">
+                        <dt>@q.Prompt</dt>
+                        <dd>@Model.MyName (you)</dd>
+                    </dl>
+                }
+                <dl class="request-review js-review mb-0"></dl>
+            </section>
+        </div>
+        <div class="card-footer bg-transparent d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-outline-secondary js-back js-wizard-only">Back</button>
+            <button type="button" class="btn btn-primary ms-auto js-next js-wizard-only">Next</button>
+            <button type="submit" class="btn btn-success ms-auto js-submit">Log request</button>
+        </div>
+    </div>
+</form>
+
+@section Scripts {
+    <script src="~/js/requests.js" asp-append-version="true"></script>
+}

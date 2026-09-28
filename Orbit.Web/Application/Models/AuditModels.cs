@@ -18,6 +18,9 @@ public static class AuditEntity
     public const string Asset = "Asset";
     public const string AssetType = "AssetType";
     public const string AssetLocation = "AssetLocation";
+    /// <summary>Request flows (spec §6.20): a category, and an option with its questions.</summary>
+    public const string RequestCategory = "RequestCategory";
+    public const string RequestOption = "RequestOption";
 }
 
 public static class AuditAction

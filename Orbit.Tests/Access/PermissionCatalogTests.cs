@@ -17,7 +17,7 @@ public class PermissionCatalogTests
     {
         var keys = PermissionCatalog.All.Select(p => p.Key).ToList();
         Assert.Equal(Constants.OrderBy(k => k), keys.OrderBy(k => k));
-        Assert.Equal(24, keys.Count);
+        Assert.Equal(26, keys.Count);
     }
 
     [Fact]
@@ -81,6 +81,20 @@ public class PermissionCatalogTests
         });
         // Types and locations belong to departments, so nothing about assets opens the Admin menu.
         Assert.DoesNotContain(PermissionCatalog.AdminPermissions, k => k.StartsWith("assets."));
+    }
+
+    /// <summary>REQ-007: logging requests is for yourself or your department; configuring flows is a department's, or every department's.</summary>
+    [Fact]
+    public void Request_permissions_allow_the_scopes_the_spec_gives_them()
+    {
+        Assert.Equal(new[] { PermissionScope.Own, PermissionScope.Department }, PermissionCatalog.ByKey[Permission.RequestsSubmit].AllowedScopes);
+        Assert.Equal(new[] { PermissionScope.Department, PermissionScope.All }, PermissionCatalog.ByKey[Permission.RequestsConfigure].AllowedScopes);
+        Assert.All(PermissionCatalog.All.Where(p => p.Key.StartsWith("requests.")), p =>
+        {
+            Assert.Equal(PermissionCatalog.RequestsGroup, p.Group);
+            Assert.False(p.SystemAdministratorOnly, p.Key);
+        });
+        Assert.DoesNotContain(PermissionCatalog.AdminPermissions, k => k.StartsWith("requests."));
     }
 
     [Fact]

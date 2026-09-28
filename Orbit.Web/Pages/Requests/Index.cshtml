@@ -1,0 +1,116 @@
+@page
+@model Orbit.Pages.Requests.IndexModel
+@{
+    ViewData["Title"] = "Requests";
+    // Department headings only help once more than one department offers requests.
+    var byDepartment = Model.Sections.Count > 1;
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div>
+        <h1 class="h3 mb-1">Log a request</h1>
+        <div class="text-muted">Choose what you need. A few questions follow, and your request goes to the team that handles it.</div>
+    </div>
+    @if (Model.CanConfigure)
+    {
+        <a class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1" asp-page="/RequestCatalogue/Index">@RequestIcons.Svg("gear", 14) Configure</a>
+    }
+</div>
+
+<partial name="_Steps" model="1" />
+
+@if (Model.Sections.Count == 0)
+{
+    <div class="card mb-4">
+        <div class="card-body text-center py-5">
+            <div class="text-muted mb-2">@RequestIcons.Svg("chat", 32)</div>
+            <p class="mb-1 fw-semibold">Nothing to request yet.</p>
+            <p class="text-muted mb-0">
+                No department has set up its requests.
+                @if (Model.CanConfigure) { <text>Use <a asp-page="/RequestCatalogue/Index">Configure</a> to add your department's, or start from the example.</text> }
+            </p>
+        </div>
+    </div>
+}
+
+@foreach (var block in Model.Sections)
+{
+    @if (byDepartment)
+    {
+        <h2 class="h5 mt-2 mb-3">@block.Department.Name</h2>
+    }
+    <div class="row g-3 mb-4">
+        @foreach (var c in block.Categories)
+        {
+            <div class="col-12 col-sm-6 col-xl-3">
+                <a class="request-tile @RequestIcons.ColourClass(c.Colour)" asp-page="/Requests/Category" asp-route-id="@c.Id">
+                    <span class="request-icon">@RequestIcons.Svg(c.Icon, 32)</span>
+                    <span class="request-tile-title">@c.Title</span>
+                    @if (!string.IsNullOrWhiteSpace(c.Description))
+                    {
+                        <span class="request-tile-text">@c.Description</span>
+                    }
+                    <span class="request-go">@RequestIcons.Svg("arrow-right", 18)</span>
+                </a>
+            </div>
+        }
+    </div>
+}
+
+<div class="card">
+    <div class="card-header fw-semibold">Your requests</div>
+    @if (Model.Mine.Count == 0)
+    {
+        <div class="card-body text-muted fst-italic">You haven't logged any requests yet.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Request</th>
+                        <th class="d-none d-md-table-cell">With</th>
+                        <th>Status</th>
+                        <th class="d-none d-sm-table-cell">Logged</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in Model.Mine)
+                    {
+                        var t = r.Task;
+                        <tr>
+                            <td>
+                                <span class="font-monospace text-muted small me-1">@t.Number</span>
+                                @if (r.CanOpen)
+                                {
+                                    <a asp-page="/Tasks/Details" asp-route-id="@t.Id" class="text-decoration-none">@t.Title</a>
+                                }
+                                else
+                                {
+                                    @t.Title
+                                }
+                                @if (t.CreatedById != Model.MeId && t.CreatedBy is not null)
+                                {
+                                    <div class="small text-muted">Logged for you by @t.CreatedBy.DisplayName</div>
+                                }
+                                else if (t.RequestedFor is not null && t.RequestedForId != Model.MeId)
+                                {
+                                    <div class="small text-muted">For @t.RequestedFor.DisplayName</div>
+                                }
+                                <div class="small text-muted d-md-none">@t.Department.Name</div>
+                            </td>
+                            <td class="d-none d-md-table-cell">@t.Department.Name</td>
+                            <td><span class="badge @Ui.StatusBadge(t.Status)">@t.Status.Label()</span></td>
+                            <td class="d-none d-sm-table-cell text-nowrap small" title="@Ui.When(t.CreatedAt)">@Ui.Ago(t.CreatedAt)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (Model.Mine.Count == Orbit.Pages.Requests.IndexModel.MyRequestsShown)
+        {
+            <div class="card-footer small text-muted">Showing @Orbit.Pages.Requests.IndexModel.MyRequestsShown: your open requests first, then the most recent.</div>
+        }
+    }
+</div>

@@ -122,6 +122,18 @@ public class DefaultRolesTests
         Assert.True(AccessPolicy.CanAttachToProject(SysAdmin, Project(Marketing)));
     }
 
+    /// <summary>REQ-007: both shipped roles log requests with any department; a Department Admin also runs the department's request flows.</summary>
+    [Fact]
+    public void Requests_logged_by_everyone_configured_by_department_admins()
+    {
+        Assert.True(AccessPolicy.CanSubmitRequests(Member));
+        Assert.True(AccessPolicy.CanSubmitRequests(DeptAdmin));
+        Assert.False(AccessPolicy.CanConfigureRequestsIn(Member, It));
+        Assert.True(AccessPolicy.CanConfigureRequestsIn(DeptAdmin, It));
+        Assert.False(AccessPolicy.CanConfigureRequestsIn(DeptAdmin, Marketing));
+        Assert.True(AccessPolicy.CanConfigureRequestsIn(SysAdmin, Marketing));
+    }
+
     [Fact]
     public void Organisation_level_permissions_are_system_admin_only_by_default()
     {

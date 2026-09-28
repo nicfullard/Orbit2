@@ -100,6 +100,18 @@ public static class Scoping
         };
     }
 
+    /// <summary>Request categories the actor may configure (<c>requests.configure</c>, §6.20): their department's, or every department's at All.</summary>
+    public static IQueryable<RequestCategory> RequestCategories(IQueryable<RequestCategory> q, Actor actor)
+    {
+        var dept = actor.DepartmentId;
+        return actor.ScopeOf(Permission.RequestsConfigure) switch
+        {
+            PermissionScope.All => q,
+            PermissionScope.Department => q.Where(c => c.DepartmentId == dept),
+            _ => q.Where(c => false)
+        };
+    }
+
     /// <summary>Audit entries the actor may read (<c>audit.view</c>): All, or the actor's own department's.</summary>
     public static IQueryable<AuditLog> Audit(IQueryable<AuditLog> q, Actor actor)
     {

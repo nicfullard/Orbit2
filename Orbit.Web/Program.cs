@@ -119,6 +119,9 @@ builder.Services.AddRazorPages(options =>
         options.Conventions.AuthorizePage("/Assets/Edit", Policies.Permission(Permission.AssetsEdit));
         options.Conventions.AuthorizeFolder("/AssetTypes", Policies.Permission(Permission.AssetsConfigure));
         options.Conventions.AuthorizeFolder("/AssetLocations", Policies.Permission(Permission.AssetsConfigure));
+        // Requests (§6.20): logging them, and configuring the flows - separate folders, so the two doors don't stack.
+        options.Conventions.AuthorizeFolder("/Requests", Policies.Permission(Permission.RequestsSubmit));
+        options.Conventions.AuthorizeFolder("/RequestCatalogue", Policies.Permission(Permission.RequestsConfigure));
     })
     .AddMvcOptions(o =>
     {
@@ -157,6 +160,8 @@ builder.Services.AddScoped<CriticalPathService>();
 builder.Services.AddScoped<AssetService>();
 builder.Services.AddScoped<AssetTypeService>();
 builder.Services.AddScoped<AssetLocationService>();
+builder.Services.AddScoped<RequestCatalogueService>();
+builder.Services.AddScoped<RequestService>();
 builder.Services.AddTransient<IEmailSender, LoggingEmailSender>();
 
 // --- MCP server (Streamable HTTP, stateless) ----------------------------------------------

@@ -156,6 +156,30 @@ public static class AccessPolicy
     /// <summary>An asset's location, when set, is always one of its managing department's locations.</summary>
     public static bool CanUseAssetLocation(Guid assetDepartmentId, AssetLocation location) => location.DepartmentId == assetDepartmentId;
 
+    // ---------------------------------------------------------------- requests (§6.20)
+
+    /// <summary>
+    /// Logging a request through any department's request flows: requests.submit at any scope. It files a task in the flow's
+    /// department without tasks.create there - the flow, not the requester, decides what is filed - so a Member can ask another
+    /// department for help.
+    /// </summary>
+    public static bool CanSubmitRequests(Actor a) => a.UserId is not null && a.ScopeOf(Permission.RequestsSubmit) >= PermissionScope.Own;
+
+    /// <summary>Logging requests for other people (requests.submit above Own): a flow's User question is asked rather than answered as you.</summary>
+    public static bool CanRequestForOthers(Actor a) => CanSubmitRequests(a) && a.ScopeOf(Permission.RequestsSubmit) >= PermissionScope.Department;
+
+    /// <summary>
+    /// Whom a request may be logged for (a flow's User question): yourself at Own; anyone in your department at Department; anyone
+    /// at All (the built-in role). The scope reaches the person's home department, not the flow's.
+    /// </summary>
+    public static bool CanRequestFor(Actor a, Guid userId, Guid? userDepartmentId) =>
+        CanSubmitRequests(a) &&
+        (userId == a.UserId || a.CanAnywhere(Permission.RequestsSubmit)
+            || (userDepartmentId is Guid d && a.CanInDepartment(Permission.RequestsSubmit, d)));
+
+    /// <summary>A department's request categories, options and questions: requests.configure reaching that department.</summary>
+    public static bool CanConfigureRequestsIn(Actor a, Guid departmentId) => a.CanInDepartment(Permission.RequestsConfigure, departmentId);
+
     public static bool CanManageUsers(Actor a) => a.CanAnywhere(Permission.UsersManage);
     public static bool CanManageRoles(Actor a) => a.CanAnywhere(Permission.RolesManage);
     public static bool CanManageApiKeys(Actor a) => a.CanAnywhere(Permission.ApiKeysManage);

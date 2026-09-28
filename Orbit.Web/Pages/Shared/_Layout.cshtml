@@ -59,6 +59,14 @@
                             {
                                 <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Assets/Index">Assets</a></li>
                             }
+                            @if (actor is not null && AccessPolicy.CanSubmitRequests(actor))
+                            {
+                                <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Requests/Index">Requests</a></li>
+                            }
+                            else if (actor is not null && actor.Has(Permission.RequestsConfigure))
+                            {
+                                <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/RequestCatalogue/Index">Requests</a></li>
+                            }
                             @if (actor is not null && AccessPolicy.CanViewReports(actor))
                             {
                                 <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Reports/Index">Reports</a></li>

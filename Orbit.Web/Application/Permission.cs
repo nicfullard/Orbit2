@@ -30,6 +30,8 @@ public static class Permission
     public const string AssetsEdit = "assets.edit";
     public const string AssetsCheck = "assets.check";
     public const string AssetsConfigure = "assets.configure";
+    public const string RequestsSubmit = "requests.submit";
+    public const string RequestsConfigure = "requests.configure";
 }
 
 /// <summary>

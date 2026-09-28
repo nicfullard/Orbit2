@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Orbit.Data;
@@ -12,9 +13,11 @@ using Orbit.Data;
 namespace Orbit.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260928073628_AddRequests")]
+    partial class AddRequests
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1497,9 +1500,6 @@ namespace Orbit.Migrations
                     b.Property<Guid?>("RecurringTaskDefinitionId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("RequestedForId")
-                        .HasColumnType("uuid");
-
                     b.Property<string>("Source")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -1553,8 +1553,6 @@ namespace Orbit.Migrations
                     b.HasIndex("PlannedFor");
 
                     b.HasIndex("ProjectId");
-
-                    b.HasIndex("RequestedForId");
 
                     b.HasIndex("SprintId");
 
@@ -2155,11 +2153,6 @@ namespace Orbit.Migrations
                         .HasForeignKey("RecurringTaskDefinitionId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("Orbit.Data.Entities.ApplicationUser", "RequestedFor")
-                        .WithMany()
-                        .HasForeignKey("RequestedForId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("Orbit.Data.Entities.Sprint", "Sprint")
                         .WithMany("Tasks")
                         .HasForeignKey("SprintId")
@@ -2178,8 +2171,6 @@ namespace Orbit.Migrations
                     b.Navigation("Project");
 
                     b.Navigation("RecurringTaskDefinition");
-
-                    b.Navigation("RequestedFor");
 
                     b.Navigation("Sprint");
                 });

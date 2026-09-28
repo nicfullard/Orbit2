@@ -52,6 +52,38 @@ public sealed class AttachmentService(
         return attachment;
     }
 
+    /// <summary>
+    /// A file a requester attached while logging a request (§6.20), added to the task the request has just filed. Authorised by
+    /// requests.submit, which <c>RequestService</c> checked, rather than by viewing the task: the requester created it a moment ago in
+    /// the same transaction, and their tasks.view may not reach it. Only the task's own creator, for a request task.
+    /// </summary>
+    public async Task<Attachment> AddToLoggedRequestAsync(TaskItem task, AttachmentUpload upload, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        AccessPolicy.Require(AccessPolicy.CanSubmitRequests(actor) && task.Source == TaskSource.Request && task.CreatedById == actor.UserId,
+            "Files can only be attached to a request by the person logging it.");
+        var attachment = await StoreAsync(actor, upload, a => a.TaskId = task.Id, ct);
+        task.UpdatedAt = attachment.UploadedAt;
+        audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.AttachmentAdded, task.DepartmentId, task.Title, Details(attachment));
+        await CommitAsync(attachment, ct);
+        return attachment;
+    }
+
+    /// <summary>
+    /// Check a batch of files against the limits (§6.18) before anything is saved: how many, and each one's declared size. A file is
+    /// read and checked again when it is stored.
+    /// </summary>
+    public void CheckUploads(IReadOnlyCollection<AttachmentUpload> uploads)
+    {
+        if (uploads.Count > Limits.MaxFilesPerUpload) throw new ValidationException($"At most {Limits.MaxFilesPerUpload} files can be attached.");
+        foreach (var upload in uploads)
+        {
+            var name = CleanFileName(upload.FileName);
+            if (upload.SizeBytes <= 0) throw new ValidationException($"\"{name}\" is empty.");
+            if (upload.SizeBytes > Limits.MaxFileSizeBytes) throw TooLarge(name);
+        }
+    }
+
     public async Task<Attachment> AddToProjectAsync(Guid projectId, AttachmentUpload upload, CancellationToken ct = default)
     {
         var actor = await actors.GetAsync(ct);

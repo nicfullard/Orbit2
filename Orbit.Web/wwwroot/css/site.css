@@ -397,3 +397,172 @@ body {
 .person-picker-results .list-group-item {
   cursor: pointer;
 }
+
+/* Requests (spec §6.20). A category's colour sets --request-accent (text-safe on the surface in either theme); the soft tint behind
+   its icons is mixed from it. Tiles and option cards lift a little on hover, not at all under reduced motion. */
+.request-colour-blue { --request-accent: #1864ab; }
+.request-colour-red { --request-accent: #c92a2a; }
+.request-colour-orange { --request-accent: #b35300; }
+.request-colour-green { --request-accent: #2b8a3e; }
+.request-colour-purple { --request-accent: #6741d9; }
+.request-colour-teal { --request-accent: #0b7285; }
+.request-colour-grey { --request-accent: #495057; }
+[data-bs-theme="dark"] .request-colour-blue { --request-accent: #74c0fc; }
+[data-bs-theme="dark"] .request-colour-red { --request-accent: #ff8787; }
+[data-bs-theme="dark"] .request-colour-orange { --request-accent: #ffa94d; }
+[data-bs-theme="dark"] .request-colour-green { --request-accent: #69db7c; }
+[data-bs-theme="dark"] .request-colour-purple { --request-accent: #b197fc; }
+[data-bs-theme="dark"] .request-colour-teal { --request-accent: #66d9e8; }
+[data-bs-theme="dark"] .request-colour-grey { --request-accent: #ced4da; }
+[class*="request-colour-"] { --request-soft: color-mix(in srgb, var(--request-accent) 12%, var(--orbit-surface-bg)); }
+[data-bs-theme="dark"] [class*="request-colour-"] { --request-soft: color-mix(in srgb, var(--request-accent) 20%, var(--orbit-surface-bg)); }
+
+.request-tile,
+.request-option {
+  color: inherit;
+  text-decoration: none;
+  background: var(--orbit-surface-bg);
+  border: 1px solid var(--orbit-surface-border);
+  border-radius: .75rem;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+.request-tile:hover,
+.request-option:hover {
+  color: inherit;
+  transform: translateY(-3px);
+  box-shadow: 0 .6rem 1.25rem rgba(0, 0, 0, .08);
+}
+[data-bs-theme="dark"] .request-tile:hover,
+[data-bs-theme="dark"] .request-option:hover { box-shadow: 0 .6rem 1.25rem rgba(0, 0, 0, .35); }
+.request-tile:focus-visible,
+.request-option:focus-visible { outline: 2px solid var(--request-accent); outline-offset: 2px; }
+.request-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  height: 100%;
+  padding: 1.75rem 1.25rem 1.25rem;
+  border-bottom: 3px solid var(--request-accent);
+}
+.request-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: 50%;
+  background: var(--request-soft);
+  color: var(--request-accent);
+}
+.request-tile .request-icon { margin-bottom: 1rem; }
+.request-icon-sm { width: 3.25rem; height: 3.25rem; }
+.request-tile-title { color: var(--request-accent); font-weight: 700; font-size: 1.15rem; margin-bottom: .4rem; }
+.request-tile-text { color: var(--bs-secondary-color); margin-bottom: 1rem; }
+.request-go {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  background: var(--request-soft);
+  color: var(--request-accent);
+}
+.request-tile .request-go { margin-top: auto; }
+.request-option {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  height: 100%;
+  padding: 1rem 1.25rem;
+}
+.request-option:hover { border-color: var(--request-accent); }
+.request-option-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: .6rem;
+  background: var(--request-soft);
+  color: var(--request-accent);
+}
+.request-option-title { font-weight: 600; }
+.request-option .request-go { margin-left: auto; }
+@media (prefers-reduced-motion: reduce) {
+  .request-tile, .request-option { transition: none; }
+  .request-tile:hover, .request-option:hover { transform: none; }
+}
+
+/* The three steps of logging a request: numbered, the current one filled, the ones behind it ticked. */
+.request-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem 1rem;
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1.25rem;
+  font-size: .85rem;
+  color: var(--bs-secondary-color);
+}
+.request-steps li { display: flex; align-items: center; gap: .45rem; }
+.request-steps .request-step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  border: 1px solid var(--orbit-surface-border);
+  background: var(--orbit-surface-bg);
+  font-weight: 600;
+  font-size: .75rem;
+}
+.request-steps .is-current { color: var(--bs-body-color); font-weight: 600; }
+.request-steps .is-current .request-step-number { background: var(--bs-primary); border-color: var(--bs-primary); color: #fff; }
+.request-steps .is-done .request-step-number { background: var(--bs-success-bg-subtle); border-color: var(--bs-success-border-subtle); color: var(--bs-success-text-emphasis); }
+
+/* The flow: one question at a time once requests.js takes over; without it every question shows and one button logs the request. */
+.request-flow { max-width: 46rem; }
+.request-flow:not(.is-wizard) .js-wizard-only { display: none !important; }
+.request-flow.is-wizard .js-no-wizard { display: none !important; }
+.request-flow:not(.is-wizard) .request-question + .request-question { border-top: 1px solid var(--orbit-surface-border); padding-top: 1.5rem; margin-top: 1.5rem; }
+.request-question { min-width: 0; }
+.request-question legend { float: none; font-size: 1.3rem; font-weight: 600; margin-bottom: .35rem; }
+.request-question legend:focus { outline: none; }
+.request-choices { display: grid; gap: .5rem; }
+@media (min-width: 576px) { .request-choices-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Answer buttons read as body text (the outline-secondary grey is too faint on a dark page); the chosen one is tinted. */
+.request-choices .btn {
+  --bs-btn-color: var(--bs-body-color);
+  --bs-btn-border-color: var(--orbit-surface-border);
+  --bs-btn-hover-color: var(--bs-body-color);
+  --bs-btn-hover-bg: var(--orbit-well-bg);
+  --bs-btn-hover-border-color: var(--bs-secondary-color);
+  --bs-btn-active-color: var(--bs-body-color);
+  --bs-btn-active-bg: var(--bs-primary-bg-subtle);
+  --bs-btn-active-border-color: var(--bs-primary);
+  text-align: left;
+  padding: .65rem 1rem;
+  white-space: normal;
+}
+.request-choices .btn-check:checked + .btn { box-shadow: inset 0 0 0 1px var(--bs-primary); }
+.request-choices .request-choice-other { border-style: dashed; }
+.request-choices .btn .small { display: block; font-weight: normal; color: var(--bs-secondary-color); }
+.request-urgency-low { border-left: 4px solid var(--bs-secondary-border-subtle) !important; }
+.request-urgency-medium { border-left: 4px solid var(--bs-info) !important; }
+.request-urgency-high { border-left: 4px solid var(--bs-warning) !important; }
+.request-urgency-critical { border-left: 4px solid var(--bs-danger) !important; }
+.request-review dt { font-weight: 600; }
+.request-review dd { white-space: pre-wrap; margin-bottom: .9rem; }
+.request-review .btn-link { padding: 0; font-size: .85rem; vertical-align: baseline; }
+.request-done-icon { color: var(--bs-success); }
+
+/* Configuring request flows: the icon and colour pickers are radio buttons drawn as tiles and swatches. */
+.request-icon-picker { display: flex; flex-wrap: wrap; gap: .35rem; }
+.request-icon-picker .btn { display: inline-flex; align-items: center; justify-content: center; width: 2.5rem; height: 2.5rem; padding: 0; }
+.request-swatch { display: inline-block; width: .9rem; height: .9rem; border-radius: 50%; background: var(--request-accent); vertical-align: -.1em; }

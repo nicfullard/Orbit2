@@ -40,6 +40,7 @@ public static class Ui
     {
         TaskSource.Api => "badge-claude",
         TaskSource.Recurring => "text-bg-light border",
+        TaskSource.Request => "bg-info-subtle text-info-emphasis border",
         _ => "text-bg-light border"
     };
 
@@ -47,6 +48,7 @@ public static class Ui
     {
         TaskSource.Api => "Claude",
         TaskSource.Recurring => "Recurring",
+        TaskSource.Request => "Request",
         _ => "Manual"
     };
 

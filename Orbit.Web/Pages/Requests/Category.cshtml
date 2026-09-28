@@ -1,0 +1,66 @@
+@page "{id:guid}"
+@model Orbit.Pages.Requests.CategoryModel
+@{
+    var c = Model.Category;
+    ViewData["Title"] = c.Title;
+    var colour = RequestIcons.ColourClass(c.Colour);
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Requests/Index">Requests</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@c.Title</li>
+    </ol>
+</nav>
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div class="d-flex align-items-center gap-3 @colour">
+        <span class="request-icon request-icon-sm">@RequestIcons.Svg(c.Icon, 24)</span>
+        <div>
+            <h1 class="h3 mb-0">@c.Title</h1>
+            <div class="text-muted">
+                @if (!string.IsNullOrWhiteSpace(c.Description)) { @c.Description <text> · </text> }
+                Handled by @c.Department.Name
+            </div>
+        </div>
+    </div>
+    @if (Model.CanConfigure)
+    {
+        <a class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1" asp-page="/RequestCatalogue/Category" asp-route-id="@c.Id">@RequestIcons.Svg("gear", 14) Configure</a>
+    }
+</div>
+
+<partial name="_Steps" model="1" />
+
+<div class="row g-3 mb-3">
+    @foreach (var o in c.Options)
+    {
+        <div class="col-12 col-lg-6">
+            @if (o.Kind == RequestOptionKind.Link)
+            {
+                <a class="request-option @colour" href="@o.Url" target="_blank" rel="noopener noreferrer">
+                    <span class="request-option-icon">@RequestIcons.Svg(c.Icon, 20)</span>
+                    <span>
+                        <span class="request-option-title d-block">@o.Title</span>
+                        @if (!string.IsNullOrWhiteSpace(o.Description)) { <span class="small text-muted d-block">@o.Description</span> }
+                        <span class="visually-hidden">(opens in a new tab)</span>
+                    </span>
+                    <span class="request-go" title="Opens in a new tab">@RequestIcons.Svg("external", 14)</span>
+                </a>
+            }
+            else
+            {
+                <a class="request-option @colour" asp-page="/Requests/Flow" asp-route-id="@o.Id">
+                    <span class="request-option-icon">@RequestIcons.Svg(c.Icon, 20)</span>
+                    <span>
+                        <span class="request-option-title d-block">@o.Title</span>
+                        @if (!string.IsNullOrWhiteSpace(o.Description)) { <span class="small text-muted d-block">@o.Description</span> }
+                    </span>
+                    <span class="request-go">@RequestIcons.Svg("arrow-right", 16)</span>
+                </a>
+            }
+        </div>
+    }
+</div>
+
+<a asp-page="/Requests/Index" class="small">&larr; Back to all requests</a>
