@@ -11,7 +11,7 @@ public class IndexModel(RequestService requests, IActorProvider actors) : OrbitP
 
     public IReadOnlyList<RequestCatalogueSection> Sections { get; private set; } = [];
     public IReadOnlyList<MyRequest> Mine { get; private set; } = [];
-    /// <summary>The Configure button: requests.configure at any scope opens the catalogue pages, which show what is within reach.</summary>
+    /// <summary>requests.configure at any scope: an empty page points to Admin > Request flows.</summary>
     public bool CanConfigure { get; private set; }
     /// <summary>The viewer, so a request logged by or for someone else can say so.</summary>
     public Guid? MeId { get; private set; }

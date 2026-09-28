@@ -15,6 +15,10 @@ public sealed class DashboardModel
     public bool IsCompanyTier => Tier == PermissionScope.All;
     /// <summary>Department or company tier: the widgets that go beyond the viewer's own work.</summary>
     public bool ShowsOthersWork => Tier >= PermissionScope.Department;
+    /// <summary>tasks.view at any scope; without it the dashboard has no task widgets, only where to go instead.</summary>
+    public bool SeesTasks => Tier > PermissionScope.None;
+    /// <summary>tasks.edit at Own or wider: the widgets about the viewer's own work (My open tasks, Today's plan) need it.</summary>
+    public bool CanEditTasks { get; init; }
     public required DateOnly Today { get; init; }
     public string? DepartmentName { get; init; }
 

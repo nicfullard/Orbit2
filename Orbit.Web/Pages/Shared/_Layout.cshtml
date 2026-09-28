@@ -25,14 +25,15 @@
 <body>
     @{
         var signedIn = User.Identity?.IsAuthenticated == true;
-        // The navbar follows the actor's grants, read from the database per request - never the cookie's role claim,
-        // which can lag a role edit. A deactivated account gets no menu at all.
+        // The navbar follows the actor's grants (Navigation, spec §6.5), read from the database per request - never the cookie's
+        // role claim, which can lag a role edit. A deactivated account gets no menu at all.
         Actor? actor = null;
         if (signedIn)
         {
             try { actor = await Actors.GetAsync(); } catch (ForbiddenException) { }
         }
-        var showAdmin = actor is not null && PermissionCatalog.AdminPermissions.Any(actor.Has);
+        var menu = actor is null ? [] : Navigation.Visible(actor);
+        var adminMenu = actor is null ? [] : Navigation.AdminVisible(actor);
     }
     <header>
         <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-3">
@@ -44,49 +45,21 @@
                 </button>
                 <div class="navbar-collapse collapse d-lg-inline-flex justify-content-between">
                     <ul class="navbar-nav flex-grow-1">
-                        @if (signedIn)
+                        @foreach (var item in menu)
                         {
-                            <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Index">Dashboard</a></li>
-                            <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Today/Index">Today</a></li>
-                            <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Tasks/My">My Tasks</a></li>
-                            <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Tasks/Index">Tasks</a></li>
-                            <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Projects/Index">Projects</a></li>
-                            <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Backlog/Index">Backlog</a></li>
-                            <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Sprints/Index">Sprints</a></li>
-                            <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Recurring/Index">Recurring</a></li>
-                            <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Time/My">My Time</a></li>
-                            @if (actor is not null && actor.Has(Permission.AssetsView))
-                            {
-                                <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Assets/Index">Assets</a></li>
-                            }
-                            @if (actor is not null && AccessPolicy.CanSubmitRequests(actor))
-                            {
-                                <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Requests/Index">Requests</a></li>
-                            }
-                            else if (actor is not null && actor.Has(Permission.RequestsConfigure))
-                            {
-                                <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/RequestCatalogue/Index">Requests</a></li>
-                            }
-                            @if (actor is not null && AccessPolicy.CanViewReports(actor))
-                            {
-                                <li class="nav-item"><a class="nav-link" asp-area="" asp-page="/Reports/Index">Reports</a></li>
-                            }
-                            @if (showAdmin)
-                            {
-                                <li class="nav-item dropdown">
-                                    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Admin</a>
-                                    <ul class="dropdown-menu">
-                                        @if (actor!.Has(Permission.UsersManage)) { <li><a class="dropdown-item" asp-area="" asp-page="/Admin/Users/Index">Users</a></li> }
-                                        @if (actor.Has(Permission.RolesManage)) { <li><a class="dropdown-item" asp-area="" asp-page="/Admin/Roles/Index">Roles</a></li> }
-                                        @if (actor.Has(Permission.DepartmentsManage)) { <li><a class="dropdown-item" asp-area="" asp-page="/Admin/Departments/Index">Departments</a></li> }
-                                        @if (actor.Has(Permission.ApiKeysManage)) { <li><a class="dropdown-item" asp-area="" asp-page="/Admin/ApiKeys/Index">API Keys</a></li> }
-                                        @if (actor.Has(Permission.DirectoryManage)) { <li><a class="dropdown-item" asp-area="" asp-page="/Admin/Directory/Index">Directory (LDAP)</a></li> }
-                                        @if (actor.Has(Permission.AgentsManage)) { <li><a class="dropdown-item" asp-area="" asp-page="/Admin/Agents/Index">Agents</a></li> }
-                                        @if (actor.Has(Permission.CalendarManage)) { <li><a class="dropdown-item" asp-area="" asp-page="/Admin/Calendar/Index">Working Calendar</a></li> }
-                                        @if (actor.Has(Permission.AuditView)) { <li><a class="dropdown-item" asp-area="" asp-page="/Admin/Activity/Index">Activity Log</a></li> }
-                                    </ul>
-                                </li>
-                            }
+                            <li class="nav-item"><a class="nav-link" asp-area="" asp-page="@item.Page">@item.Label</a></li>
+                        }
+                        @if (adminMenu.Count > 0)
+                        {
+                            <li class="nav-item dropdown">
+                                <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Admin</a>
+                                <ul class="dropdown-menu">
+                                    @foreach (var item in adminMenu)
+                                    {
+                                        <li><a class="dropdown-item" asp-area="" asp-page="@item.Page">@item.Label</a></li>
+                                    }
+                                </ul>
+                            </li>
                         }
                     </ul>
                     <partial name="_LoginPartial" />

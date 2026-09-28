@@ -248,7 +248,7 @@ public class RequestRulesTests
             foreach (var o in c.Options)
             {
                 kinds.Add(o.Kind);
-                RequestRules.ValidateOption(new RequestOptionInput { Title = o.Title, Description = o.Description, Kind = o.Kind, Url = o.Url });
+                RequestRules.ValidateOption(new RequestOptionInput { Title = o.Title, Description = o.Description, Kind = o.Kind, Url = o.Url, TaskType = o.TaskType });
                 var questions = o.Questions.Select(q =>
                 {
                     var d = RequestRules.ValidateQuestion(new RequestQuestionInput
@@ -263,5 +263,16 @@ public class RequestRulesTests
         Assert.Equal(Enum.GetValues<RequestQuestionType>(), types.OrderBy(t => t));
         Assert.Equal(2, kinds.Count);
         Assert.Equal(RequestExample.Catalogue.Count, RequestExample.Catalogue.Select(c => c.Title.ToLowerInvariant()).Distinct().Count());
+    }
+
+    /// <summary>REQ-006: the example's Change something flows file Change tasks, its Request something new flows Request tasks, the rest Task.</summary>
+    [Fact]
+    public void The_example_catalogue_files_change_and_request_tasks()
+    {
+        var expected = new Dictionary<string, TaskType> { ["Change something"] = TaskType.Change, ["Request something new"] = TaskType.Request };
+        foreach (var c in RequestExample.Catalogue)
+            foreach (var o in c.Options.Where(o => o.Kind == RequestOptionKind.Flow))
+                Assert.Equal(expected.GetValueOrDefault(c.Title, TaskType.Task), o.TaskType);
+        Assert.All(expected.Keys, title => Assert.Contains(RequestExample.Catalogue, c => c.Title == title));
     }
 }

@@ -132,7 +132,7 @@ public static class PermissionCatalog
     public static readonly IReadOnlyList<string> AdminPermissions =
     [
         Permission.UsersManage, Permission.RolesManage, Permission.DepartmentsManage, Permission.ApiKeysManage,
-        Permission.DirectoryManage, Permission.AgentsManage, Permission.CalendarManage, Permission.AuditView
+        Permission.DirectoryManage, Permission.AgentsManage, Permission.CalendarManage, Permission.RequestsConfigure, Permission.AuditView
     ];
 
     public static PermissionDefinition? Find(string key) => ByKey.GetValueOrDefault(key);

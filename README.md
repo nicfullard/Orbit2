@@ -89,6 +89,12 @@ scopes below it, and a role with no grants sees nothing.
 | `requests.submit` | Own / Dept | Log requests through any department's request flows, and see the ones logged by or for you (Own: for yourself; Dept: also for anyone in your department) | Own | Own |
 | `requests.configure` | Dept / All | The department's request categories, options and questions | - | Dept |
 
+The navbar follows the same grants: Today and My Tasks need **Edit tasks**, Tasks **View tasks**, Projects **Edit
+projects**, Backlog and Sprints **Plan tasks**, Recurring **Create tasks**, My Time **Log time** and Assets **View
+assets**, each at any scope. Hiding a link blocks nothing - the pages keep their own rules. The Dashboard is always
+there and adapts: someone who can view tasks but not edit them sees their department's (or company's) work read-only,
+and someone who can't see tasks gets links to what they can use.
+
 A role with any grant at Department scope needs its users and keys to belong to a department. The same rules
 are enforced in `AccessPolicy` and `Scoping` for signed-in users and for API keys; grants are read from the
 database on every request, so a role edit applies at once. Upgrading an existing database renames the old
@@ -229,9 +235,11 @@ question is skipped; at Department, anyone in your department. **Your requests**
 have logged and what was logged for you, with its status; the task lists don't show it, since a request usually
 belongs to another department.
 
-Each department runs its own catalogue (**Configure** on the Requests page, **Configure request flows**): categories
+Each department runs its own catalogue (**Admin > Request flows**, **Configure request flows**): categories
 with an icon and colour, options, and each flow's questions. A department with none can load a generic example
-catalogue to start from. Request tasks carry the source *Request*, and the Tasks list and `list_tasks` filter on it.
+catalogue to start from; its *Change something* flows file **Change** tasks and its *Request something new* flows
+**Request** tasks (two task types beside Meeting, Planning, Task, Training and Audit). Every task logged through a
+flow carries the source *Request*, whatever its type, and the Tasks list and `list_tasks` filter on it.
 
 ## Reports
 

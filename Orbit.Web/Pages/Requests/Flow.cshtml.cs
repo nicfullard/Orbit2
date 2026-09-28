@@ -16,7 +16,6 @@ namespace Orbit.Pages.Requests;
 /// </summary>
 public class FlowModel(
     RequestService requests,
-    RequestCatalogueService catalogue,
     AssetService assets,
     IActorProvider actors,
     IOptions<AttachmentOptions> attachmentOptions) : OrbitPageModel
@@ -29,7 +28,6 @@ public class FlowModel(
     }
 
     public RequestOption Option { get; private set; } = null!;
-    public bool CanConfigure { get; private set; }
     /// <summary>
     /// The choices of the flow's Asset question: the assets the person holds, can see and haven't been disposed of. With none, the
     /// question takes a description only.
@@ -99,7 +97,6 @@ public class FlowModel(
     {
         var actor = await actors.GetAsync(ct);
         Option = await requests.FlowAsync(id, ct);
-        CanConfigure = await catalogue.CanConfigureAsync(Option.Category.DepartmentId, ct);
         if (Option.Questions.Any(q => q.QuestionType == RequestQuestionType.Asset))
             HeldAssets = await assets.ListHeldAsync(ct: ct);
         MyName = actor.DisplayName;

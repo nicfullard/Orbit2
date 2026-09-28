@@ -31,14 +31,20 @@ public enum TaskPriority
     Critical
 }
 
-/// <summary>What kind of work a task is. <see cref="Task"/> is the plain default for ordinary work items.</summary>
+/// <summary>
+/// What kind of work a task is. <see cref="Task"/> is the plain default for ordinary work items. A <see cref="Change"/> alters
+/// something that already exists (a process, setting, system or access); a <see cref="Request"/> asks for something new. The
+/// <see cref="Request"/> type is not <see cref="TaskSource.Request"/>: the type is what kind of work it is, the source where it came from.
+/// </summary>
 public enum TaskType
 {
     Meeting,
     Planning,
     Task,
     Training,
-    Audit
+    Audit,
+    Change,
+    Request
 }
 
 /// <summary>

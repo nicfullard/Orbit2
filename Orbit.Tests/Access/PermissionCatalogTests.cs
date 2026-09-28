@@ -94,7 +94,9 @@ public class PermissionCatalogTests
             Assert.Equal(PermissionCatalog.RequestsGroup, p.Group);
             Assert.False(p.SystemAdministratorOnly, p.Key);
         });
-        Assert.DoesNotContain(PermissionCatalog.AdminPermissions, k => k.StartsWith("requests."));
+        // Configuring request flows is in the Admin menu; logging requests isn't.
+        Assert.Contains(Permission.RequestsConfigure, PermissionCatalog.AdminPermissions);
+        Assert.DoesNotContain(Permission.RequestsSubmit, PermissionCatalog.AdminPermissions);
     }
 
     [Fact]

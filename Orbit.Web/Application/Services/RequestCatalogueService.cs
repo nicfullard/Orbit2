@@ -48,10 +48,6 @@ public sealed class RequestCatalogueService(ApplicationDbContext db, IActorProvi
         return option;
     }
 
-    /// <summary>Whether the caller may configure a department's request flows - for the Configure buttons on the Requests pages.</summary>
-    public async Task<bool> CanConfigureAsync(Guid departmentId, CancellationToken ct = default) =>
-        AccessPolicy.CanConfigureRequestsIn(await actors.GetAsync(ct), departmentId);
-
     // ---------------------------------------------------------------- categories
 
     public async Task<RequestCategory> CreateCategoryAsync(RequestCategoryInput input, CancellationToken ct = default)
@@ -367,7 +363,7 @@ public sealed class RequestCatalogueService(ApplicationDbContext db, IActorProvi
                 var option = new RequestOption
                 {
                     CategoryId = category.Id, Title = o.Title, Description = o.Description, Kind = o.Kind, Url = o.Url,
-                    TaskType = TaskType.Task, DisplayOrder = ++optionOrder, CreatedAt = now, UpdatedAt = now
+                    TaskType = o.TaskType, DisplayOrder = ++optionOrder, CreatedAt = now, UpdatedAt = now
                 };
                 var questionOrder = 0;
                 foreach (var q in o.Questions)

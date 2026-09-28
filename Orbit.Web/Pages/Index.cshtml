@@ -19,12 +19,25 @@
             @actor.Role.Name@(d.DepartmentName is not null ? $" · {d.DepartmentName}" : "") · @d.Today.ToString("dddd, d MMMM yyyy")
         </div>
     </div>
+    @* The quick links follow the navbar's rules (Navigation): a button only for what the viewer can do. *@
     <div class="d-flex flex-wrap gap-2">
-        <a class="btn btn-primary btn-sm" asp-page="/Tasks/Create">New task</a>
-        <a class="btn btn-outline-secondary btn-sm" asp-page="/Today/Index">Today</a>
-        <a class="btn btn-outline-secondary btn-sm" asp-page="/Tasks/My">My Tasks</a>
-        <a class="btn btn-outline-secondary btn-sm" asp-page="/Backlog/Index">Backlog</a>
-        <a class="btn btn-outline-secondary btn-sm" asp-page="/Projects/Index">All Projects</a>
+        @if (actor.Has(Permission.TasksCreate))
+        {
+            <a class="btn btn-primary btn-sm" asp-page="/Tasks/Create">New task</a>
+        }
+        @if (Navigation.ShowsMyWork(actor))
+        {
+            <a class="btn btn-outline-secondary btn-sm" asp-page="/Today/Index">Today</a>
+            <a class="btn btn-outline-secondary btn-sm" asp-page="/Tasks/My">My Tasks</a>
+        }
+        @if (Navigation.ShowsPlanning(actor))
+        {
+            <a class="btn btn-outline-secondary btn-sm" asp-page="/Backlog/Index">Backlog</a>
+        }
+        @if (Navigation.ShowsProjects(actor))
+        {
+            <a class="btn btn-outline-secondary btn-sm" asp-page="/Projects/Index">All Projects</a>
+        }
         @if (AccessPolicy.CanViewReports(actor))
         {
             <a class="btn btn-outline-secondary btn-sm" asp-page="/Reports/Index">Reports</a>
@@ -36,6 +49,41 @@
     </div>
 </div>
 
+@if (!d.SeesTasks)
+{
+    // A role that sees no tasks (e.g. one that only logs requests): no task widgets, just the parts of Orbit it can use.
+    var destinations = Navigation.Visible(actor).Where(i => i.Page != "/Index").ToList();
+    <div class="row g-3">
+        <div class="col-lg-8">
+            <div class="card mb-3">
+                <div class="card-header fw-semibold">Where to start</div>
+                @if (destinations.Count == 0)
+                {
+                    <div class="card-body text-muted">Your role doesn't give you access to anything yet. Ask an administrator.</div>
+                }
+                else
+                {
+                    <div class="list-group list-group-flush">
+                        @foreach (var item in destinations)
+                        {
+                            <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" asp-page="@item.Page">
+                                @item.Label <span class="text-muted" aria-hidden="true">&rarr;</span>
+                            </a>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+        <div class="col-lg-4">
+            @if (Model.AssetChecks is AssetCheckSummary noTasksChecks)
+            {
+                <partial name="_AssetChecksCard" model="noTasksChecks" />
+            }
+        </div>
+    </div>
+}
+else
+{
 <div class="row g-3 mb-3">
     <div class="col-6 col-md-4 col-lg">
         <div class="stat-tile"><div class="stat-value">@d.TodoCount</div><div class="stat-label">To do</div></div>
@@ -102,7 +150,7 @@
             </div>
         }
 
-        @if (d.ShowsOthersWork)
+        @if (d.ShowsOthersWork && d.CanEditTasks)
         {
             <div class="card mb-3">
                 <div class="card-header d-flex justify-content-between align-items-center">
@@ -157,51 +205,29 @@
     </div>
 
     <div class="col-lg-4">
-        <div class="card mb-3">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <span class="fw-semibold">Today's plan</span>
-                <a class="small text-decoration-none" asp-page="/Today/Index">Open</a>
-            </div>
-            <div class="card-body py-2">
-                @if (d.PlannedTodayCount == 0)
-                {
-                    <span class="text-muted small">Nothing planned yet. Tick "Today" on tasks after the morning scrum.</span>
-                }
-                else
-                {
-                    <span class="fs-5 fw-semibold">@d.PlannedTodayCount</span>
-                    <span class="text-muted">planned · @d.PlannedTodayDone done</span>
-                }
-            </div>
-        </div>
-        @if (Model.AssetChecks is AssetCheckSummary ac)
+        @if (d.CanEditTasks)
         {
             <div class="card mb-3">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <span class="fw-semibold">Asset checks</span>
-                    <a class="small text-decoration-none" asp-page="/Assets/Index" asp-route-Check="Due">Open</a>
+                    <span class="fw-semibold">Today's plan</span>
+                    <a class="small text-decoration-none" asp-page="/Today/Index">Open</a>
                 </div>
-                <div class="card-body py-2 small">
-                    @if (ac.Scope == PermissionScope.Own)
+                <div class="card-body py-2">
+                    @if (d.PlannedTodayCount == 0)
                     {
-                        <div class="mb-1">
-                            You hold <a class="fw-semibold text-decoration-none" asp-page="/Assets/Index" asp-route-Holder="me">@ac.Held @(ac.Held == 1 ? "asset" : "assets")</a>.
-                        </div>
-                    }
-                    @if (ac.Overdue == 0 && ac.DueSoon == 0 && ac.NotOk == 0)
-                    {
-                        <span class="text-muted">No checks due@(ac.Scope == PermissionScope.Own ? " on your assets" : "").</span>
+                        <span class="text-muted small">Nothing planned yet. Tick "Today" on tasks after the morning scrum.</span>
                     }
                     else
                     {
-                        <div class="d-flex flex-wrap gap-3">
-                            <a class="text-decoration-none" asp-page="/Assets/Index" asp-route-Check="Overdue"><span class="fs-5 fw-semibold text-danger">@ac.Overdue</span> overdue</a>
-                            <a class="text-decoration-none" asp-page="/Assets/Index" asp-route-Check="DueSoon"><span class="fs-5 fw-semibold text-warning-emphasis">@ac.DueSoon</span> due soon</a>
-                            <a class="text-decoration-none" asp-page="/Assets/Index" asp-route-Check="NotOk"><span class="fs-5 fw-semibold">@ac.NotOk</span> last check not OK</a>
-                        </div>
+                        <span class="fs-5 fw-semibold">@d.PlannedTodayCount</span>
+                        <span class="text-muted">planned · @d.PlannedTodayDone done</span>
                     }
                 </div>
             </div>
+        }
+        @if (Model.AssetChecks is AssetCheckSummary ac)
+        {
+            <partial name="_AssetChecksCard" model="ac" />
         }
         <div class="card mb-3">
             <div class="card-header fw-semibold">Due soon</div>
@@ -303,3 +329,4 @@
         }
     </div>
 </div>
+}

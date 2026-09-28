@@ -7,7 +7,8 @@ namespace Orbit.Application.Services;
 
 /// <summary>
 /// Builds the tiered post-login dashboard (§6.9). The tier is the actor's tasks.view scope: Own = the personal
-/// dashboard, Department = the department dashboard, All = the company-wide one; a role that sees no tasks gets an empty page.
+/// dashboard, Department = the department dashboard, All = the company-wide one. A role that may view tasks but edit none gets its
+/// view scope without the widgets about its own work; a role that sees no tasks gets no task widgets at all.
 /// </summary>
 public sealed class DashboardService(ApplicationDbContext db, IActorProvider actors)
 {
@@ -15,23 +16,33 @@ public sealed class DashboardService(ApplicationDbContext db, IActorProvider act
     {
         var actor = await actors.GetAsync(ct);
         var tier = DashboardTier(actor);
-        var personal = tier == PermissionScope.Own;
-        var me = actor.UserId;
+        var canEdit = actor.Has(Permission.TasksEdit);
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        string? departmentName = actor.DepartmentId is Guid deptId
+            ? await db.Departments.Where(d => d.Id == deptId).Select(d => d.Name).FirstOrDefaultAsync(ct)
+            : null;
+        if (tier == PermissionScope.None)
+            return new DashboardModel
+            {
+                Actor = actor, Tier = tier, Today = today, DepartmentName = departmentName, ScopeLabel = "Your role can't see any tasks", CanEditTasks = canEdit
+            };
+
+        // The personal tier is "my work": assigned to me, rather than everything Own lets me see. Someone who can't edit tasks has no
+        // work of their own there, so at Own they see what Own reaches - the tasks they raised or are assigned.
+        var personal = tier == PermissionScope.Own && canEdit;
+        var me = actor.UserId;
         var dueHorizon = today.AddDays(7);
 
         var open = db.Tasks.AsNoTracking()
             .Where(t => t.Status != TaskItemStatus.Done && t.Status != TaskItemStatus.Cancelled);
 
-        // The personal tier is "my work": assigned to me, rather than everything Own lets me see.
         IQueryable<TaskItem> InTier(IQueryable<TaskItem> q) => personal ? q.Where(t => t.AssigneeId == me) : Scoping.Tasks(q, actor);
         var scope = InTier(open);
         var scopeLabel = tier switch
         {
             PermissionScope.All => "Open tasks across the company",
             PermissionScope.Department => "Open tasks in your department",
-            PermissionScope.Own => "My open tasks",
-            _ => "Your role can't see any tasks"
+            _ => personal ? "My open tasks" : "Open tasks you raised or are assigned"
         };
 
         // Today's day plan (§6.12): same scope, but over all tasks rather than open ones so "done today" counts.
@@ -45,9 +56,9 @@ public sealed class DashboardService(ApplicationDbContext db, IActorProvider act
         var overdue = await scope.CountAsync(t => t.DueDate != null && t.DueDate < today, ct);
 
         var openTasks = await Detailed(scope).Take(12).ToListAsync(ct);
-        var myOpen = personal
-            ? openTasks
-            : await Detailed(open.Where(t => t.AssigneeId == me)).Take(8).ToListAsync(ct);
+        List<TaskItem> myOpen = personal ? openTasks
+            : canEdit ? await Detailed(open.Where(t => t.AssigneeId == me)).Take(8).ToListAsync(ct)
+            : [];
 
         // Work nobody has picked up yet, which the viewer may take (§6.5). The wider tiers already list the whole department above.
         List<TaskItem> upForGrabs = [];
@@ -126,10 +137,6 @@ public sealed class DashboardService(ApplicationDbContext db, IActorProvider act
             byDepartment = deptRows.Select(r => new DepartmentLoad(r.Id, r.Name, r.OpenTasks, r.ActiveProjects, r.Users)).ToList();
         }
 
-        string? departmentName = actor.DepartmentId is Guid deptId
-            ? await db.Departments.Where(d => d.Id == deptId).Select(d => d.Name).FirstOrDefaultAsync(ct)
-            : null;
-
         return new DashboardModel
         {
             Actor = actor,
@@ -137,6 +144,7 @@ public sealed class DashboardService(ApplicationDbContext db, IActorProvider act
             Today = today,
             DepartmentName = departmentName,
             ScopeLabel = scopeLabel,
+            CanEditTasks = canEdit,
             TodoCount = Count(TaskItemStatus.Todo),
             InProgressCount = Count(TaskItemStatus.InProgress),
             WaitingCount = Count(TaskItemStatus.Waiting),
@@ -163,16 +171,20 @@ public sealed class DashboardService(ApplicationDbContext db, IActorProvider act
 
     /// <summary>
     /// The tier is the tasks.view scope (§6.9), with one refinement: a role that sees its department but may only edit
-    /// its own tasks (tasks.edit at Own, or not at all) gets the personal dashboard, since its own work is what it acts
-    /// on - which keeps the shipped Member role on the dashboard it always had.
+    /// its own tasks (tasks.edit at Own) gets the personal dashboard, since its own work is what it acts on - which keeps the
+    /// shipped Member role on the dashboard it always had. A view-only role (<see cref="IsViewOnly"/>) has no work of its own,
+    /// so it keeps its view scope.
     /// </summary>
     public static PermissionScope DashboardTier(Actor actor)
     {
         var tier = actor.ScopeOf(Permission.TasksView);
-        if (tier == PermissionScope.Department && actor.ScopeOf(Permission.TasksEdit) <= PermissionScope.Own)
+        if (tier == PermissionScope.Department && actor.ScopeOf(Permission.TasksEdit) == PermissionScope.Own)
             return PermissionScope.Own;
         return tier;
     }
+
+    /// <summary>May view tasks but edit none: the dashboard shows what they may see, without the widgets about their own work.</summary>
+    public static bool IsViewOnly(Actor actor) => actor.Has(Permission.TasksView) && !actor.Has(Permission.TasksEdit);
 
     private static IQueryable<TaskItem> Detailed(IQueryable<TaskItem> q) => q
         .Include(t => t.Project).Include(t => t.Assignee).Include(t => t.Department).Include(t => t.Asset)

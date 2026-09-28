@@ -33,6 +33,9 @@ public static class Ui
         TaskType.Planning => "bg-info-subtle text-info-emphasis border",
         TaskType.Training => "bg-success-subtle text-success-emphasis border",
         TaskType.Audit => "bg-warning-subtle text-warning-emphasis border",
+        TaskType.Change => "bg-danger-subtle text-danger-emphasis border",
+        // Not info-subtle: that is the Request source badge, which a request-flow task of this type shows beside it.
+        TaskType.Request => "bg-secondary-subtle text-secondary-emphasis border",
         _ => "text-bg-light border"
     };
 

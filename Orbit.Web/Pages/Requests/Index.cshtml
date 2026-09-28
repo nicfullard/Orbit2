@@ -6,15 +6,9 @@
     var byDepartment = Model.Sections.Count > 1;
 }
 
-<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
-    <div>
-        <h1 class="h3 mb-1">Log a request</h1>
-        <div class="text-muted">Choose what you need. A few questions follow, and your request goes to the team that handles it.</div>
-    </div>
-    @if (Model.CanConfigure)
-    {
-        <a class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1" asp-page="/RequestCatalogue/Index">@RequestIcons.Svg("gear", 14) Configure</a>
-    }
+<div class="mb-3">
+    <h1 class="h3 mb-1">Log a request</h1>
+    <div class="text-muted">Choose what you need. A few questions follow, and your request goes to the team that handles it.</div>
 </div>
 
 <partial name="_Steps" model="1" />
@@ -27,7 +21,7 @@
             <p class="mb-1 fw-semibold">Nothing to request yet.</p>
             <p class="text-muted mb-0">
                 No department has set up its requests.
-                @if (Model.CanConfigure) { <text>Use <a asp-page="/RequestCatalogue/Index">Configure</a> to add your department's, or start from the example.</text> }
+                @if (Model.CanConfigure) { <text>Set up your department's under Admin &gt; <a asp-page="/RequestCatalogue/Index">Request flows</a>, or start from the example there.</text> }
             </p>
         </div>
     </div>
