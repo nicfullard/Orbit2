@@ -34,7 +34,8 @@ public sealed class OrbitTools(
     AssetService assets,
     AssetTypeService assetTypes,
     AssetLocationService assetLocations,
-    TimeEntryService time)
+    TimeEntryService time,
+    ILogger<OrbitTools> logger)
 {
     private const string Clear = "none";
 
@@ -653,7 +654,8 @@ public sealed class OrbitTools(
         "(ignoring case) when given. Pass an idempotencyKey so a retried call returns the asset already registered instead of a second one. " +
         "Department defaults to the key's own; the type and location must be the department's own (list_asset_types / list_asset_locations; a name " +
         "works in place of the id). properties is an object of property name to value, e.g. {\"RAM (GB)\": 16, \"OS\": \"Windows\"}; required " +
-        "properties must be given. The result flags possibleDuplicates (same manufacturer and serial number). Needs Register assets in the department.")]
+        "properties must be given. The result flags possibleDuplicates (same manufacturer and serial number). Needs Register assets in the department. " +
+        "To register several assets, use create_assets.")]
     public Task<string> CreateAsset(
         [Description("Name (required), e.g. \"Reception laptop\".")] string name,
         [Description("Asset type id (GUID) or name - one of the department's types (required).")] string assetTypeId,
@@ -677,42 +679,39 @@ public sealed class OrbitTools(
         [Description("Property values by property name, e.g. {\"RAM (GB)\": 16}.")] Dictionary<string, JsonElement>? properties = null,
         CancellationToken ct = default) => Run(async () =>
     {
-        var department = ParseGuid(departmentId, "departmentId");
-        var typeId = await AssetTypeIdAsync(assetTypeId, department, ct);
-        var input = new AssetInput
+        var (created, duplicates) = await RegisterAsync(new AssetCreateArg
         {
-            AssetNumber = assetNumber,
-            IdempotencyKey = idempotencyKey,
-            Name = name,
-            DepartmentId = department,
-            AssetTypeId = typeId,
-            Description = description,
-            Manufacturer = manufacturer,
-            Model = model,
-            SerialNumber = serialNumber,
-            Status = ParseEnum<AssetStatus>(status, "status") ?? AssetStatus.Active,
-            AssetLocationId = string.IsNullOrWhiteSpace(locationId) ? null : await AssetLocationIdAsync(locationId, department, ct),
-            PurchaseDate = ParseDate(purchaseDate, "purchaseDate"),
-            PurchaseValue = purchaseValue,
-            PurchaseOrder = purchaseOrder,
-            InvoiceNumber = invoiceNumber,
-            Supplier = supplier,
-            WarrantyExpiresOn = ParseDate(warrantyExpiresOn, "warrantyExpiresOn"),
-            DisposedOn = ParseDate(disposedOn, "disposedOn"),
-            AssigneeIds = (assigneeIds ?? []).Select(u => RequireGuid(u, "assigneeIds")).ToList(),
-            Properties = await PropertyChangesAsync(typeId, properties, ct)
-        };
-        var created = await assets.CreateAsync(input, ct);
-        // Same maker and serial as an asset already registered: say so now, when a double registration is cheapest to undo.
-        return AssetDto(created, [], 0, await assets.PossibleDuplicatesAsync(created, ct));
+            Name = name, AssetTypeId = assetTypeId, AssetNumber = assetNumber, IdempotencyKey = idempotencyKey, DepartmentId = departmentId,
+            Description = description, Manufacturer = manufacturer, Model = model, SerialNumber = serialNumber, Status = status,
+            LocationId = locationId, PurchaseDate = purchaseDate, PurchaseValue = purchaseValue, PurchaseOrder = purchaseOrder,
+            InvoiceNumber = invoiceNumber, Supplier = supplier, WarrantyExpiresOn = warrantyExpiresOn, DisposedOn = disposedOn,
+            AssigneeIds = assigneeIds, Properties = properties
+        }, ct);
+        return AssetDto(created, [], 0, duplicates);
     });
+
+    [McpServerTool(Name = "create_assets"), Description(
+        "Register up to 100 assets in one call - use it rather than calling create_asset once per asset, e.g. to load a list or a spreadsheet " +
+        "of assets. Each item takes create_asset's arguments and follows its rules. Each is registered or refused on its own: the reply gives " +
+        "the counts and, for every item by index, ok true with the asset's summary (and any possibleDuplicates) or ok false with the error - " +
+        "send only the refused items again, corrected. Give every item its own idempotencyKey, so a retried call can't register an asset twice.")]
+    public Task<string> CreateAssets(
+        [Description("The assets to register (1-100), each with create_asset's arguments: name and assetTypeId are required.")] AssetCreateArg[] items,
+        CancellationToken ct = default) => Run(() => BatchAsync("create_assets", items,
+            a => string.IsNullOrWhiteSpace(a.AssetNumber) ? a.Name : a.AssetNumber,
+            async a =>
+            {
+                var (created, duplicates) = await RegisterAsync(a, ct);
+                return BatchAssetDto(created, duplicates);
+            }, ct));
 
     [McpServerTool(Name = "update_asset"), Description(
         "Change an asset. Only the arguments passed change; \"none\" clears an optional text or date field. departmentId moves the asset to another " +
         "managing department (the key needs Edit assets there too, in practice for all departments) and must come with an assetTypeId of that department; " +
         "its location is cleared unless a locationId there is given. assetTypeId changes the type: values carry over to properties with the same name and " +
         "type, the rest are dropped. status Disposed (with disposedOn, default today) removes everyone it is assigned to. assigneeIds replaces the whole " +
-        "set ([] unassigns everyone). properties merges: each named property is set, \"none\" clears one, others are untouched. Needs Edit assets.")]
+        "set ([] unassigns everyone). properties merges: each named property is set, \"none\" clears one, others are untouched. Needs Edit assets. " +
+        "To change several assets, use update_assets.")]
     public Task<string> UpdateAsset(
         [Description("Asset id (GUID), or its ERP asset number when it has one.")] string assetId,
         [Description("ERP asset register number (unique), or \"none\" when the asset isn't on the ERP system.")] string? assetNumber = null,
@@ -736,58 +735,52 @@ public sealed class OrbitTools(
         [Description("Property values to set by property name, e.g. {\"RAM (GB)\": 32}; \"none\" clears one.")] Dictionary<string, JsonElement>? properties = null,
         CancellationToken ct = default) => Run(async () =>
     {
-        var id = await assets.ResolveIdAsync(assetId, ct);
-        var current = await assets.GetAsync(id, ct);
-        var input = AssetInput.From(current);
-        var targetDepartment = ParseGuid(departmentId, "departmentId") ?? current.DepartmentId;
-        var moving = targetDepartment != current.DepartmentId;
-        input.DepartmentId = targetDepartment;
-        input.AssetNumber = Text(assetNumber, current.AssetNumber);
-        if (name is not null) input.Name = name;
-        input.Description = Text(description, current.Description);
-        input.Manufacturer = Text(manufacturer, current.Manufacturer);
-        input.Model = Text(model, current.Model);
-        input.SerialNumber = Text(serialNumber, current.SerialNumber);
-        input.PurchaseOrder = Text(purchaseOrder, current.PurchaseOrder);
-        input.InvoiceNumber = Text(invoiceNumber, current.InvoiceNumber);
-        input.Supplier = Text(supplier, current.Supplier);
-        if (!string.IsNullOrWhiteSpace(assetTypeId)) input.AssetTypeId = await AssetTypeIdAsync(assetTypeId, targetDepartment, ct);
-        if (IsClear(locationId)) input.AssetLocationId = null;
-        else if (!string.IsNullOrWhiteSpace(locationId)) input.AssetLocationId = await AssetLocationIdAsync(locationId, targetDepartment, ct);
-        else if (moving) input.AssetLocationId = null; // the old location belongs to the department the asset is leaving
-        if (ParseEnum<AssetStatus>(status, "status") is AssetStatus s) input.Status = s;
-        input.PurchaseDate = IsClear(purchaseDate) ? null : ParseDate(purchaseDate, "purchaseDate") ?? current.PurchaseDate;
-        input.PurchaseValue = IsClear(purchaseValue) ? null : ParseDecimal(purchaseValue, "purchaseValue") ?? current.PurchaseValue;
-        input.WarrantyExpiresOn = IsClear(warrantyExpiresOn) ? null : ParseDate(warrantyExpiresOn, "warrantyExpiresOn") ?? current.WarrantyExpiresOn;
-        input.DisposedOn = ParseDate(disposedOn, "disposedOn") ?? current.DisposedOn;
-        if (assigneeIds is not null) input.AssigneeIds = assigneeIds.Select(u => RequireGuid(u, "assigneeIds")).ToList();
-        input.Properties = await PropertyChangesAsync(input.AssetTypeId, properties, ct);
-        var saved = await assets.UpdateAsync(id, input, ct);
-        return AssetDto(saved, await attachments.ListForAssetAsync(id, ct), (await comments.ListForAssetAsync(id, ct)).Count,
-            await assets.PossibleDuplicatesAsync(saved, ct));
+        var (saved, duplicates) = await ChangeAsync(new AssetUpdateArg
+        {
+            AssetId = assetId, AssetNumber = assetNumber, Name = name, DepartmentId = departmentId, AssetTypeId = assetTypeId,
+            Description = description, Manufacturer = manufacturer, Model = model, SerialNumber = serialNumber, Status = status,
+            LocationId = locationId, PurchaseDate = purchaseDate, PurchaseValue = purchaseValue, PurchaseOrder = purchaseOrder,
+            InvoiceNumber = invoiceNumber, Supplier = supplier, WarrantyExpiresOn = warrantyExpiresOn, DisposedOn = disposedOn,
+            AssigneeIds = assigneeIds, Properties = properties
+        }, ct);
+        return AssetDto(saved, await attachments.ListForAssetAsync(saved.Id, ct), (await comments.ListForAssetAsync(saved.Id, ct)).Count, duplicates);
     });
+
+    [McpServerTool(Name = "update_assets"), Description(
+        "Change up to 100 assets in one call - use it rather than calling update_asset once per asset, e.g. to move many assets to another " +
+        "location, set a property on many, or apply a list of corrections. Each item is assetId plus only what changes, and follows " +
+        "update_asset's rules. Items are applied in order, each changed or refused on its own: the reply gives the counts and, for every item " +
+        "by index, ok true with the asset's summary (and any possibleDuplicates) or ok false with the error - send only the refused items again, corrected.")]
+    public Task<string> UpdateAssets(
+        [Description("The changes (1-100), each with update_asset's arguments: assetId is required.")] AssetUpdateArg[] items,
+        CancellationToken ct = default) => Run(() => BatchAsync("update_assets", items, a => a.AssetId,
+            async a =>
+            {
+                var (saved, duplicates) = await ChangeAsync(a, ct);
+                return BatchAssetDto(saved, duplicates);
+            }, ct));
 
     [McpServerTool(Name = "record_asset_check"), Description(
         "Record a check on an asset: someone looked at it and found it OK, found an issue (describe it in notes) or didn't find it. A check never changes " +
         "the asset's status - a last check that isn't OK is flagged for the asset's managers instead - and it resets when the next check is due. " +
-        "Needs Record asset checks reaching the asset (a key at Own scope only reaches assets assigned to the Claude user). A disposed asset can't be checked.")]
+        "Needs Record asset checks reaching the asset (a key at Own scope only reaches assets assigned to the Claude user). A disposed asset can't be checked. " +
+        "To check several assets, use record_asset_checks.")]
     public Task<string> RecordAssetCheck(
         [Description("Asset id (GUID), or its ERP asset number when it has one.")] string assetId,
         [Description("Ok (default), IssueFound (needs notes) or NotFound.")] string? outcome = null,
         [Description("The day it was checked, yyyy-MM-dd; default today, never in the future.")] string? checkDate = null,
         [Description("Notes - what the issue is, where it was found.")] string? notes = null,
-        CancellationToken ct = default) => Run(async () =>
-    {
-        var id = await assets.ResolveIdAsync(assetId, ct);
-        var check = await assets.RecordCheckAsync(id, new AssetCheckInput
-        {
-            Outcome = ParseEnum<AssetCheckOutcome>(outcome, "outcome") ?? AssetCheckOutcome.Ok,
-            CheckDate = ParseDate(checkDate, "checkDate"),
-            Notes = notes
-        }, ct);
-        var asset = await assets.GetAsync(id, ct);
-        return new { check = CheckDto(check), asset = AssetSummaryDto(assets.Item(asset)) };
-    });
+        CancellationToken ct = default) => Run(() =>
+        RecordCheckAsync(new AssetCheckArg { AssetId = assetId, Outcome = outcome, CheckDate = checkDate, Notes = notes }, ct));
+
+    [McpServerTool(Name = "record_asset_checks"), Description(
+        "Record checks on up to 100 assets in one call - use it rather than calling record_asset_check once per asset, e.g. for a stock-take. " +
+        "Each item takes record_asset_check's arguments and follows its rules. Each is recorded or refused on its own: the reply gives the " +
+        "counts and, for every item by index, ok true with the check and the asset's summary or ok false with the error. There is no " +
+        "idempotency key: when retrying, send only the items that weren't recorded, or the others are checked twice.")]
+    public Task<string> RecordAssetChecks(
+        [Description("The checks (1-100), each with record_asset_check's arguments: assetId is required.")] AssetCheckArg[] items,
+        CancellationToken ct = default) => Run(() => BatchAsync("record_asset_checks", items, a => a.AssetId, a => RecordCheckAsync(a, ct), ct));
 
     [McpServerTool(Name = "list_asset_types"), Description(
         "List the active asset types, each with its department (every department defines its own types) and its properties - name, type " +
@@ -938,6 +931,105 @@ public sealed class OrbitTools(
         if (archived is bool a) await assetLocations.SetArchivedAsync(current.Id, a, ct);
         return AssetLocationDto(await assetLocations.GetAsync(current.Id, ct));
     });
+
+    /// <summary>Register one asset - create_asset, or one create_assets item - with the assets it may duplicate.</summary>
+    private async Task<(Asset Asset, IReadOnlyList<AssetRef> Duplicates)> RegisterAsync(AssetCreateArg a, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(a.AssetTypeId)) throw new McpException("assetTypeId is required; list_asset_types lists the types.");
+        var department = ParseGuid(a.DepartmentId, "departmentId");
+        var typeId = await AssetTypeIdAsync(a.AssetTypeId, department, ct);
+        var created = await assets.CreateAsync(new AssetInput
+        {
+            AssetNumber = a.AssetNumber,
+            IdempotencyKey = a.IdempotencyKey,
+            Name = a.Name ?? string.Empty,
+            DepartmentId = department,
+            AssetTypeId = typeId,
+            Description = a.Description,
+            Manufacturer = a.Manufacturer,
+            Model = a.Model,
+            SerialNumber = a.SerialNumber,
+            Status = ParseEnum<AssetStatus>(a.Status, "status") ?? AssetStatus.Active,
+            AssetLocationId = string.IsNullOrWhiteSpace(a.LocationId) ? null : await AssetLocationIdAsync(a.LocationId, department, ct),
+            PurchaseDate = ParseDate(a.PurchaseDate, "purchaseDate"),
+            PurchaseValue = a.PurchaseValue,
+            PurchaseOrder = a.PurchaseOrder,
+            InvoiceNumber = a.InvoiceNumber,
+            Supplier = a.Supplier,
+            WarrantyExpiresOn = ParseDate(a.WarrantyExpiresOn, "warrantyExpiresOn"),
+            DisposedOn = ParseDate(a.DisposedOn, "disposedOn"),
+            AssigneeIds = (a.AssigneeIds ?? []).Select(u => RequireGuid(u, "assigneeIds")).ToList(),
+            Properties = await PropertyChangesAsync(typeId, a.Properties, ct)
+        }, ct);
+        // Same maker and serial as an asset already registered: say so now, when a double registration is cheapest to undo.
+        return (created, await assets.PossibleDuplicatesAsync(created, ct));
+    }
+
+    /// <summary>Change one asset - update_asset, or one update_assets item: only what the argument gives changes.</summary>
+    private async Task<(Asset Asset, IReadOnlyList<AssetRef> Duplicates)> ChangeAsync(AssetUpdateArg a, CancellationToken ct)
+    {
+        var id = await assets.ResolveIdAsync(a.AssetId, ct);
+        var current = await assets.GetAsync(id, ct);
+        var input = AssetInput.From(current);
+        var targetDepartment = ParseGuid(a.DepartmentId, "departmentId") ?? current.DepartmentId;
+        var moving = targetDepartment != current.DepartmentId;
+        input.DepartmentId = targetDepartment;
+        input.AssetNumber = Text(a.AssetNumber, current.AssetNumber);
+        if (a.Name is not null) input.Name = a.Name;
+        input.Description = Text(a.Description, current.Description);
+        input.Manufacturer = Text(a.Manufacturer, current.Manufacturer);
+        input.Model = Text(a.Model, current.Model);
+        input.SerialNumber = Text(a.SerialNumber, current.SerialNumber);
+        input.PurchaseOrder = Text(a.PurchaseOrder, current.PurchaseOrder);
+        input.InvoiceNumber = Text(a.InvoiceNumber, current.InvoiceNumber);
+        input.Supplier = Text(a.Supplier, current.Supplier);
+        if (!string.IsNullOrWhiteSpace(a.AssetTypeId)) input.AssetTypeId = await AssetTypeIdAsync(a.AssetTypeId, targetDepartment, ct);
+        if (IsClear(a.LocationId)) input.AssetLocationId = null;
+        else if (!string.IsNullOrWhiteSpace(a.LocationId)) input.AssetLocationId = await AssetLocationIdAsync(a.LocationId, targetDepartment, ct);
+        else if (moving) input.AssetLocationId = null; // the old location belongs to the department the asset is leaving
+        if (ParseEnum<AssetStatus>(a.Status, "status") is AssetStatus s) input.Status = s;
+        input.PurchaseDate = IsClear(a.PurchaseDate) ? null : ParseDate(a.PurchaseDate, "purchaseDate") ?? current.PurchaseDate;
+        input.PurchaseValue = IsClear(a.PurchaseValue) ? null : ParseDecimal(a.PurchaseValue, "purchaseValue") ?? current.PurchaseValue;
+        input.WarrantyExpiresOn = IsClear(a.WarrantyExpiresOn) ? null : ParseDate(a.WarrantyExpiresOn, "warrantyExpiresOn") ?? current.WarrantyExpiresOn;
+        input.DisposedOn = ParseDate(a.DisposedOn, "disposedOn") ?? current.DisposedOn;
+        if (a.AssigneeIds is not null) input.AssigneeIds = a.AssigneeIds.Select(u => RequireGuid(u, "assigneeIds")).ToList();
+        input.Properties = await PropertyChangesAsync(input.AssetTypeId, a.Properties, ct);
+        var saved = await assets.UpdateAsync(id, input, ct);
+        return (saved, await assets.PossibleDuplicatesAsync(saved, ct));
+    }
+
+    /// <summary>Record one check - record_asset_check, or one record_asset_checks item: the check, and the asset's summary after it.</summary>
+    private async Task<object> RecordCheckAsync(AssetCheckArg a, CancellationToken ct)
+    {
+        var id = await assets.ResolveIdAsync(a.AssetId, ct);
+        var check = await assets.RecordCheckAsync(id, new AssetCheckInput
+        {
+            Outcome = ParseEnum<AssetCheckOutcome>(a.Outcome, "outcome") ?? AssetCheckOutcome.Ok,
+            CheckDate = ParseDate(a.CheckDate, "checkDate"),
+            Notes = a.Notes
+        }, ct);
+        var asset = await assets.GetAsync(id, ct);
+        return new { check = CheckDto(check), asset = AssetSummaryDto(assets.Item(asset)) };
+    }
+
+    /// <summary>
+    /// A batch tool's items through <see cref="McpBatch"/>: each saved or refused on its own, the unit of work cleared after each so a
+    /// refused item leaves nothing behind for the next, and a failure that stops the call logged.
+    /// </summary>
+    private Task<BatchOutcome> BatchAsync<T>(string tool, T[]? items, Func<T, string?> label, Func<T, Task<object>> apply, CancellationToken ct)
+        where T : class =>
+        McpBatch.RunAsync(items, label, apply, assets.DiscardUnsaved,
+            (index, ex) => logger.LogError(ex, "{Tool} stopped at item {Index} of {Count}", tool, index, items?.Length), ct);
+
+    /// <summary>
+    /// A saved asset as create_assets / update_assets report it: its list_assets summary, and possibleDuplicates only when there are
+    /// some. get_asset has the rest.
+    /// </summary>
+    private object BatchAssetDto(Asset a, IReadOnlyList<AssetRef> duplicates) => new
+    {
+        asset = AssetSummaryDto(assets.Item(a)),
+        possibleDuplicates = duplicates.Count == 0 ? null : duplicates.Select(d => new { id = d.Id, assetNumber = d.AssetNumber, name = d.Name }).ToList()
+    };
 
     /// <summary>A type argument: its GUID, or its name among the department's types.</summary>
     private async Task<Guid> AssetTypeIdAsync(string value, Guid? departmentId, CancellationToken ct) =>

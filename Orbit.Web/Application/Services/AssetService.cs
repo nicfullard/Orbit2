@@ -659,6 +659,13 @@ public sealed class AssetService(ApplicationDbContext db, IActorProvider actors,
 
     public static string Summary(Asset a) => AssetRules.Label(a.AssetNumber, a.Name);
 
+    /// <summary>
+    /// Forget what the unit of work still tracks. The batch tools (create_assets, update_assets, record_asset_checks) call it after
+    /// each item, so what a refused item left unsaved - an insert the unique index turned away, its queued audit row - isn't saved
+    /// with the next one, as the directory import does for a person it couldn't save.
+    /// </summary>
+    public void DiscardUnsaved() => db.ChangeTracker.Clear();
+
     private static void SetLastCheck(Asset asset)
     {
         var latest = AssetCheckSchedule.Latest(asset.Checks);

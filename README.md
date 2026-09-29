@@ -167,14 +167,20 @@ one-off: nothing is kept in step with AD afterwards.
 - Tools: `create_task`, `get_task`, `list_tasks`, `update_task`, `add_comment`, `list_comments`, `log_time`, `get_attachment`,
   `add_dependency`, `remove_dependency`, `create_project`, `get_project`, `get_project_status`,
   `list_projects`, `update_project`, `list_activity`, `list_users`, `list_departments`, `get_critical_path`, `run_critical_path_analysis`,
-  `list_assets`, `get_asset`, `create_asset`, `update_asset`, `record_asset_check`, `list_asset_types`, `list_asset_locations`,
-  `get_asset_type`, `create_asset_type`, `update_asset_type`, `get_asset_location`, `create_asset_location`, `update_asset_location`.
+  `list_assets`, `get_asset`, `create_asset`, `update_asset`, `record_asset_check`, `create_assets`, `update_assets`,
+  `record_asset_checks`, `list_asset_types`, `list_asset_locations`, `get_asset_type`, `create_asset_type`, `update_asset_type`,
+  `get_asset_location`, `create_asset_location`, `update_asset_location`.
 - Assets (spec §6.19): any `assetId` argument takes the GUID or, when the asset has one, its ERP asset number;
   `create_asset` takes an optional `idempotencyKey` so a retry can't register an asset twice; `create_asset` / `update_asset` take
   the type and location by id or name and property values by name; `add_comment` / `list_comments` take `assetId`
   in place of `taskId`. Types and locations are created and changed with `create_/update_asset_type` and
   `create_/update_asset_location` (Configure assets permission); a type's properties can be added and changed over MCP,
   all or nothing per call, but deleting one (which deletes its values) is web-UI only.
+- Batches: `create_assets`, `update_assets` and `record_asset_checks` take up to 100 items per call, each with the
+  single tool's arguments, so loading a spreadsheet of assets or a stock-take is one call instead of hundreds. Each item
+  is saved or refused on its own, and the reply lists every item by index with `ok` and the asset's summary or the error,
+  so only the refused items need sending again. Give each `create_assets` item its own `idempotencyKey` so the whole call
+  can be retried safely; checks have no key, so resend only the checks that weren't recorded.
 - A task can be about one asset: `create_task` / `update_task` take `assetId` (GUID or ERP asset number; `"none"`
   unlinks it on `update_task`), `list_tasks` filters on it, task results carry `assetId` and `asset`, and `get_asset`
   returns the asset's task history (`tasks`, with `tasksVisible` / `tasksNotVisible`). The key can link only an asset

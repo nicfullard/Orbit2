@@ -181,6 +181,8 @@ builder.Services.AddMcpServer(o =>
             "(list_asset_types, list_asset_locations; get_, create_ and update_asset_type / asset_location read and manage them, adding and changing " +
             "a type's properties but never deleting one), and any assetId argument also accepts the asset's ERP asset number, which not every asset has. " +
             "Pass an idempotencyKey to create_asset so a retry can't register an asset twice. " +
+            "To register, change or check many assets use create_assets / update_assets / record_asset_checks - up to 100 items a call, " +
+            "each saved or refused on its own and reported by index - rather than one call per asset. " +
             "A task can be about one asset - a repair, a service: pass assetId to create_task / update_task (\"none\" unlinks it); " +
             "get_asset lists the asset's task history and list_tasks filters on assetId.";
     })
