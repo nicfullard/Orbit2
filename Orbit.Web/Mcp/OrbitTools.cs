@@ -1316,7 +1316,7 @@ public sealed class OrbitTools(
         var a = item.Asset;
         return new
         {
-            id = a.Id, assetNumber = a.AssetNumber, name = a.Name,
+            id = a.Id, assetNumber = a.AssetNumber, serialNumber = a.SerialNumber, name = a.Name,
             assetTypeId = a.AssetTypeId, type = a.AssetType?.Name, category = a.AssetType?.Category,
             status = a.Status, departmentId = a.DepartmentId, department = a.Department?.Name,
             locationId = a.AssetLocationId, location = a.AssetLocation?.Name,
@@ -1338,7 +1338,7 @@ public sealed class OrbitTools(
         return new
         {
             asset = AssetSummaryDto(item),
-            description = a.Description, manufacturer = a.Manufacturer, model = a.Model, serialNumber = a.SerialNumber,
+            description = a.Description, manufacturer = a.Manufacturer, model = a.Model,
             purchaseDate = a.PurchaseDate, purchaseValue = a.PurchaseValue, purchaseOrder = a.PurchaseOrder, invoiceNumber = a.InvoiceNumber,
             supplier = a.Supplier, disposedOn = a.DisposedOn,
             createdAt = a.CreatedAt, createdBy = a.CreatedBy is null ? null : a.CreatedBy.IsSystemAccount ? "Claude" : a.CreatedBy.DisplayName,
