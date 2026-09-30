@@ -91,7 +91,8 @@ public sealed class AssetService(ApplicationDbContext db, IActorProvider actors,
 
     /// <summary>
     /// Other assets the caller can see that look like the same item: the same manufacturer and serial number, ignoring case
-    /// (spec §6.19). Flagged on the asset page; nothing is refused.
+    /// (spec §6.19). Flagged on the asset page. A new live duplicate is refused on save, so this surfaces older duplicates and
+    /// matches with disposed assets.
     /// </summary>
     public async Task<IReadOnlyList<AssetRef>> PossibleDuplicatesAsync(Asset asset, CancellationToken ct = default)
     {
@@ -307,6 +308,8 @@ public sealed class AssetService(ApplicationDbContext db, IActorProvider actors,
 
         var number = AssetRules.NormaliseAssetNumber(input.AssetNumber);
         if (number is not null) await RequireUniqueNumberAsync(actor, number, null, ct);
+        var serial = AssetRules.Clean(input.SerialNumber, 100, "The serial number");
+        if (AssetRules.NeedsSerialCheck(serial, input.Status, null, null)) await RequireUniqueSerialAsync(actor, serial!, null, ct);
         var type = await TypeAsync(input.AssetTypeId, ct);
         var location = await LocationAsync(input.AssetLocationId, ct);
         AssetRules.CheckTypeAndLocation(departmentId, dept.Name, type, location, moving: false);
@@ -326,7 +329,7 @@ public sealed class AssetService(ApplicationDbContext db, IActorProvider actors,
             AssetTypeId = type.Id,
             Manufacturer = AssetRules.Clean(input.Manufacturer, 200, "The manufacturer"),
             Model = AssetRules.Clean(input.Model, 200, "The model"),
-            SerialNumber = AssetRules.Clean(input.SerialNumber, 100, "The serial number"),
+            SerialNumber = serial,
             Status = input.Status,
             AssetLocationId = location?.Id,
             PurchaseDate = purchaseDate,
@@ -414,7 +417,8 @@ public sealed class AssetService(ApplicationDbContext db, IActorProvider actors,
         var manufacturer = AssetRules.Clean(input.Manufacturer, 200, "The manufacturer");
         var model = AssetRules.Clean(input.Model, 200, "The model");
         var serial = AssetRules.Clean(input.SerialNumber, 100, "The serial number");
-        var value = AssetRules.CleanValue(input.PurchaseValue);
+        if (AssetRules.NeedsSerialCheck(serial, input.Status, asset.SerialNumber, asset.Status)) await RequireUniqueSerialAsync(actor, serial!, asset.Id, ct);
+        var value =AssetRules.CleanValue(input.PurchaseValue);
         var order = AssetRules.Clean(input.PurchaseOrder, 100, "The purchase order");
         var invoice = AssetRules.Clean(input.InvoiceNumber, 100, "The invoice number");
         var supplier = AssetRules.Clean(input.Supplier, 200, "The supplier");
@@ -807,6 +811,23 @@ public sealed class AssetService(ApplicationDbContext db, IActorProvider actors,
         throw new ValidationException(AccessPolicy.CanViewAsset(actor, other, AccessPolicy.IsAssigned(actor, other))
             ? $"Asset number {number} is already used by \"{other.Name}\"."
             : $"Asset number {number} is already taken.");
+    }
+
+    /// <summary>
+    /// A serial number, when given, is unique among assets that aren't disposed, ignoring case (§6.19), so an item can be
+    /// re-registered once its predecessor is disposed of. A service check only: older duplicates are left as they are. The clash
+    /// names the other asset only when the caller can see it.
+    /// </summary>
+    private async Task RequireUniqueSerialAsync(Actor actor, string serial, Guid? exceptId, CancellationToken ct)
+    {
+        var lower = serial.Trim().ToLowerInvariant();
+        var other = await db.Assets.AsNoTracking().Include(a => a.Assignments)
+            .FirstOrDefaultAsync(a => a.SerialNumber != null && a.SerialNumber.ToLower() == lower
+                && a.Status != AssetStatus.Disposed && a.Id != exceptId, ct);
+        if (other is null) return;
+        throw new ValidationException(AccessPolicy.CanViewAsset(actor, other, AccessPolicy.IsAssigned(actor, other))
+            ? $"Serial number {serial} is already used by \"{Summary(other)}\"."
+            : $"Serial number {serial} is already taken.");
     }
 
     /// <summary>Save, turning the unique index's backstop (two people registering the same number at once) into the usual message.</summary>

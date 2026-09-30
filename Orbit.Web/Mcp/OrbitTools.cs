@@ -654,7 +654,7 @@ public sealed class OrbitTools(
         "(ignoring case) when given. Pass an idempotencyKey so a retried call returns the asset already registered instead of a second one. " +
         "Department defaults to the key's own; the type and location must be the department's own (list_asset_types / list_asset_locations; a name " +
         "works in place of the id). properties is an object of property name to value, e.g. {\"RAM (GB)\": 16, \"OS\": \"Windows\"}; required " +
-        "properties must be given. The result flags possibleDuplicates (same manufacturer and serial number). Needs Register assets in the department. " +
+        "properties must be given. An assetNumber already in use, or a serialNumber already on an asset that isn't disposed, is refused (blank never clashes). The result flags possibleDuplicates (the same manufacturer and serial number on an older or disposed asset). Needs Register assets in the department. " +
         "To register several assets, use create_assets.")]
     public Task<string> CreateAsset(
         [Description("Name (required), e.g. \"Reception laptop\".")] string name,

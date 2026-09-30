@@ -29,6 +29,19 @@ public static class AssetRules
     public static bool SameAssetNumber(string? a, string? b) =>
         a is not null && b is not null && string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>Two serial numbers are the same when they match ignoring case and surrounding spaces; having none is never a clash.</summary>
+    public static bool SameSerialNumber(string? a, string? b) =>
+        a is not null && b is not null && string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Whether a save must check the serial number is free among live assets (§6.19): a serial is set, the asset isn't disposed,
+    /// and it is new (a create, <paramref name="previousStatus"/> null), has changed, or comes back with an asset reinstated from
+    /// disposal. Saving an older duplicate without touching its serial is never refused.
+    /// </summary>
+    public static bool NeedsSerialCheck(string? serial, AssetStatus status, string? previousSerial, AssetStatus? previousStatus) =>
+        !string.IsNullOrWhiteSpace(serial) && status != AssetStatus.Disposed
+        && (previousStatus is null || !SameSerialNumber(serial, previousSerial) || previousStatus == AssetStatus.Disposed);
+
     /// <summary>How an asset is named in messages, audit summaries and page titles: its ERP number and name, or just its name.</summary>
     public static string Label(string? assetNumber, string name) =>
         string.IsNullOrWhiteSpace(assetNumber) ? name : $"{assetNumber} - {name}";

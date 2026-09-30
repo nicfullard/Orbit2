@@ -50,6 +50,33 @@ public class AssetRulesTests
         Assert.Equal("Reception laptop", AssetRules.Label(null, "Reception laptop"));
     }
 
+    /// <summary>
+    /// AST-027 (the rule half): a serial number is unique among live assets, ignoring case and surrounding spaces. It is checked
+    /// when an asset is registered, when its serial changes and when it is reinstated from disposal. It is never checked for a
+    /// blank serial or a disposed asset, or when an older duplicate is saved with its serial untouched.
+    /// </summary>
+    [Fact]
+    public void Serial_numbers_are_checked_when_new_changed_or_reinstated()
+    {
+        Assert.True(AssetRules.SameSerialNumber("sn-123", " SN-123 "));
+        Assert.False(AssetRules.SameSerialNumber("SN-123", "SN-124"));
+        Assert.False(AssetRules.SameSerialNumber(null, null));
+
+        // Registering.
+        Assert.True(AssetRules.NeedsSerialCheck("SN-123", AssetStatus.Active, null, null));
+        Assert.False(AssetRules.NeedsSerialCheck(null, AssetStatus.Active, null, null));
+        Assert.False(AssetRules.NeedsSerialCheck("SN-123", AssetStatus.Disposed, null, null));
+
+        // Editing.
+        Assert.False(AssetRules.NeedsSerialCheck("SN-123", AssetStatus.Active, "SN-123", AssetStatus.Active));
+        Assert.False(AssetRules.NeedsSerialCheck("sn-123", AssetStatus.Active, "SN-123 ", AssetStatus.Active));
+        Assert.True(AssetRules.NeedsSerialCheck("SN-124", AssetStatus.Active, "SN-123", AssetStatus.Active));
+        Assert.True(AssetRules.NeedsSerialCheck("SN-123", AssetStatus.Active, null, AssetStatus.Active));
+        Assert.True(AssetRules.NeedsSerialCheck("SN-123", AssetStatus.Active, "SN-123", AssetStatus.Disposed));
+        Assert.False(AssetRules.NeedsSerialCheck("SN-123", AssetStatus.Disposed, "SN-123", AssetStatus.Active));
+        Assert.False(AssetRules.NeedsSerialCheck(null, AssetStatus.Active, "SN-123", AssetStatus.Active));
+    }
+
     /// <summary>AST-014 (the rule half): only an asset without checks can be deleted.</summary>
     [Fact]
     public void Only_an_asset_without_checks_can_be_deleted()
