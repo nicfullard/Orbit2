@@ -566,6 +566,32 @@ public sealed class AssetService(ApplicationDbContext db, IActorProvider actors,
         return asset;
     }
 
+    // ---------------------------------------------------------------- location
+
+    /// <summary>
+    /// Move an asset to another of its department's locations, or none, straight from the asset page (§6.19). Only the location
+    /// changes - no other field is saved - so nothing unrelated can block a move. Returns the location's name, or null for none.
+    /// </summary>
+    public async Task<string?> SetLocationAsync(Guid assetId, Guid? locationId, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        var asset = await db.Assets.Include(a => a.Assignments).Include(a => a.AssetLocation).Include(a => a.Department)
+            .FirstOrDefaultAsync(a => a.Id == assetId, ct) ?? throw new NotFoundException("Asset not found.");
+        AccessPolicy.Require(AccessPolicy.CanViewAsset(actor, asset, AccessPolicy.IsAssigned(actor, asset)), CantSee);
+        AccessPolicy.Require(AccessPolicy.CanEditAsset(actor, asset), "You don't have permission to change where this asset is.");
+        if (asset.Status == AssetStatus.Disposed) throw new ValidationException("A disposed asset's location can't be changed here; edit it instead.");
+        if (locationId == asset.AssetLocationId) return asset.AssetLocation?.Name;
+        var location = await LocationAsync(locationId, ct);
+        if (location is not null && !AccessPolicy.CanUseAssetLocation(asset.DepartmentId, location))
+            throw new ValidationException($"The location \"{location.Name}\" belongs to another department; choose one of {asset.Department.Name}'s locations.");
+        var changes = new ChangeSet().Track("location", asset.AssetLocation?.Name, location?.Name);
+        asset.AssetLocationId = location?.Id;
+        asset.UpdatedAt = DateTime.UtcNow;
+        audit.Add(actor, AuditEntity.Asset, asset.Id, AuditAction.Updated, asset.DepartmentId, Summary(asset), changes.Changes);
+        await db.SaveChangesAsync(ct);
+        return location?.Name;
+    }
+
     // ---------------------------------------------------------------- checks
 
     /// <summary>Record a check (§6.19). It never changes the asset; it sets the asset's last check if it is the latest.</summary>

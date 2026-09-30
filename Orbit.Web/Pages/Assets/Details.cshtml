@@ -76,7 +76,6 @@
                     <dt class="col-sm-3">Manufacturer</dt><dd class="col-sm-9">@(a.Manufacturer ?? "-")</dd>
                     <dt class="col-sm-3">Model</dt><dd class="col-sm-9">@(a.Model ?? "-")</dd>
                     <dt class="col-sm-3">Serial number</dt><dd class="col-sm-9 font-monospace">@(a.SerialNumber ?? "-")</dd>
-                    <dt class="col-sm-3">Location</dt><dd class="col-sm-9">@(a.AssetLocation?.Name ?? "-")</dd>
                     @if (a.Status == AssetStatus.Disposed)
                     {
                         <dt class="col-sm-3">Disposed on</dt><dd class="col-sm-9">@Ui.Day(a.DisposedOn)</dd>
@@ -362,6 +361,45 @@
                         <form method="post" asp-page-handler="Assign" asp-route-id="@a.Id">
                             <partial name="_PersonPicker" model="assignPicker" />
                         </form>
+                    </li>
+                }
+            </ul>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Location</div>
+            <ul class="list-group list-group-flush small">
+                <li class="list-group-item">
+                    @if (a.AssetLocation is null)
+                    {
+                        <span class="text-muted fst-italic">No location</span>
+                    }
+                    else
+                    {
+                        <span class="fw-semibold">@a.AssetLocation.Name</span>
+                        @if (a.AssetLocation.IsArchived) { <span class="badge text-bg-secondary">archived</span> }
+                    }
+                </li>
+                @if (Model.CanMove)
+                {
+                    <li class="list-group-item">
+                        @if (Model.Locations.Count == 0)
+                        {
+                            <span class="text-muted">@a.Department.Name has no locations set up.</span>
+                        }
+                        else
+                        {
+                            <form method="post" asp-page-handler="Location" asp-route-id="@a.Id" class="d-flex gap-2">
+                                <select class="form-select form-select-sm js-autosubmit" name="locationId" aria-label="Move this asset to">
+                                    <option value="" selected="@(a.AssetLocationId is null)">- No location -</option>
+                                    @foreach (var l in Model.Locations)
+                                    {
+                                        <option value="@l.Id" selected="@(l.Id == a.AssetLocationId)">@l.Name@(l.IsArchived ? " (archived)" : "")</option>
+                                    }
+                                </select>
+                                <noscript><button class="btn btn-sm btn-primary" type="submit">Save</button></noscript>
+                            </form>
+                        }
                     </li>
                 }
             </ul>

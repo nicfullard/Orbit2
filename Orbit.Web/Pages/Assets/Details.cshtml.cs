@@ -13,6 +13,7 @@ namespace Orbit.Pages.Assets;
 
 public class DetailsModel(
     AssetService assets,
+    AssetLocationService locations,
     CommentService comments,
     AttachmentService attachments,
     AuditService audit,
@@ -41,6 +42,10 @@ public class DetailsModel(
     public bool CanCopy { get; private set; }
     /// <summary>Change who holds it right here (§6.19): assets.edit, and not disposed.</summary>
     public bool CanAssign { get; private set; }
+    /// <summary>Change its location right here (§6.19): the same rule as <see cref="CanAssign"/>.</summary>
+    public bool CanMove { get; private set; }
+    /// <summary>The department's active locations to move it to, plus its current one even when archived.</summary>
+    public IReadOnlyList<AssetLocation> Locations { get; private set; } = [];
     public bool CanCheck { get; private set; }
     /// <summary>assets.check at Own only, on an asset the viewer holds: the check form is the one-click "Confirm I have it".</summary>
     public bool ConfirmOnly { get; private set; }
@@ -65,6 +70,8 @@ public class DetailsModel(
         CanEdit = AccessPolicy.CanEditAsset(Actor, Asset);
         CanCopy = AccessPolicy.CanCreateAssetIn(Actor, Asset.DepartmentId);
         CanAssign = CanEdit && Asset.Status != AssetStatus.Disposed;
+        CanMove = CanAssign;
+        if (CanMove) Locations = await locations.ListForDepartmentAsync(Asset.DepartmentId, Asset.AssetLocationId, ct);
         CanCheck = AccessPolicy.CanCheckAsset(Actor, Asset, IsAssigned);
         ConfirmOnly = CanCheck && IsAssigned && Actor.ScopeOf(Permission.AssetsCheck) == PermissionScope.Own;
         Values = Asset.PropertyValues.ToDictionary(v => v.AssetTypePropertyId, v => v.Value);
@@ -116,6 +123,18 @@ public class DetailsModel(
         {
             var name = await assets.UnassignAsync(id, userId, ct);
             if (name is not null) Success($"{name} no longer holds this asset.");
+        }
+        catch (ValidationException ex) { Error(ex.Message); }
+        return RedirectToPage(new { id });
+    }
+
+    /// <summary>Move the asset to another location, or none, without saving anything else on the record.</summary>
+    public async Task<IActionResult> OnPostLocationAsync(Guid id, Guid? locationId, CancellationToken ct)
+    {
+        try
+        {
+            var name = await assets.SetLocationAsync(id, locationId, ct);
+            Success(name is null ? "Location cleared." : $"Location: {name}.");
         }
         catch (ValidationException ex) { Error(ex.Message); }
         return RedirectToPage(new { id });

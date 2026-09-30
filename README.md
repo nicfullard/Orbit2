@@ -215,6 +215,7 @@ when given); it can be held by any number of people in any department, and carri
 and warranty details, periodic **checks** (OK / issue found / not found - a check never changes the asset's
 status), comments and files. Overdue checks, last checks that weren't OK, expiring warranties and assets still
 held by deactivated users are flagged and filterable; disposing of an asset removes its holders.
+Holders and the location can be changed straight from the asset's page, without opening the Edit form.
 The ERP asset number and the serial number, when given, can't be reused: a serial number already on an asset that
 isn't disposed is refused, ignoring case, so an item can be re-registered once its predecessor has been disposed of.
 **Quick check** on the Assets list is for an audit walk with a barcode scanner: scan one serial number (or ERP asset

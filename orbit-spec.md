@@ -806,6 +806,7 @@ A register of the organisation's physical assets — laptops, phones, vehicles, 
 
 **Holders**
 - An asset is held by any number of people, or none — anyone active in Orbit, whatever their department; never the synthetic Claude user. Changing holders is an edit (`assets.edit`), each person added or removed audited (`AssetAssigned` / `AssetUnassigned`). Besides the edit form, holders can be added and removed **straight from the asset page**: that changes only the holders, so nothing unrelated — a property made required since the asset was registered, say — can block a hand-over. `AssignedAt` / `AssignedById` describe the current assignment; earlier ones are in the history.
+- **Location from the asset page:** the asset page's *Location* card, under *Assigned to*, shows where the asset is and — with `assets.edit`, on an asset that isn't disposed — a drop-down of its department's active locations (its current one too, even when archived) and *No location*. Picking one saves at once and changes only the location, audited as an `Updated` entry with the `location` diff, so as with holders nothing unrelated can block a move.
 - **Leavers:** deactivating a user doesn't unassign their assets — they still have to be recovered. The Assets list flags assets held by a deactivated user and filters on them, the asset page shows **Held by a deactivated user**, and the person's page under Admin > Users says "Holds N assets", linking to the filtered list.
 
 **Checks**
@@ -1356,6 +1357,11 @@ Earlier open questions, now resolved:
     - **Checked only when the serial matters.** `AssetRules.NeedsSerialCheck` asks for the check on a registration, a changed serial or a reinstatement. Saving an older duplicate without touching its serial is never refused (AST-027).
     - **A service check, not an index.** Existing databases may already hold duplicate serials, and a unique index would fail to build on them. The check queries every asset, not only those the caller can see, so a duplicate can't hide in another department. The message names the other asset only when the caller can see it, as the asset-number check does. Two saves at the same instant could both get past the check, which is accepted.
     - **The possible-duplicate flag stays.** It still marks older duplicates and matches with disposed assets.
+61. **Changing an asset's location from the asset page (§6.19).** Moving an asset meant opening the Edit form and saving every field, which an unrelated rule (a property made required since registration) could refuse. Asked for a quick location control like the one for *Assigned to*. Decisions:
+    - **A drop-down, not a search.** A department has few locations, so the card lists them all; picking one submits at once (the existing `js-autosubmit` hook).
+    - **The holders' rule.** It needs `assets.edit` and isn't offered on a disposed asset, as with adding a holder; a disposed asset's location can still be changed through Edit.
+    - **Only the location is saved.** `AssetService.SetLocationAsync` checks the location exists, isn't archived and belongs to the asset's department, and audits the change as the Edit form would. Keeping an archived current location is a no-op, so it isn't refused.
+    - **One place on the page.** The location moved from the Details card to its own sidebar card under *Assigned to*.
 
 ## 14. Suggested Build Order
 
@@ -1403,3 +1409,4 @@ Earlier open questions, now resolved:
 42. Batch asset tools (§6.19, §7.1): the pure `McpBatch` loop (per-item refusals, a reset after each item, stop on an unexpected failure, 1-100 items) with its tests (AST-026) → `AssetCreateArg` / `AssetUpdateArg` / `AssetCheckArg` and the shared `RegisterAsync` / `ChangeAsync` / `RecordCheckAsync` in `OrbitTools`, which `create_asset` / `update_asset` / `record_asset_check` now call → `AssetService.DiscardUnsaved` → `create_assets`, `update_assets` and `record_asset_checks` → `ServerInstructions`, the README and §7.1. No migration.
 43. Serial number in the `list_assets` summary (§6.19, §7.1): `serialNumber` in `AssetSummaryDto`, and dropped from `AssetDto`'s top level → the §7.1 `list_assets` row. No migration.
 44. Unique serial numbers among live assets (§6.19): `AssetRules.SameSerialNumber` / `NeedsSerialCheck` with their tests (AST-027) → `AssetService.RequireUniqueSerialAsync` in `CreateAsync` and `UpdateAsync` → the `create_asset` description, the README and §6.19. No migration.
+45. Location from the asset page (§6.19): `AssetService.SetLocationAsync` → the `Location` handler, `CanMove` and `Locations` on the asset page → the *Location* card under *Assigned to*, replacing the Details row. No migration.
