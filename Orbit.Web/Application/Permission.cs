@@ -8,6 +8,7 @@ public static class Permission
 {
     public const string TasksView = "tasks.view";
     public const string TasksCreate = "tasks.create";
+    public const string TasksCreateFor = "tasks.create_for";
     public const string TasksEdit = "tasks.edit";
     public const string TasksTake = "tasks.take";
     public const string TasksPlan = "tasks.plan";
@@ -36,7 +37,8 @@ public static class Permission
 
 /// <summary>
 /// How far a grant reaches (spec §6.5). A grant at a scope covers the lower ones: <see cref="Own"/> is the actor's own
-/// objects (tasks assigned to or created by them, projects they own, their own time entries), <see cref="Department"/>
+/// objects (tasks assigned to them, created by them or created for them as the requestee, projects they own, their own time
+/// entries), <see cref="Department"/>
 /// everything in their own department, <see cref="All"/> every department. Stored as its name.
 /// </summary>
 public enum PermissionScope

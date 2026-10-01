@@ -19,6 +19,8 @@ public static class DefaultRoles
     {
         [Permission.TasksView] = PermissionScope.Department,
         [Permission.TasksCreate] = PermissionScope.Department,
+        // Requestee (§6.2.2): Own names nobody else; an admin gives Department or All to a role that creates tasks for others.
+        [Permission.TasksCreateFor] = PermissionScope.Own,
         [Permission.TasksEdit] = PermissionScope.Own,
         [Permission.TasksTake] = PermissionScope.Department,
         [Permission.TasksPlan] = PermissionScope.Department,
@@ -37,6 +39,7 @@ public static class DefaultRoles
     {
         [Permission.TasksView] = PermissionScope.Department,
         [Permission.TasksCreate] = PermissionScope.Department,
+        [Permission.TasksCreateFor] = PermissionScope.Own,
         [Permission.TasksEdit] = PermissionScope.Department,
         [Permission.TasksTake] = PermissionScope.Department,
         [Permission.TasksPlan] = PermissionScope.Department,

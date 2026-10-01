@@ -83,6 +83,13 @@
                     @foreach (var i in Model.AssigneeItems) { <option value="@i.Value" selected="@i.Selected">@i.Text</option> }
                 </select>
             </div>
+            <div class="col-sm-6 col-lg-2">
+                <label class="form-label small mb-0" title="Whom the task was created for - with Me, also your own tasks other departments hold">Requestee</label>
+                <select class="form-select form-select-sm" name="RequesteeId">
+                    <option value="">All</option>
+                    @foreach (var i in Model.RequesteeItems) { <option value="@i.Value" selected="@i.Selected">@i.Text</option> }
+                </select>
+            </div>
             <div class="col-sm-6 col-lg-1">
                 <label class="form-label small mb-0">Priority</label>
                 <select class="form-select form-select-sm" name="Priority" asp-items="priorityItems"></select>

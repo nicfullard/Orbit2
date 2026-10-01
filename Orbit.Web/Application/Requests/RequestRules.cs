@@ -16,7 +16,7 @@ public sealed record RequestAnswerInput(string? Value, Guid? AssetId = null);
 public sealed record RequestAnswer(RequestQuestion Question, string? Value, Guid? AssetId = null, Guid? UserId = null);
 
 /// <summary>What a request is filed as: the task's title and description, and the task fields its answers fill.</summary>
-public sealed record ComposedRequest(string Title, string Description, TaskPriority Priority, DateOnly? DueDate, Guid? AssetId, Guid? RequestedForId);
+public sealed record ComposedRequest(string Title, string Description, TaskPriority Priority, DateOnly? DueDate, Guid? AssetId, Guid? RequesteeId);
 
 /// <summary>A question definition after its checks.</summary>
 public sealed record QuestionDefinition(string Prompt, string? HelpText, RequestQuestionType Type, bool IsRequired, List<string> Choices, bool SetsDueDate);
@@ -266,7 +266,7 @@ public static class RequestRules
     /// ("Something isn't working: The printer jams"), or "{option} for {person}" without one - the person the User question names,
     /// else the requester. Description: who logged it and through which option, then each answered question and its answer, in
     /// order. Priority: the Urgency answer, else Medium. Due date: the answer to the Date question that sets it. Asset: the asset
-    /// picked. Requested for: the person the User question names. <paramref name="assetLabel"/> names the picked asset in the
+    /// picked. Requestee: the person the User question names. <paramref name="assetLabel"/> names the picked asset in the
     /// description.
     /// </summary>
     public static ComposedRequest Compose(

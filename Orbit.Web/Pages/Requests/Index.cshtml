@@ -88,9 +88,9 @@
                                 {
                                     <div class="small text-muted">Logged for you by @t.CreatedBy.DisplayName</div>
                                 }
-                                else if (t.RequestedFor is not null && t.RequestedForId != Model.MeId)
+                                else if (t.Requestee is not null && t.RequesteeId != Model.MeId)
                                 {
-                                    <div class="small text-muted">For @t.RequestedFor.DisplayName</div>
+                                    <div class="small text-muted">For @t.Requestee.DisplayName</div>
                                 }
                                 <div class="small text-muted d-md-none">@t.Department.Name</div>
                             </td>

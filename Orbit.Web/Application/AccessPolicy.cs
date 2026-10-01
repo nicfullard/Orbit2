@@ -5,12 +5,14 @@ namespace Orbit.Application;
 /// <summary>
 /// The §6.5 rules as code: which permission, at which scope, each operation needs. Every service consults these,
 /// so the Razor Pages UI, the MCP tools and any future REST surface are bound by exactly the same checks.
-/// "Own" means assigned to or created by the actor for tasks and recurring definitions, owned by the actor for projects.
+/// "Own" means assigned to, created by or (for tasks) created for the actor as the requestee, for tasks and recurring
+/// definitions; owned by the actor for projects.
 /// </summary>
 public static class AccessPolicy
 {
+    /// <summary>A task is the actor's own when they are its assignee, its creator or its requestee (§6.2.2): the person it was created for has the creator's rights.</summary>
     private static bool IsOwn(Actor a, TaskItem t) =>
-        a.UserId is Guid me && (t.AssigneeId == me || t.CreatedById == me);
+        a.UserId is Guid me && (t.AssigneeId == me || t.CreatedById == me || t.RequesteeId == me);
 
     private static bool IsOwn(Actor a, RecurringTaskDefinition d) =>
         a.UserId is Guid me && (d.AssigneeId == me || d.CreatedById == me);
@@ -52,6 +54,19 @@ public static class AccessPolicy
 
     /// <summary>Moving a task or recurring definition into another department: an edit that must reach the target department.</summary>
     public static bool CanMoveTaskTo(Actor a, Guid departmentId) => a.CanInDepartment(Permission.TasksEdit, departmentId);
+
+    /// <summary>Naming someone else as a task's requestee (tasks.create_for above Own): the task form offers the Requestee field (§6.2.2).</summary>
+    public static bool CanCreateTasksForOthers(Actor a) => a.ScopeOf(Permission.TasksCreateFor) >= PermissionScope.Department;
+
+    /// <summary>
+    /// Whom a task may be created for - its requestee (§6.2.2): yourself at Own; anyone in your department at Department; anyone
+    /// at All. The scope reaches the person's home department, not the task's. Changing or clearing a requestee needs it for the
+    /// person removed as well as the person added. Separate from <see cref="CanRequestFor"/>, which request flows use.
+    /// </summary>
+    public static bool CanCreateTaskFor(Actor a, Guid userId, Guid? userDepartmentId) =>
+        a.ScopeOf(Permission.TasksCreateFor) >= PermissionScope.Own &&
+        (userId == a.UserId || a.CanAnywhere(Permission.TasksCreateFor)
+            || (userDepartmentId is Guid d && a.CanInDepartment(Permission.TasksCreateFor, d)));
 
     /// <summary>
     /// projects.view at Own (the actor owns it), Department or All. At Department scope a project from another department

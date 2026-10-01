@@ -200,10 +200,10 @@ public class RequestRulesTests
         Assert.True(errors.ContainsKey(who.Id));
 
         var composed = RequestRules.Compose(option, answers, "Jane Smith", "Finance");
-        Assert.Equal(bob, composed.RequestedForId);
+        Assert.Equal(bob, composed.RequesteeId);
         Assert.Equal("Something isn't working for Bob Smith", composed.Title);
         Assert.Contains("Who is the change for?\nBob Smith\n", composed.Description);
-        Assert.Null(RequestRules.Compose(option, [answers[1]], "Jane Smith", null).RequestedForId);
+        Assert.Null(RequestRules.Compose(option, [answers[1]], "Jane Smith", null).RequesteeId);
 
         // One per flow: it fills one task field.
         Assert.Throws<ValidationException>(() => RequestRules.CheckFlow([Q(RequestQuestionType.User), Q(RequestQuestionType.User)]));

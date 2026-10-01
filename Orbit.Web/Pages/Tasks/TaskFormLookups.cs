@@ -28,9 +28,27 @@ public sealed class TaskFormLookups
     public bool CanPickAsset { get; init; }
     /// <summary>The chosen asset's number and name, for the picker's chip - or the read-only line for someone without the picker.</summary>
     public string? SelectedAssetLabel { get; init; }
+    /// <summary>Whether the form carries the Requestee field (§6.2.2): the task forms do, the recurring form doesn't.</summary>
+    public bool OfferRequestee { get; init; }
+    /// <summary>Whether the caller may change the requestee here (<see cref="CanChangeRequestee"/>); otherwise it is shown and kept as it is.</summary>
+    public bool CanChooseRequestee { get; init; }
+    /// <summary>The people the task may be created for, "(nobody else)" first; the current requestee is always among them.</summary>
+    public IReadOnlyList<SelectListItem> Requestees { get; init; } = [];
+    /// <summary>The current requestee's name, for the read-only line when the caller can't change it.</summary>
+    public string? RequesteeLabel { get; init; }
 
     /// <summary>The asset a task or recurring task is linked to now, as the builders below take it.</summary>
     public static AssetRef? RefOf(Asset? asset) => asset is null ? null : new AssetRef(asset.Id, asset.AssetNumber, asset.Name);
+
+    /// <summary>
+    /// Whether the caller may set or change a task's requestee (§6.2.2): tasks.create_for above Own, and reaching the current
+    /// requestee too - a requestee set by someone with a wider reach is shown and kept, not offered for change.
+    /// </summary>
+    public static bool CanChangeRequestee(Actor actor, ApplicationUser? current) =>
+        AccessPolicy.CanCreateTasksForOthers(actor)
+        && (current is null || AccessPolicy.CanCreateTaskFor(actor, current.Id, current.DepartmentId));
+
+    private static string PersonName(ApplicationUser u) => u.IsActive ? u.DisplayName : $"{u.DisplayName} (deactivated)";
 
     /// <summary>Lookups without the Parent task picker - for the recurring-definition form, which shares these fields but has no parent (§6.15).</summary>
     public static Task<TaskFormLookups> BuildAsync(
@@ -43,11 +61,13 @@ public sealed class TaskFormLookups
         TaskForm form,
         AssetRef? currentAsset,
         CancellationToken ct) =>
-        BuildAsync(actor, departments, projects, users, sprints, null, assets, form, null, currentAsset, ct);
+        BuildAsync(actor, departments, projects, users, sprints, null, assets, form, null, currentAsset, false, null, ct);
 
     /// <param name="structure">Supplies the Parent task options; null leaves the picker empty.</param>
     /// <param name="existingTaskId">The task being edited, so it is not offered as its own parent.</param>
     /// <param name="currentAsset">The asset the task is linked to now, named on the form even when the caller can't see it.</param>
+    /// <param name="offerRequestee">Whether the form carries the Requestee field (§6.2.2).</param>
+    /// <param name="currentRequestee">The task's saved requestee, kept on the form even when deactivated or out of the caller's reach.</param>
     public static async Task<TaskFormLookups> BuildAsync(
         Actor actor,
         DepartmentService departments,
@@ -59,6 +79,8 @@ public sealed class TaskFormLookups
         TaskForm form,
         Guid? existingTaskId,
         AssetRef? currentAsset,
+        bool offerRequestee,
+        ApplicationUser? currentRequestee,
         CancellationToken ct)
     {
         var canChooseDepartment = actor.CanAnywhere(Permission.TasksCreate);
@@ -107,6 +129,21 @@ public sealed class TaskFormLookups
             assetLabel = chosen is null ? "(an asset you can't see)" : AssetRules.Label(chosen.AssetNumber, chosen.Name);
         }
 
+        // The requestee (§6.2.2): whom the caller may create tasks for, plus the saved one so a save never drops them silently.
+        var canChooseRequestee = offerRequestee && CanChangeRequestee(actor, currentRequestee);
+        var requesteeItems = new List<SelectListItem>();
+        if (canChooseRequestee)
+        {
+            var everywhere = actor.CanAnywhere(Permission.TasksCreateFor);
+            requesteeItems.Add(new SelectListItem("(nobody else)", string.Empty, form.RequesteeId is null));
+            var people = await users.PeopleInReachAsync(Permission.TasksCreateFor, ct);
+            requesteeItems.AddRange(people.Select(u => new SelectListItem(
+                (everywhere ? $"{u.DisplayName} ({u.DepartmentName ?? u.Role.Name})" : u.DisplayName) + (u.Id == actor.UserId ? " (you)" : ""),
+                u.Id.ToString(), u.Id == form.RequesteeId)));
+            if (currentRequestee is not null && people.All(p => p.Id != currentRequestee.Id))
+                requesteeItems.Insert(1, new SelectListItem(PersonName(currentRequestee), currentRequestee.Id.ToString(), currentRequestee.Id == form.RequesteeId));
+        }
+
         return new TaskFormLookups
         {
             Actor = actor,
@@ -117,7 +154,11 @@ public sealed class TaskFormLookups
             Sprints = sprintItems,
             Parents = parents,
             CanPickAsset = actor.Has(Permission.AssetsView),
-            SelectedAssetLabel = assetLabel
+            SelectedAssetLabel = assetLabel,
+            OfferRequestee = offerRequestee,
+            CanChooseRequestee = canChooseRequestee,
+            Requestees = requesteeItems,
+            RequesteeLabel = currentRequestee is null ? null : PersonName(currentRequestee)
         };
     }
 }

@@ -24,7 +24,7 @@ public sealed class TaskService(
         .Include(t => t.Project).ThenInclude(p => p!.Department)
         .Include(t => t.Assignee)
         .Include(t => t.CreatedBy)
-        .Include(t => t.RequestedFor)
+        .Include(t => t.Requestee)
         .Include(t => t.Sprint)
         .Include(t => t.Asset)
         .Include(t => t.RecurringTaskDefinition);
@@ -39,6 +39,7 @@ public sealed class TaskService(
         if (f.Status is TaskItemStatus status) q = q.Where(t => t.Status == status);
         if (f.Unassigned) q = q.Where(t => t.AssigneeId == null);
         else if (f.AssigneeId is Guid assigneeId) q = q.Where(t => t.AssigneeId == assigneeId);
+        if (f.RequesteeId is Guid requesteeId) q = q.Where(t => t.RequesteeId == requesteeId);
         if (f.Priority is TaskPriority priority) q = q.Where(t => t.Priority == priority);
         if (f.Type is TaskType type) q = q.Where(t => t.Type == type);
         if (f.Source is TaskSource source) q = q.Where(t => t.Source == source);
@@ -73,10 +74,13 @@ public sealed class TaskService(
         return new PagedResult<TaskItem>(items, page, pageSize, total);
     }
 
-    /// <summary>The actor's tasks.view scope (§6.5), then the optional department filter within it.</summary>
+    /// <summary>
+    /// The actor's tasks.view scope (§6.5), then the optional department filter within it. A requestee filter (§6.2.2) lists every
+    /// task the actor may open, their own ones in other departments included.
+    /// </summary>
     private static IQueryable<TaskItem> Scope(IQueryable<TaskItem> q, Actor actor, TaskFilter f)
     {
-        q = Scoping.Tasks(q, actor);
+        q = f.RequesteeId is null ? Scoping.Tasks(q, actor) : Scoping.TasksIncludingOwn(q, actor);
         return f.DepartmentId is Guid d ? q.Where(t => t.DepartmentId == d) : q;
     }
 
@@ -117,6 +121,7 @@ public sealed class TaskService(
         await RequireOpenDepartmentAsync(departmentId, ct);
 
         var assignee = await ValidateAssigneeAsync(input.AssigneeId, departmentId, ct);
+        var requestee = await ValidateRequesteeAsync(actor, input.RequesteeId, ct);
         await ValidateSprintAsync(input.SprintId, ct);
         await assets.CheckLinkAsync(input.AssetId, null, ct);
 
@@ -135,6 +140,7 @@ public sealed class TaskService(
             Type = input.Type,
             EstimateMinutes = CleanEstimate(input.EstimateMinutes),
             AssigneeId = assignee?.Id,
+            RequesteeId = requestee?.Id,
             ParentTaskId = parent?.Id,
             StartDate = input.StartDate,
             DueDate = input.DueDate,
@@ -146,6 +152,9 @@ public sealed class TaskService(
 
         if (assignee is not null && assignee.Id != actor.UserId)
             await notifications.TaskAssignedAsync(task, assignee, actor, ct);
+        // The requestee hears of it unless they made it, or the assignment email has just told them (§6.2.2).
+        if (requestee is not null && requestee.Id != actor.UserId && requestee.Id != assignee?.Id)
+            await notifications.TaskCreatedForAsync(task, requestee, actor, ct: ct);
 
         return await GetAsync(task.Id, ct);
     }
@@ -176,7 +185,7 @@ public sealed class TaskService(
         await RequireOpenDepartmentAsync(input.DepartmentId, ct);
         await assets.CheckLinkAsync(input.AssetId, null, ct);
         DependencyRules.RequireDatesInOrder(null, input.DueDate);
-        if (input.RequestedForId is Guid forId)
+        if (input.RequesteeId is Guid forId)
         {
             var person = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == forId, ct)
                 ?? throw new ValidationException("The person the request is for doesn't exist.");
@@ -195,7 +204,7 @@ public sealed class TaskService(
             Type = input.Type,
             DueDate = input.DueDate,
             Source = TaskSource.Request,
-            RequestedForId = input.RequestedForId,
+            RequesteeId = input.RequesteeId,
             IdempotencyKey = key
         };
         await InsertAsync(actor, task, TaskItemStatus.Todo, input.RequestDetails, ct);
@@ -217,7 +226,7 @@ public sealed class TaskService(
         audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.Created, task.DepartmentId, task.Title, new
         {
             task.Number, task.Title, task.Status, task.Priority, task.Type, task.EstimateMinutes, task.ProjectId, task.DepartmentId, task.AssigneeId,
-            task.ParentTaskId, task.StartDate, task.DueDate, task.Source, task.SprintId, task.AssetId, task.RequestedForId, request
+            task.ParentTaskId, task.StartDate, task.DueDate, task.Source, task.SprintId, task.AssetId, task.RequesteeId, request
         });
         await db.SaveChangesAsync(ct);
     }
@@ -240,6 +249,15 @@ public sealed class TaskService(
         }
 
         var assignee = await ValidateAssigneeAsync(input.AssigneeId, departmentId, ct);
+        // §6.2.2: a kept requestee isn't re-checked; changing one needs tasks.create_for over the person removed and the person added.
+        ApplicationUser? newRequestee = null;
+        var requesteeChanged = input.RequesteeId != task.RequesteeId;
+        if (requesteeChanged)
+        {
+            if (task.Requestee is { } removed)
+                AccessPolicy.Require(AccessPolicy.CanCreateTaskFor(actor, removed.Id, removed.DepartmentId), "You can't change this task's requestee.");
+            newRequestee = await ValidateRequesteeAsync(actor, input.RequesteeId, ct);
+        }
         await assets.CheckLinkAsync(input.AssetId, task.AssetId, ct); // a kept asset isn't re-checked (§6.19)
         var newStatus = input.Status ?? task.Status; // any status: the §6.5 status rule is the edit right required above
         if (input.SprintId != task.SprintId)
@@ -266,6 +284,7 @@ public sealed class TaskService(
             .Track("type", task.Type, input.Type)
             .Track("estimateMinutes", task.EstimateMinutes, estimate)
             .Track("assigneeId", task.AssigneeId, assignee?.Id)
+            .Track("requesteeId", task.RequesteeId, input.RequesteeId)
             .Track("parentTaskId", task.ParentTaskId, parent?.Id)
             .Track("startDate", task.StartDate, input.StartDate)
             .Track("dueDate", task.DueDate, input.DueDate)
@@ -284,6 +303,11 @@ public sealed class TaskService(
         task.Type = input.Type;
         task.EstimateMinutes = estimate;
         task.AssigneeId = assignee?.Id;
+        if (requesteeChanged)
+        {
+            task.RequesteeId = newRequestee?.Id;
+            task.Requestee = newRequestee;
+        }
         if (changes.Contains("dueDate")) task.DueSoonNotifiedAt = null; // a new due date earns a fresh reminder
         task.ParentTaskId = parent?.Id;
         task.StartDate = input.StartDate;
@@ -315,8 +339,11 @@ public sealed class TaskService(
                 new { parent = new { from = previousParentId, to = parent?.Id }, parentTitle = parent?.Title });
         await db.SaveChangesAsync(ct);
 
-        if (assignee is not null && assignee.Id != previousAssigneeId && assignee.Id != actor.UserId)
-            await notifications.TaskAssignedAsync(task, assignee, actor, ct);
+        var assignedNotified = assignee is not null && assignee.Id != previousAssigneeId && assignee.Id != actor.UserId;
+        if (assignedNotified)
+            await notifications.TaskAssignedAsync(task, assignee!, actor, ct);
+        if (newRequestee is not null && newRequestee.Id != actor.UserId && !(assignedNotified && assignee!.Id == newRequestee.Id))
+            await notifications.TaskCreatedForAsync(task, newRequestee, actor, namedLater: true, ct);
 
         return await GetAsync(task.Id, ct);
     }
@@ -641,6 +668,22 @@ public sealed class TaskService(
         if (user.DepartmentId != departmentId && !await RoleResolver.HasScopeAsync(db, user.Id, Permission.TasksView, PermissionScope.All, ct))
             throw new ValidationException("A task can't be assigned to a user outside its own department.");
         return user;
+    }
+
+    /// <summary>
+    /// The requestee (§6.2.2) must be an active person - never the Claude user - whom the caller may create tasks for: themselves
+    /// at Own, their department at Department, anyone at All (tasks.create_for).
+    /// </summary>
+    private async Task<ApplicationUser?> ValidateRequesteeAsync(Actor actor, Guid? requesteeId, CancellationToken ct)
+    {
+        if (requesteeId is not Guid id) return null;
+        var person = await db.Users.FirstOrDefaultAsync(u => u.Id == id, ct)
+            ?? throw new ValidationException("The requestee doesn't exist.");
+        if (!person.IsActive || person.IsSystemAccount)
+            throw new ValidationException("A task can only be created for an active person.");
+        AccessPolicy.Require(AccessPolicy.CanCreateTaskFor(actor, person.Id, person.DepartmentId),
+            "You don't have permission to create tasks for that person.");
+        return person;
     }
 
     private async Task<Sprint?> ValidateSprintAsync(Guid? sprintId, CancellationToken ct)

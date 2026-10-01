@@ -10,6 +10,11 @@ public sealed class TaskFilter
     public Guid? AssigneeId { get; set; }
     /// <summary>Only tasks with no assignee - work nobody has picked up yet. Takes precedence over <see cref="AssigneeId"/>.</summary>
     public bool Unassigned { get; set; }
+    /// <summary>
+    /// Only tasks created for this person - their requestee (§6.2.2). It also widens a Department view scope to every task the
+    /// caller may open (<see cref="Scoping.TasksIncludingOwn"/>), so "Requestee: me" finds one another department holds.
+    /// </summary>
+    public Guid? RequesteeId { get; set; }
     public TaskPriority? Priority { get; set; }
     public TaskType? Type { get; set; }
     public TaskSource? Source { get; set; }
@@ -51,6 +56,12 @@ public sealed class TaskInput
     /// <summary>Estimated effort in minutes (§6.10). Null or 0 = no estimate.</summary>
     public int? EstimateMinutes { get; set; }
     public Guid? AssigneeId { get; set; }
+    /// <summary>
+    /// The requestee, whom the task is for (§6.2.2); null = nobody else. Must be an active person within the caller's
+    /// tasks.create_for reach. On update a change needs that reach over the person removed as well as the person added; an
+    /// unchanged requestee is kept without the check.
+    /// </summary>
+    public Guid? RequesteeId { get; set; }
     /// <summary>Planned start (§6.15); never after <see cref="DueDate"/>.</summary>
     public DateOnly? StartDate { get; set; }
     public DateOnly? DueDate { get; set; }

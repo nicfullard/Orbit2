@@ -102,10 +102,10 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
                 .HasForeignKey(t => t.AssigneeId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(t => t.CreatedBy).WithMany(u => u.CreatedTasks)
                 .HasForeignKey(t => t.CreatedById).OnDelete(DeleteBehavior.Restrict);
-            // Who a request is for (§6.20); users are deactivated, never deleted.
-            b.HasOne(t => t.RequestedFor).WithMany()
-                .HasForeignKey(t => t.RequestedForId).OnDelete(DeleteBehavior.Restrict);
-            b.HasIndex(t => t.RequestedForId);
+            // The requestee, whom the task is for (§6.2.2); users are deactivated, never deleted.
+            b.HasOne(t => t.Requestee).WithMany()
+                .HasForeignKey(t => t.RequesteeId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(t => t.RequesteeId);
             b.HasOne(t => t.Sprint).WithMany(s => s.Tasks)
                 .HasForeignKey(t => t.SprintId).OnDelete(DeleteBehavior.SetNull);
             b.HasOne(t => t.RecurringTaskDefinition).WithMany(r => r.GeneratedTasks)

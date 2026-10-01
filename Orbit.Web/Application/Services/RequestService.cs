@@ -16,7 +16,8 @@ public sealed class RequestService(
     IActorProvider actors,
     TaskService tasks,
     AttachmentService attachments,
-    AssetService assets)
+    AssetService assets,
+    NotificationService notifications)
 {
     /// <summary>Every live category with its live options (<see cref="RequestRules.Live"/>), grouped by department in name order.</summary>
     public async Task<IReadOnlyList<RequestCatalogueSection>> CatalogueAsync(CancellationToken ct = default)
@@ -112,13 +113,18 @@ public sealed class RequestService(
             Type = option.TaskType,
             DueDate = composed.DueDate,
             AssetId = composed.AssetId,
-            RequestedForId = composed.RequestedForId,
+            RequesteeId = composed.RequesteeId,
             IdempotencyKey = key,
             RequestDetails = new { categoryId = option.CategoryId, category = option.Category.Title, optionId = option.Id, option = option.Title }
         }, ct);
         foreach (var file in files)
             await attachments.AddToLoggedRequestAsync(task, file, ct);
         await tx.CommitAsync(ct);
+
+        // Only once it is committed: a file that fails rolls the request back, and nobody should hear of a request that isn't there.
+        if (task.RequesteeId is Guid requesteeId && requesteeId != actor.UserId
+            && await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == requesteeId, ct) is { } requestee)
+            await notifications.TaskCreatedForAsync(task, requestee, actor, ct: ct);
         return task;
     }
 
@@ -133,34 +139,24 @@ public sealed class RequestService(
         return await PeopleAsync(actor, ct);
     }
 
-    private async Task<IReadOnlyList<RequestPerson>> PeopleAsync(Actor actor, CancellationToken ct)
-    {
-        var me = actor.UserId;
-        var dept = actor.DepartmentId;
-        var q = db.Users.AsNoTracking().Where(u => u.IsActive && !u.IsSystemAccount);
-        q = actor.ScopeOf(Permission.RequestsSubmit) switch
-        {
-            PermissionScope.All => q,
-            PermissionScope.Department => q.Where(u => u.Id == me || (dept != null && u.DepartmentId == dept)),
-            _ => q.Where(u => u.Id == me)
-        };
-        return await q.OrderBy(u => u.DisplayName).ThenBy(u => u.Email)
+    private async Task<IReadOnlyList<RequestPerson>> PeopleAsync(Actor actor, CancellationToken ct) =>
+        await Scoping.People(db.Users.AsNoTracking(), actor, Permission.RequestsSubmit)
+            .OrderBy(u => u.DisplayName).ThenBy(u => u.Email)
             .Select(u => new RequestPerson(u.Id, u.DisplayName, u.Email))
             .ToListAsync(ct);
-    }
 
     /// <summary>
-    /// The requests the caller logged or that were logged for them (tasks with Source Request they created, or whose RequestedForId is
-    /// theirs), open ones first and then the newest, each with whether they may open it: that follows tasks.view, which covers tasks
-    /// they created from Own up.
+    /// The requests the caller logged or that were logged for them (tasks with Source Request they created, or whose requestee they
+    /// are), open ones first and then the newest, each with whether they may open it: that follows tasks.view, which covers tasks
+    /// they created or are the requestee of from Own up (§6.2.2).
     /// </summary>
     public async Task<IReadOnlyList<MyRequest>> MyRequestsAsync(int take = 20, CancellationToken ct = default)
     {
         var actor = await actors.GetAsync(ct);
         RequireSubmit(actor);
         var me = actor.UserId;
-        var rows = await db.Tasks.AsNoTracking().Include(t => t.Department).Include(t => t.CreatedBy).Include(t => t.RequestedFor)
-            .Where(t => t.Source == TaskSource.Request && (t.CreatedById == me || t.RequestedForId == me))
+        var rows = await db.Tasks.AsNoTracking().Include(t => t.Department).Include(t => t.CreatedBy).Include(t => t.Requestee)
+            .Where(t => t.Source == TaskSource.Request && (t.CreatedById == me || t.RequesteeId == me))
             .OrderBy(t => t.Status == TaskItemStatus.Done || t.Status == TaskItemStatus.Cancelled)
             .ThenByDescending(t => t.CreatedAt)
             .Take(Math.Clamp(take, 1, 200))

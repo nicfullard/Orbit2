@@ -26,6 +26,25 @@ public sealed class NotificationService(
         await SendAsync(assignee.Email!, subject, body);
     }
 
+    /// <summary>
+    /// Tells the requestee a task was created for them (§6.2.2) - on the task form, over MCP or through a request flow - or, with
+    /// <paramref name="namedLater"/>, that an edit made them the requestee.
+    /// </summary>
+    public async Task TaskCreatedForAsync(TaskItem task, ApplicationUser requestee, Actor by, bool namedLater = false, CancellationToken ct = default)
+    {
+        if (!CanNotify(requestee)) return;
+        var subject = namedLater ? $"[Orbit] You are the requestee: {task.Title}" : $"[Orbit] Task created for you: {task.Title}";
+        var link = $"<a href=\"{TaskUrl(task.Id)}\">{Enc(task.Number)} {Enc(task.Title)}</a>";
+        var what = namedLater ? $"named you as the requestee of the task {link}"
+            : task.Source == TaskSource.Request ? $"logged the request {link} for you"
+            : $"created the task {link} for you";
+        var body =
+            $"<p>Hi {Enc(requestee.DisplayName)},</p>" +
+            $"<p>{Enc(by.DisplayName)} {what}. You can follow and update it as your own.</p>" +
+            $"<p>Priority: {task.Priority}{(task.DueDate is DateOnly d ? $" &middot; Due: {d:yyyy-MM-dd}" : "")}</p>";
+        await SendAsync(requestee.Email!, subject, body);
+    }
+
     public async Task TaskDueSoonAsync(TaskItem task, ApplicationUser assignee, DateOnly today, CancellationToken ct = default)
     {
         if (!CanNotify(assignee) || task.DueDate is not DateOnly due) return;

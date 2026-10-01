@@ -34,13 +34,15 @@ public class CreateModel(
         Form.DepartmentId ??= projectId is Guid pid
             ? await projects.GetDepartmentIdAsync(pid, ct) ?? actor.DepartmentId
             : actor.DepartmentId;
-        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, structure, assets, Form, null, null, ct);
+        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, structure, assets, Form, null, null, true, null, ct);
     }
 
     public async Task<IActionResult> OnPostAsync(CancellationToken ct)
     {
         var actor = await actors.GetAsync(ct);
         if (!actor.CanAnywhere(Permission.TasksCreate)) Form.DepartmentId = actor.DepartmentId;
+        // Without tasks.create_for above Own the Requestee field isn't offered, so a posted one is dropped (§6.2.2).
+        if (!AccessPolicy.CanCreateTasksForOthers(actor)) Form.RequesteeId = null;
         if (ModelState.IsValid)
         {
             try
@@ -54,7 +56,7 @@ public class CreateModel(
                 ModelState.AddModelError(string.Empty, ex.Message);
             }
         }
-        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, structure, assets, Form, null, null, ct);
+        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, structure, assets, Form, null, null, true, null, ct);
         return Page();
     }
 }

@@ -7,13 +7,15 @@ namespace Orbit.Application.Services;
 
 /// <summary>
 /// User lookups available to every role (pickers, the list_users tool). Scoped to the caller's department unless
-/// their role sees tasks everywhere (tasks.view at All) or edits assets (assets.edit at any scope): assets are issued
-/// across departments, so asset managers need to find anyone (spec §6.19). Only names, emails and departments show.
+/// their role sees tasks everywhere (tasks.view at All), edits assets (assets.edit at any scope): assets are issued
+/// across departments, so asset managers need to find anyone (spec §6.19) - or creates tasks for anyone (tasks.create_for at
+/// All, §6.2.2), who must be able to find the requestee. Only names, emails and departments show.
 /// </summary>
 public sealed class UserDirectoryService(ApplicationDbContext db, IActorProvider actors)
 {
     /// <summary>Whether the caller's user lookups cover every department.</summary>
-    public static bool SeesEveryDepartment(Actor actor) => actor.CanAnywhere(Permission.TasksView) || actor.Has(Permission.AssetsEdit);
+    public static bool SeesEveryDepartment(Actor actor) =>
+        actor.CanAnywhere(Permission.TasksView) || actor.Has(Permission.AssetsEdit) || actor.CanAnywhere(Permission.TasksCreateFor);
 
     public async Task<IReadOnlyList<UserSummary>> ListAsync(string? query, Guid? departmentId, bool includeInactive = false, CancellationToken ct = default)
     {
@@ -76,6 +78,18 @@ public sealed class UserDirectoryService(ApplicationDbContext db, IActorProvider
             .OrderBy(u => EF.Functions.ILike(u.DisplayName, prefix) ? 0 : 1).ThenBy(u => u.DisplayName)
             .Take(Math.Clamp(limit, 1, 50))
             .ToListAsync(ct);
+        return await ToSummariesAsync(db, users, ct);
+    }
+
+    /// <summary>
+    /// The people the caller may name through a permission that reaches people (<see cref="Scoping.People"/>), by name - e.g. the
+    /// task form's Requestee picker (tasks.create_for, §6.2.2). Active people only, never the Claude user.
+    /// </summary>
+    public async Task<IReadOnlyList<UserSummary>> PeopleInReachAsync(string permission, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        var users = await Scoping.People(db.Users.AsNoTracking().Include(u => u.Department), actor, permission)
+            .OrderBy(u => u.DisplayName).ThenBy(u => u.Email).ToListAsync(ct);
         return await ToSummariesAsync(db, users, ct);
     }
 

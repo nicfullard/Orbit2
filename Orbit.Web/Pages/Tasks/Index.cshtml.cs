@@ -36,7 +36,7 @@ public class IndexModel(
         nameof(TaskFilter.Search), nameof(TaskFilter.DepartmentId), nameof(TaskFilter.ProjectId), nameof(TaskFilter.Status),
         nameof(TaskFilter.AssigneeId), nameof(TaskFilter.Unassigned), nameof(TaskFilter.Priority), nameof(TaskFilter.Type),
         nameof(TaskFilter.Source), nameof(TaskFilter.DueAfter), nameof(TaskFilter.DueBefore), nameof(TaskFilter.OpenOnly),
-        nameof(TaskFilter.PlannedToday), nameof(TaskFilter.PlannedFor), nameof(TaskFilter.AssetId)
+        nameof(TaskFilter.PlannedToday), nameof(TaskFilter.PlannedFor), nameof(TaskFilter.AssetId), nameof(TaskFilter.RequesteeId)
     ];
     private const string MemoryKey = "tasks";
 
@@ -45,6 +45,8 @@ public class IndexModel(
     public IReadOnlyList<SelectListItem> DepartmentItems { get; private set; } = [];
     public IReadOnlyList<SelectListItem> ProjectItems { get; private set; } = [];
     public IReadOnlyList<SelectListItem> AssigneeItems { get; private set; } = [];
+    /// <summary>The Requestee filter (§6.2.2): "Me" first, then the same people as the Assignee filter.</summary>
+    public IReadOnlyList<SelectListItem> RequesteeItems { get; private set; } = [];
     /// <summary>Candidates for the inline assignee control: everyone the actor may assign to, across all listed departments.</summary>
     public IReadOnlyList<UserSummary> QuickEditAssignees { get; private set; } = [];
     /// <summary>Tasks on this page whose next move is gated by a dependency (§6.15).</summary>
@@ -84,6 +86,15 @@ public class IndexModel(
             ? await users.ListAsync(null, Filter.DepartmentId, false, ct)
             : Actor.DepartmentId is Guid ownDept ? await users.GetAssignableAsync(ownDept, ct) : [];
         AssigneeItems = people.Select(u => new SelectListItem(u.DisplayName, u.Id.ToString(), u.Id == Filter.AssigneeId)).ToList();
+        var requesteeItems = new List<SelectListItem>();
+        if (Actor.UserId is Guid me) requesteeItems.Add(new SelectListItem("Me", me.ToString(), Filter.RequesteeId == me));
+        requesteeItems.AddRange(people.Where(u => u.Id != Actor.UserId)
+            .Select(u => new SelectListItem(u.DisplayName, u.Id.ToString(), u.Id == Filter.RequesteeId)));
+        // Someone outside the list (another department's person, from a shared link) stays selected rather than silently dropped.
+        if (Filter.RequesteeId is Guid requesteeId && requesteeItems.All(i => i.Value != requesteeId.ToString())
+            && await users.FindAsync(requesteeId, ct) is { } requestee)
+            requesteeItems.Add(new SelectListItem(requestee.DisplayName, requestee.Id.ToString(), true));
+        RequesteeItems = requesteeItems;
         // The filter list may be narrowed to one department; the inline control needs candidates for every listed task.
         QuickEditAssignees = await users.GetQuickEditCandidatesAsync(ct);
         CanFilterByAsset = Actor.Has(Permission.AssetsView);
@@ -96,6 +107,6 @@ public class IndexModel(
     {
         Filter.ProjectId, Filter.DepartmentId, Filter.Status, Filter.AssigneeId, Filter.Priority, Filter.Type, Filter.Source,
         Filter.DueBefore, Filter.DueAfter, Filter.OpenOnly, Filter.PlannedToday, Filter.PlannedFor, Filter.ParentTaskId, Filter.Unassigned, Filter.Search,
-        Filter.AssetId, PageNumber = page
+        Filter.AssetId, Filter.RequesteeId, PageNumber = page
     })!;
 }

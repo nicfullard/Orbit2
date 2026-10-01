@@ -17,7 +17,7 @@ public class PermissionCatalogTests
     {
         var keys = PermissionCatalog.All.Select(p => p.Key).ToList();
         Assert.Equal(Constants.OrderBy(k => k), keys.OrderBy(k => k));
-        Assert.Equal(26, keys.Count);
+        Assert.Equal(27, keys.Count);
     }
 
     [Fact]

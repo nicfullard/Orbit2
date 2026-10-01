@@ -80,20 +80,25 @@
     }
 </div>
 
+@* Three stacked pairs: what kind and how urgent, when, and who - the assignee who does it over the requestee it is for (§6.2.2). *@
 <div class="row g-3 mt-0">
-    <div class="col-md-2">
+    <div class="col-md-4">
         <label class="form-label" for="Form_Type">Type</label>
         <select class="form-select" id="Form_Type" name="Form.Type" asp-items="Ui.EnumItems<TaskType>(form.Type)"></select>
+        <div class="mt-3">
+            <label class="form-label" for="Form_Priority">Priority</label>
+            <select class="form-select" id="Form_Priority" name="Form.Priority" asp-items="Ui.EnumItems<TaskPriority>(form.Priority)"></select>
+        </div>
     </div>
-    <div class="col-md-2">
-        <label class="form-label" for="Form_Priority">Priority</label>
-        <select class="form-select" id="Form_Priority" name="Form.Priority" asp-items="Ui.EnumItems<TaskPriority>(form.Priority)"></select>
-    </div>
-    <div class="col-md-2">
+    <div class="col-md-4">
         <label class="form-label" for="Form_StartDate">Start date</label>
         <input type="date" class="form-control" id="Form_StartDate" name="Form.StartDate" value="@(form.StartDate?.ToString("yyyy-MM-dd"))" title="Planned start; not after the due date" />
+        <div class="mt-3">
+            <label class="form-label" for="Form_DueDate">Due date</label>
+            <input type="date" class="form-control" id="Form_DueDate" name="Form.DueDate" value="@(form.DueDate?.ToString("yyyy-MM-dd"))" />
+        </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-4">
         <label class="form-label" for="Form_AssigneeId">Assignee</label>
         <select class="form-select" id="Form_AssigneeId" name="Form.AssigneeId">
             @foreach (var o in Model.Assignees)
@@ -105,12 +110,29 @@
         {
             <div class="form-text">Must belong to the task's department (people whose role sees every department can be assigned anywhere).</div>
         }
-    </div>
-    <div class="col-md-3">
-        <label class="form-label" for="Form_DueDate">Due date</label>
-        <input type="date" class="form-control" id="Form_DueDate" name="Form.DueDate" value="@(form.DueDate?.ToString("yyyy-MM-dd"))" />
+        @if (Model.CanChooseRequestee)
+        {
+            <div class="mt-3">
+                <label class="form-label" for="Form_RequesteeId">Requestee <span class="text-muted">(optional)</span></label>
+                <select class="form-select" id="Form_RequesteeId" name="Form.RequesteeId" asp-items="Model.Requestees"></select>
+                <div class="form-text">Create the task on someone's behalf. They can open, edit and plan it as their own, and are emailed.</div>
+            </div>
+        }
+        else if (Model.OfferRequestee && Model.RequesteeLabel is not null)
+        {
+            @* Set by someone with a wider reach: shown and kept as it is. *@
+            <div class="mt-3">
+                <span class="form-label d-block">Requestee</span>
+                <div class="form-control-plaintext py-0">@Model.RequesteeLabel</div>
+                <input type="hidden" name="Form.RequesteeId" value="@form.RequesteeId" />
+            </div>
+        }
     </div>
 </div>
+@if (!Model.CanChooseRequestee && !(Model.OfferRequestee && Model.RequesteeLabel is not null))
+{
+    <input type="hidden" name="Form.RequesteeId" value="@form.RequesteeId" />
+}
 
 <div class="row g-3 mt-0">
     @if (isEdit)

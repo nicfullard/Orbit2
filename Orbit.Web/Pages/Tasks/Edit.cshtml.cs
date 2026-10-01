@@ -25,7 +25,7 @@ public class EditModel(
         Task = await tasks.GetAsync(id, ct);
         AccessPolicy.Require(AccessPolicy.CanEditTask(actor, Task), "You don't have permission to edit this task.");
         Form = TaskForm.From(Task);
-        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, structure, assets, Form, Task.Id, TaskFormLookups.RefOf(Task.Asset), ct);
+        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, structure, assets, Form, Task.Id, TaskFormLookups.RefOf(Task.Asset), true, Task.Requestee, ct);
         return Page();
     }
 
@@ -34,6 +34,8 @@ public class EditModel(
         var actor = await actors.GetAsync(ct);
         Task = await tasks.GetAsync(id, ct);
         if (!actor.CanAnywhere(Permission.TasksCreate)) Form.DepartmentId = Task.DepartmentId;
+        // The requestee stays as it is unless the editor may change it (§6.2.2); the service checks a change regardless.
+        if (!TaskFormLookups.CanChangeRequestee(actor, Task.Requestee)) Form.RequesteeId = Task.RequesteeId;
         if (ModelState.IsValid)
         {
             try
@@ -47,7 +49,7 @@ public class EditModel(
                 ModelState.AddModelError(string.Empty, ex.Message);
             }
         }
-        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, structure, assets, Form, Task.Id, TaskFormLookups.RefOf(Task.Asset), ct);
+        Lookups = await TaskFormLookups.BuildAsync(actor, departments, projects, users, sprints, structure, assets, Form, Task.Id, TaskFormLookups.RefOf(Task.Asset), true, Task.Requestee, ct);
         return Page();
     }
 }

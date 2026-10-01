@@ -60,8 +60,8 @@ public sealed class RequestTaskInput
     public TaskType Type { get; init; } = TaskType.Task;
     public DateOnly? DueDate { get; init; }
     public Guid? AssetId { get; init; }
-    /// <summary>Who the request is for (the flow's User question); null when it asks none. Must be someone the requester may log for.</summary>
-    public Guid? RequestedForId { get; init; }
+    /// <summary>The requestee, whom the request is for (the flow's User question); null when it asks none. Must be someone the requester may log for.</summary>
+    public Guid? RequesteeId { get; init; }
     public string? IdempotencyKey { get; init; }
     /// <summary>What the Created audit entry records about the flow: its category and option, by id and title.</summary>
     public required object RequestDetails { get; init; }

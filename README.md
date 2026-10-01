@@ -61,7 +61,7 @@ Self-registration is disabled: accounts are created under **Admin > Users** - on
 A user or API key has one **role**; a role is a set of **permissions**, each granted at a **scope** (spec §6.5).
 Roles are edited under **Admin > Roles**. The built-in **System Administrator** role holds every permission for
 all departments and can't be edited or deleted; **Member** and **Department Admin** ship with the grants below
-and can be changed like any other role. Scopes: *Own* = tasks assigned to or created by you, projects you own,
+and can be changed like any other role. Scopes: *Own* = tasks assigned to, created by or created for you, projects you own,
 your own time; *Department* = everything in your department; *All* = every department. A grant covers the
 scopes below it, and a role with no grants sees nothing.
 
@@ -69,6 +69,7 @@ scopes below it, and a role with no grants sees nothing.
 |---|---|---|---|---|
 | `tasks.view` | Own / Dept / All | See tasks, comment, attach; sets the dashboard tier and the Department column/filter | Dept | Dept |
 | `tasks.create` | Dept / All | Create tasks and recurring definitions; All also files tasks for other departments under a project (spec §6.2.1) | Dept | Dept |
+| `tasks.create_for` | Own / Dept / All | Name a task's requestee - the person it is created for (Own: only yourself, so the field isn't offered; Dept: anyone in your department; All: anyone) | Own | Own |
 | `tasks.edit` | Own / Dept / All | Edit any field, incl. every status change (close/reopen), parent, dependencies, assignee | Own | Dept |
 | `tasks.take` | Dept / All | Take an open, unassigned task for yourself | Dept | Dept |
 | `tasks.plan` | Own / Dept / All | Backlog/sprint moves and the Today tick | Dept | Dept |
@@ -100,8 +101,17 @@ A role with any grant at Department scope needs its users and keys to belong to 
 are enforced in `AccessPolicy` and `Scoping` for signed-in users and for API keys; grants are read from the
 database on every request, so a role edit applies at once. Upgrading an existing database renames the old
 fixed roles in place (`SystemAdmin` becomes the built-in System Administrator) and gives Member and Department
-Admin the grants above, so nobody's rights change. The asset and request permissions arrived later; the migrations
-that added them gave their defaults to the roles still named Member and Department Admin.
+Admin the grants above, so nobody's rights change. The asset, request and Create tasks for others permissions arrived
+later; the migrations that added them gave their defaults to the roles still named Member and Department Admin.
+
+A task can be created on someone else's behalf (spec §6.2.2). Besides its **assignee**, who does it, a task may have
+a **requestee**, whom it is for; its creator is always the person who actually created it. With **Create tasks for
+others** above Own, the task form shows a Requestee field under Assignee: anyone in your department at Department,
+anyone at All (which badges the role company-wide). The requestee is emailed and the task counts as their own, so
+they can open, edit and plan it as its creator can, wherever it is filed. The edit form changes or clears the
+requestee, if your reach covers both the old and the new person. The Tasks list's **Requestee** filter (*Me* first)
+also finds your tasks that other departments hold. The shipped roles hold the permission at Own, so an admin gives
+Department or All to the roles that need it (a helpdesk, a PA, a team lead).
 
 A project is owned by one department, but someone whose role may create tasks in every department can file
 tasks under it for other departments (unassigned, or assigned to someone in that department). Each such task
@@ -185,6 +195,10 @@ one-off: nothing is kept in step with AD afterwards.
   unlinks it on `update_task`), `list_tasks` filters on it, task results carry `assetId` and `asset`, and `get_asset`
   returns the asset's task history (`tasks`, with `tasksVisible` / `tasksNotVisible`). The key can link only an asset
   it can see that isn't disposed.
+- A task can be created on someone's behalf (spec §6.2.2): `create_task` / `update_task` take `requesteeId` (a user
+  id from `list_users`; `"none"` clears it on `update_task`), `list_tasks` filters on it, and task results carry
+  `requesteeId` and `requestee` beside the assignee. The key's **Create tasks for others** scope decides whom it may
+  name; a key on the shipped grants (Own) can name nobody.
 - Tasks can be subtasks (`parentTaskId`) and can depend on each other (`add_dependency`: FS, SS, FF or SF
   plus a lag in days, spec §6.15). Links gate status changes - the successor can't start / finish until the
   predecessor has - and a parent can't close while a subtask is open; `get_task` reports what a task is
@@ -239,11 +253,12 @@ elsewhere, for self-service, or a **flow**: its questions one at a time (text, n
 assets you hold or a description of something else, how urgent it is, and who it is for), an optional step to attach
 files, and a review. The request is then logged as an unassigned task in the department that owns the category. The
 answers go in the task's description, the urgency sets its priority, the asset its asset, the person it is for its
-*Requested for*, and a date question marked *sets the due date* its due date. The flow's configurer sets the task's
+*Requestee*, and a date question marked *sets the due date* its due date. The flow's configurer sets the task's
 type. **Who it is for** lists the people you may log for: with **Log requests** at Own that is just you, so the
-question is skipped; at Department, anyone in your department. **Your requests** on the same page lists what you
-have logged and what was logged for you, with its status; the task lists don't show it, since a request usually
-belongs to another department.
+question is skipped; at Department, anyone in your department. A requestee other than you is emailed, and can open
+the task as their own. **Your requests** on the same page lists what you have logged and what was logged for you,
+with its status; the plain task lists don't show it, since a request usually belongs to another department, but the
+Tasks list's *Requestee: Me* filter does.
 
 Each department runs its own catalogue (**Admin > Request flows**, **Configure request flows**): categories
 with an icon and colour, options, and each flow's questions. A department with none can load a generic example

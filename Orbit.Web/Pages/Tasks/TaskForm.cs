@@ -32,6 +32,10 @@ public sealed class TaskForm
     [Display(Name = "Assignee")]
     public Guid? AssigneeId { get; set; }
 
+    /// <summary>The requestee (§6.2.2): the person the task is for. Blank = nobody else. Offered with tasks.create_for above Own.</summary>
+    [Display(Name = "Requestee")]
+    public Guid? RequesteeId { get; set; }
+
     [Display(Name = "Start date"), DataType(DataType.Date)]
     public DateOnly? StartDate { get; set; }
 
@@ -61,6 +65,7 @@ public sealed class TaskForm
         Type = Type,
         EstimateMinutes = EstimateMinutes,
         AssigneeId = AssigneeId,
+        RequesteeId = RequesteeId,
         StartDate = StartDate,
         DueDate = DueDate,
         ParentTaskId = ParentTaskId,
@@ -79,6 +84,7 @@ public sealed class TaskForm
         Type = t.Type,
         EstimateMinutes = t.EstimateMinutes,
         AssigneeId = t.AssigneeId,
+        RequesteeId = t.RequesteeId,
         StartDate = t.StartDate,
         DueDate = t.DueDate,
         ParentTaskId = t.ParentTaskId,

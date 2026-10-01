@@ -549,15 +549,15 @@
                     </dd>
                     <dt class="col-5">Department</dt><dd class="col-7">@t.Department.Name</dd>
                     <dt class="col-5">Assignee</dt><dd class="col-7">@(t.Assignee?.DisplayName ?? "Unassigned")</dd>
+                    @if (t.Requestee is not null)
+                    {
+                        <dt class="col-5">Requestee</dt><dd class="col-7">@t.Requestee.DisplayName@(t.Requestee.IsActive ? "" : " (deactivated)")</dd>
+                    }
                     <dt class="col-5">Start</dt><dd class="col-7">@Ui.Day(t.StartDate)</dd>
                     <dt class="col-5">Due</dt><dd class="col-7 @(overdue ? "text-danger fw-semibold" : "")">@Ui.Day(t.DueDate)</dd>
                     <dt class="col-5">Estimate</dt><dd class="col-7">@(t.EstimateMinutes is int estimate ? TimeFormat.Minutes(estimate) : "-")</dd>
                     <dt class="col-5">Planned for</dt><dd class="col-7">@Ui.Day(t.PlannedFor)@(t.PlannedFor == today ? " (today)" : "")</dd>
                     <dt class="col-5">Created by</dt><dd class="col-7">@Ui.AuthorName(t.CreatedBy) <span class="text-muted">@Ui.When(t.CreatedAt)</span></dd>
-                    @if (t.RequestedFor is not null)
-                    {
-                        <dt class="col-5">Requested for</dt><dd class="col-7">@t.RequestedFor.DisplayName</dd>
-                    }
                     <dt class="col-5">Updated</dt><dd class="col-7">@Ui.When(t.UpdatedAt)</dd>
                     <dt class="col-5">First responded</dt><dd class="col-7">@Ui.When(t.FirstRespondedAt)</dd>
                     <dt class="col-5">Completed</dt><dd class="col-7">@Ui.When(t.CompletedAt)</dd>

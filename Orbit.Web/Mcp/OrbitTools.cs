@@ -46,7 +46,8 @@ public sealed class OrbitTools(
         "Department: defaults to the project's department when projectId is given, otherwise to departmentId, " +
         "falling back to the API key's own department (a key whose role isn't scoped to a department may have none, so pass departmentId for standalone tasks). " +
         "A key whose Create tasks permission covers all departments may pass a departmentId that differs from the project's to file a cross-department project task: " +
-        "the task then belongs to, and is worked by, that department while staying on the project. Other keys are rejected for that.")]
+        "the task then belongs to, and is worked by, that department while staying on the project. Other keys are rejected for that. " +
+        "Pass requesteeId to create the task on someone's behalf - the requestee, whom it is for, beside the assignee who does it.")]
     public Task<string> CreateTask(
         [Description("Task title (required).")] string title,
         [Description("Longer description; markdown is fine.")] string? description = null,
@@ -61,10 +62,12 @@ public sealed class OrbitTools(
         [Description("Parent task id (GUID) to create this as a subtask. The parent must be on the same project (or, for a standalone task, be a standalone task in the same department) and still open.")] string? parentTaskId = null,
         [Description("Estimated effort in minutes, e.g. 90 for an hour and a half. Omit or 0 for no estimate.")] int? estimateMinutes = null,
         [Description("The asset the task is about - a repair, a service, a replacement: its id (GUID) or ERP asset number. It must be an asset the key can see that isn't disposed; the task then appears in the asset's task history (get_asset).")] string? assetId = null,
+        [Description("The requestee: user id (GUID, from list_users) of the person the task is created for. They can open, edit and plan it as their own and are emailed. Needs the key's Create tasks for others permission to reach them - anyone in the key's department at Department, anyone at All; a key at Own can name nobody. Omit when the task is for nobody else.")] string? requesteeId = null,
         CancellationToken ct = default) => Run(async () =>
     {
         var input = new TaskInput
         {
+            RequesteeId = ParseGuid(requesteeId, "requesteeId"),
             AssetId = string.IsNullOrWhiteSpace(assetId) ? null : await assets.ResolveIdAsync(assetId, ct),
             Title = title,
             Description = description,
@@ -123,7 +126,8 @@ public sealed class OrbitTools(
     [McpServerTool(Name = "list_tasks"), Description(
         "List tasks with optional filters. Paginated. The key sees the tasks within its role's View tasks scope - its own tasks, " +
         "its department, or every department; a key whose scope is all departments can filter by departmentId or omit it for all. " +
-        "Pass plannedFor = \"today\" to see the team's day plan - the tasks picked in the morning scrum to work on today.")]
+        "Pass plannedFor = \"today\" to see the team's day plan - the tasks picked in the morning scrum to work on today. " +
+        "requesteeId lists the tasks created for one person - including, for a department-scoped key, the key's own tasks filed in other departments.")]
     public Task<string> ListTasks(
         [Description("Filter by project id (GUID).")] string? projectId = null,
         [Description("Filter by department id (GUID). Only useful for a key that sees every department.")] string? departmentId = null,
@@ -144,10 +148,12 @@ public sealed class OrbitTools(
         [Description("Only tasks about this asset: its id (GUID) or ERP asset number - the asset's task history.")] string? assetId = null,
         [Description("Page number, starting at 1.")] int page = 1,
         [Description("Page size (1-200). Default 50.")] int pageSize = 50,
+        [Description("Only tasks created for this person - their requestee user id (GUID).")] string? requesteeId = null,
         CancellationToken ct = default) => Run(async () =>
     {
         var filter = new TaskFilter
         {
+            RequesteeId = ParseGuid(requesteeId, "requesteeId"),
             AssetId = string.IsNullOrWhiteSpace(assetId) ? null : await assets.ResolveIdAsync(assetId, ct),
             ProjectId = ParseGuid(projectId, "projectId"),
             DepartmentId = ParseGuid(departmentId, "departmentId"),
@@ -174,9 +180,10 @@ public sealed class OrbitTools(
 
     [McpServerTool(Name = "update_task"), Description(
         "Update any field of a task. Only the arguments you pass change; omit an argument to leave it as is. " +
-        "Pass the literal string \"none\" to clear assigneeId, dueDate, startDate, parentTaskId, estimateMinutes, projectId, sprintId, assetId or plannedFor (sprintId \"none\" moves the task to the backlog; " +
+        "Pass the literal string \"none\" to clear assigneeId, requesteeId, dueDate, startDate, parentTaskId, estimateMinutes, projectId, sprintId, assetId or plannedFor (sprintId \"none\" moves the task to the backlog;" +
         "plannedFor \"none\" takes it off the day plan, plannedFor \"today\" puts it on today's plan - closed tasks can't be planned). " +
         "A key whose Edit tasks permission is scoped to Own can only edit tasks the Claude user created or is assigned; that covers every field, including setting status to Done or Cancelled. " +
+        "Changing or clearing the requestee needs the key's Create tasks for others permission to reach both the person removed and the person added. " +
         "departmentId moves the task to another department (needs Edit tasks for that department); if that differs from the project's department the task " +
         "becomes a cross-department project task. Changing projectId without departmentId moves the task into the new project's department.")]
     public Task<string> UpdateTask(
@@ -196,12 +203,15 @@ public sealed class OrbitTools(
         [Description("Parent task id (GUID) to make this a subtask (same project, or same department for standalone tasks), or \"none\" to detach it. A status change gated by a dependency, or closing a parent with open subtasks, is rejected with the reason.")] string? parentTaskId = null,
         [Description("Estimated effort in minutes (e.g. 90), or \"none\" to clear the estimate.")] string? estimateMinutes = null,
         [Description("The asset the task is about: its id (GUID) or ERP asset number, or \"none\" to unlink it. A new asset must be one the key can see that isn't disposed; the current one is kept as it is when omitted.")] string? assetId = null,
+        [Description("The requestee - user id (GUID) of the person the task is for - or \"none\" for nobody else. Omit to keep the current requestee, whom the key needn't be able to reach.")] string? requesteeId = null,
         CancellationToken ct = default) => Run(async () =>
     {
         var id = await TaskIdAsync(taskId, ct);
         var current = await tasks.GetAsync(id, ct);
         var input = new TaskInput
         {
+            // Full-state update: an omitted requestee must be carried over, or every update_task would clear it.
+            RequesteeId = IsClear(requesteeId) ? null : ParseGuid(requesteeId, "requesteeId") ?? current.RequesteeId,
             AssetId = IsClear(assetId) ? null : string.IsNullOrWhiteSpace(assetId) ? current.AssetId : await assets.ResolveIdAsync(assetId, ct),
             Title = title ?? current.Title,
             Description = description ?? current.Description,
@@ -1125,8 +1135,8 @@ public sealed class OrbitTools(
 
     [McpServerTool(Name = "list_users"), Description(
         "List users (id, displayName, email, role, departmentId, canBeAssignedAnywhere). Optional name/email fragment filter, e.g. \"Bob\". " +
-        "A key that sees every department's tasks, or may edit assets (which are handed to people in any department), can pass departmentId or omit it " +
-        "for everyone; any other key sees only its own department's users.")]
+        "A key that sees every department's tasks, may edit assets (which are handed to people in any department) or may create tasks for anyone " +
+        "(Create tasks for others at All), can pass departmentId or omit it for everyone; any other key sees only its own department's users.")]
     public Task<string> ListUsers(
         [Description("Name or email fragment to match (case-insensitive).")] string? query = null,
         [Description("Filter by department id (GUID). Only useful for a key that sees every department.")] string? departmentId = null,
@@ -1214,10 +1224,10 @@ public sealed class OrbitTools(
         asset = t.Asset is null ? null : Orbit.Application.Assets.AssetRules.Label(t.Asset.AssetNumber, t.Asset.Name),
         assigneeId = t.AssigneeId,
         assignee = t.Assignee?.DisplayName,
+        requesteeId = t.RequesteeId,
+        requestee = t.Requestee?.DisplayName,
         createdById = t.CreatedById,
         createdBy = t.CreatedBy is null ? null : t.CreatedBy.IsSystemAccount ? "Claude" : t.CreatedBy.DisplayName,
-        requestedForId = t.RequestedForId,
-        requestedFor = t.RequestedFor?.DisplayName,
         parentTaskId = t.ParentTaskId,
         parentTask = t.ParentTask?.Title,
         startDate = t.StartDate,

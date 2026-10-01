@@ -36,11 +36,13 @@ public class TaskItem
     public ApplicationUser? CreatedBy { get; set; }
     public TaskSource Source { get; set; } = TaskSource.Manual;
     /// <summary>
-    /// For a task logged through a request flow (spec §6.20): the person it is for, from the flow's User question - the requester
-    /// themselves, or at Department scope a colleague. Null when the flow asks no such question. They see it under Your requests.
+    /// The requestee (spec §6.2.2): the person the task was created for, beside the assignee who does it and the creator who
+    /// typed it. Named on the task form or over MCP within the creator's tasks.create_for reach, or by a request flow's User
+    /// question (§6.20). The task counts as the requestee's own (§6.5), so they can open, edit and plan it as its creator can.
+    /// Null when the task is for nobody else.
     /// </summary>
-    public Guid? RequestedForId { get; set; }
-    public ApplicationUser? RequestedFor { get; set; }
+    public Guid? RequesteeId { get; set; }
+    public ApplicationUser? Requestee { get; set; }
     /// <summary>The planned start (spec §6.15) - the left end of a Gantt bar; never after <see cref="DueDate"/>. The actual start stays <see cref="FirstRespondedAt"/>.</summary>
     public DateOnly? StartDate { get; set; }
     public DateOnly? DueDate { get; set; }

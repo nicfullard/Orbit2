@@ -184,7 +184,10 @@ builder.Services.AddMcpServer(o =>
             "To register, change or check many assets use create_assets / update_assets / record_asset_checks - up to 100 items a call, " +
             "each saved or refused on its own and reported by index - rather than one call per asset. " +
             "A task can be about one asset - a repair, a service: pass assetId to create_task / update_task (\"none\" unlinks it); " +
-            "get_asset lists the asset's task history and list_tasks filters on assetId.";
+            "get_asset lists the asset's task history and list_tasks filters on assetId. " +
+            "A task has an assignee, who does it, and may have a requestee, whom it is for: to log a task on someone's behalf " +
+            "(\"Bob asked for ...\") pass their userId from list_users as requesteeId to create_task; update_task changes it (\"none\" clears it) " +
+            "and list_tasks filters on it. The requestee sees and updates the task as their own.";
     })
     .WithHttpTransport(o => o.SessionMode = HttpServerSessionMode.Stateless)
     .WithTools<OrbitTools>();

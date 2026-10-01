@@ -28,7 +28,7 @@ public sealed class DashboardService(ApplicationDbContext db, IActorProvider act
             };
 
         // The personal tier is "my work": assigned to me, rather than everything Own lets me see. Someone who can't edit tasks has no
-        // work of their own there, so at Own they see what Own reaches - the tasks they raised or are assigned.
+        // work of their own there, so at Own they see what Own reaches - the tasks they raised, are assigned or are the requestee of.
         var personal = tier == PermissionScope.Own && canEdit;
         var me = actor.UserId;
         var dueHorizon = today.AddDays(7);
@@ -42,7 +42,7 @@ public sealed class DashboardService(ApplicationDbContext db, IActorProvider act
         {
             PermissionScope.All => "Open tasks across the company",
             PermissionScope.Department => "Open tasks in your department",
-            _ => personal ? "My open tasks" : "Open tasks you raised or are assigned"
+            _ => personal ? "My open tasks" : "Open tasks you raised, requested or are assigned"
         };
 
         // Today's day plan (§6.12): same scope, but over all tasks rather than open ones so "done today" counts.

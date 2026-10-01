@@ -79,7 +79,7 @@ public enum RequestQuestionType
     Urgency,
     Choice,
     /// <summary>
-    /// Who the request is for: a person the requester may log for (requests.submit scope). It becomes the task's RequestedForId. At
+    /// Who the request is for: a person the requester may log for (requests.submit scope). It becomes the task's RequesteeId. At
     /// Own scope it isn't asked - the answer is the requester.
     /// </summary>
     User
