@@ -18,3 +18,4 @@ agent.json
 ## OS
 .DS_Store
 Thumbs.db
+/Orbit.Web/publish
