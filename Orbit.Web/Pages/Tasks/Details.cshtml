@@ -94,12 +94,14 @@
         {
             var startedAt = DateTime.SpecifyKind(Model.Clock.StartedAt, DateTimeKind.Utc);
             <form method="post" asp-page-handler="StopClock" asp-route-id="@t.Id" class="d-flex align-items-center gap-2 js-clock"
-                  data-clock-started="@startedAt.ToString("o")">
+                  data-clock-started="@startedAt.ToString("o")" data-heartbeat-seconds="@TimeRules.ClockHeartbeatSeconds">
                 <span class="badge text-bg-success font-monospace fs-6 js-clock-elapsed" title="Clock running since @Ui.When(startedAt)">@((DateTime.UtcNow - startedAt).ToString(@"hh\:mm\:ss"))</span>
                 <button class="btn btn-danger btn-sm" type="submit">Stop Clock</button>
             </form>
             @* Submitted with navigator.sendBeacon when the user leaves the page while the clock is running. *@
             <form method="post" asp-page-handler="StopClockBeacon" asp-route-id="@t.Id" class="d-none js-clock-beacon"></form>
+            @* Posted every minute by the clock script, so a clock whose page is gone (no beacon) can be told apart and stopped. *@
+            <form method="post" asp-page-handler="ClockHeartbeat" asp-route-id="@t.Id" class="d-none js-clock-heartbeat"></form>
         }
         else if (Model.CanStartClock)
         {
@@ -150,6 +152,7 @@
                     <a class="btn btn-sm btn-outline-primary" asp-page="/Tasks/Create" asp-route-parentTaskId="@t.Id">Add subtask</a>
                 }
             </div>
+            @* Subtask and dependency links open in a new tab, so a clock running on this page keeps running (§6.10). *@
             @if (Model.Structure.Children.Count > 0)
             {
                 <div class="table-responsive">
@@ -162,7 +165,7 @@
                                     <td>
                                         @if (AccessPolicy.CanViewTask(Model.Actor, c))
                                         {
-                                            <a asp-page="/Tasks/Details" asp-route-id="@c.Id" class="text-decoration-none fw-semibold">@c.Title</a>
+                                            <a asp-page="/Tasks/Details" asp-route-id="@c.Id" target="_blank" rel="noopener" title="Opens in a new tab" class="text-decoration-none fw-semibold">@c.Title</a>
                                         }
                                         else
                                         {
@@ -209,7 +212,7 @@
                                         <td>
                                             @if (AccessPolicy.CanViewTask(Model.Actor, d.Other))
                                             {
-                                                <a asp-page="/Tasks/Details" asp-route-id="@d.Other.Id" class="text-decoration-none">@d.Other.Title</a>
+                                                <a asp-page="/Tasks/Details" asp-route-id="@d.Other.Id" target="_blank" rel="noopener" title="Opens in a new tab" class="text-decoration-none">@d.Other.Title</a>
                                             }
                                             else
                                             {
@@ -266,7 +269,7 @@
                                         <td>
                                             @if (AccessPolicy.CanViewTask(Model.Actor, d.Other))
                                             {
-                                                <a asp-page="/Tasks/Details" asp-route-id="@d.Other.Id" class="text-decoration-none">@d.Other.Title</a>
+                                                <a asp-page="/Tasks/Details" asp-route-id="@d.Other.Id" target="_blank" rel="noopener" title="Opens in a new tab" class="text-decoration-none">@d.Other.Title</a>
                                             }
                                             else
                                             {

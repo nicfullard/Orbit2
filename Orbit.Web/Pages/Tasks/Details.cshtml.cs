@@ -138,7 +138,8 @@ public class DetailsModel(
         try
         {
             var started = await time.StartClockAsync(id, ct);
-            Success(started.Previous is null ? "Clock started." : $"Clock started. {StopMessage(started.Previous, includeTask: true)}");
+            if (started.AlreadyRunning) Success("The clock is already running on this task.");
+            else Success(started.Previous is null ? "Clock started." : $"{StopMessage(started.Previous, includeTask: false)} Clock started again.");
         }
         catch (ValidationException ex) { Error(ex.Message); }
         return RedirectToPage(new { id });
@@ -159,12 +160,26 @@ public class DetailsModel(
         return new NoContentResult();
     }
 
+    /// <summary>
+    /// The clock script's heartbeat, every minute while the clock runs (§6.10): keeps the clock alive, and answers
+    /// whether it still runs on this task. When it doesn't (stopped from another tab of this task, or found stale after
+    /// the computer slept), the page reloads and shows the flash set here.
+    /// </summary>
+    public async Task<IActionResult> OnPostClockHeartbeatAsync(Guid id, CancellationToken ct)
+    {
+        var beat = await time.HeartbeatAsync(id, ct);
+        if (beat.Stopped is not null) Success(StopMessage(beat.Stopped, includeTask: false));
+        return new JsonResult(new { running = beat.Running });
+    }
+
     private static string StopMessage(ClockStopResult stopped, bool includeTask)
     {
         var on = includeTask ? $" on \"{Ui.Truncate(stopped.Task.Title, 60)}\"" : string.Empty;
+        // A stale clock: its page stopped checking in, so its time ends there.
+        var at = stopped.PageLostAt is DateTime lost ? $" at {Ui.When(lost)}, when its page stopped responding," : string.Empty;
         return stopped.Entry is null
-            ? $"Stopped the clock{on} after less than a minute; nothing was logged."
-            : $"Stopped the clock{on} and logged {TimeFormat.Minutes(stopped.Minutes)}.";
+            ? $"Stopped the clock{on}{at} after less than a minute; nothing was logged."
+            : $"Stopped the clock{on}{at} and logged {TimeFormat.Minutes(stopped.Minutes)}.";
     }
 
     public async Task<IActionResult> OnPostDeleteTimeAsync(Guid id, Guid entryId, CancellationToken ct)
@@ -218,18 +233,12 @@ public class DetailsModel(
         Actor = await actors.GetAsync(ct);
         Task = await tasks.GetAsync(id, ct);
 
-        // A clock still running on a different task means the browser never sent the page-leave beacon
-        // (crash, killed tab, ...). Opening another task counts as having left it, so stop and log it now.
-        var clock = await time.GetRunningClockAsync(ct);
-        if (clock is not null && clock.TaskId != id)
-        {
-            var stopped = await time.StopClockAsync(clock.TaskId, ct);
-            if (stopped is not null) Success(StopMessage(stopped, includeTask: true));
-        }
-        else
-        {
-            Clock = clock;
-        }
+        // Clocks on other tasks run on in their own tabs (§6.10). One whose page has stopped checking in (crash,
+        // killed tab, ...) is stopped at its last heartbeat; the sweep job would get it within a minute anyway, but
+        // stopping it here lets this page say so.
+        var stale = await time.StopStaleClocksAsync(ct);
+        if (stale.Count > 0) Success(string.Join(" ", stale.Select(s => StopMessage(s, includeTask: true))));
+        Clock = await time.GetRunningClockAsync(id, ct);
         CanStartClock = Actor.UserId is Guid clockUser && AccessPolicy.CanLogTimeFor(Actor, Task, clockUser);
 
         Comments = await comments.ListAsync(id, ct);

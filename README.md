@@ -29,7 +29,7 @@ Inside `Orbit.Web/`, folders stand in for the layers of spec §11, and namespace
 | `Auth/` | API-key and Orbit Agent authentication schemes, `OrbitSignInManager` (directory sign-in), claims factory, actor resolution, page filters |
 | `Agents/` | Server side of the Orbit Agent: the SignalR hub agents connect to, the registry of connected agents, the register/de-register endpoints |
 | `Mcp/` | `OrbitTools` - the 32 MCP tools, mapped onto the same services the UI uses |
-| `Jobs/` | Quartz.NET jobs: recurring-task generation and due-date notifications, cron-scheduled from `Jobs:*` |
+| `Jobs/` | Quartz.NET jobs: recurring-task generation, due-date notifications and the clock sweep, cron-scheduled from `Jobs:*` |
 | `Reporting/` | QuestPDF report rendering |
 | `Pages/` | Razor Pages UI (dashboard, tasks, projects, backlog, sprints, recurring, time, assets, requests, admin, reports) |
 | `Areas/Identity/` | Overrides of the default Identity UI (login, self-registration disabled, no self-delete) |
@@ -117,6 +117,12 @@ Setting a task assigned to you to **Done** in the web UI (the status control on 
 sprint board, or the edit form) asks first if you haven't logged any time on it and have no clock running on it
 (spec §6.10); Cancel leaves the status as it was. It's a reminder, not a rule: nobody else is asked, and neither is
 MCP's `update_task`.
+
+The task clock (**Start Clock**) runs per task: each task page has its own, and leaving a page stops only that page's
+clock (spec §6.10). On a task page, subtasks and linked tasks (Waiting on, Blocks) open in a new tab, so you can run
+a clock on the task and on a subtask at the same time; overlapping time is logged on both. The page checks in every
+minute; a clock whose page stops checking in (a crashed tab, a computer asleep) is stopped and logged up to its last
+check-in.
 
 A project is owned by one department, but someone whose role may create tasks in every department can file
 tasks under it for other departments (unassigned, or assigned to someone in that department). Each such task

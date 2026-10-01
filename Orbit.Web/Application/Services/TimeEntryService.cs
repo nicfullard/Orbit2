@@ -147,20 +147,23 @@ public sealed class TimeEntryService(ApplicationDbContext db, IActorProvider act
     }
 
     // --- Start / Stop clock (§6.10) ---------------------------------------------------------------
+    // A user has at most one clock per task, and the clocks on different tasks run independently: each task page runs
+    // its own (§13 item 64). The page checks in every minute (HeartbeatAsync). A clock whose page stops checking in is
+    // stale and is stopped at its last heartbeat: by its page if it wakes up, by the next task page the user opens, or
+    // by ClockSweepJob within a minute or so.
 
-    private const int MaxEntryMinutes = 24 * 60;
-
-    /// <summary>The caller's running clock (on any task), or null.</summary>
-    public async Task<RunningClock?> GetRunningClockAsync(CancellationToken ct = default)
+    /// <summary>The caller's running clock on the task, or null.</summary>
+    public async Task<RunningClock?> GetRunningClockAsync(Guid taskId, CancellationToken ct = default)
     {
         var actor = await actors.GetAsync(ct);
         if (actor.UserId is not Guid me) return null;
-        return await db.RunningClocks.AsNoTracking().Include(c => c.Task).FirstOrDefaultAsync(c => c.UserId == me, ct);
+        return await db.RunningClocks.AsNoTracking().FirstOrDefaultAsync(c => c.UserId == me && c.TaskId == taskId, ct);
     }
 
     /// <summary>
-    /// Starts the caller's clock on a task. A clock already running for them - on this or any other task -
-    /// is stopped and logged first, since a user only ever has one clock.
+    /// Starts the caller's clock on a task; clocks running on other tasks are left alone. A clock already running on
+    /// this task (it is open in another tab) is left as it is, unless it is stale: then it is stopped at its last
+    /// heartbeat and a new one started.
     /// </summary>
     public async Task<ClockStartResult> StartClockAsync(Guid taskId, CancellationToken ct = default)
     {
@@ -171,62 +174,110 @@ public sealed class TimeEntryService(ApplicationDbContext db, IActorProvider act
         AccessPolicy.Require(AccessPolicy.CanViewTask(actor, task), "This task belongs to another department.");
         AccessPolicy.Require(AccessPolicy.CanLogTimeFor(actor, task, me), "You can only run the clock on tasks assigned to you.");
 
-        // The page-leave beacon can race a Start click; if the old clock vanished underneath us, just try again.
-        for (var attempt = 0; ; attempt++)
+        var now = DateTime.UtcNow;
+        ClockStopResult? previous = null;
+        if (await FindClockAsync(me, taskId, ct) is { } existing)
         {
-            var previous = await StopClockCoreAsync(actor, me, onlyTaskId: null, ct);
-            var clock = new RunningClock { UserId = me, TaskId = task.Id, StartedAt = DateTime.UtcNow };
-            db.RunningClocks.Add(clock);
-            audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.ClockStarted, task.DepartmentId, task.Title, new { clock.StartedAt });
-            try
-            {
-                await db.SaveChangesAsync(ct);
-                return new ClockStartResult(clock, previous);
-            }
-            catch (DbUpdateConcurrencyException) when (attempt == 0)
-            {
-                db.ChangeTracker.Clear();
-            }
-            catch (DbUpdateException)
-            {
-                throw new ValidationException("A clock is already running. Reload the page to see it.");
-            }
+            if (!TimeRules.IsClockStale(existing.LastSeenAt, now)) return new ClockStartResult(existing, null, AlreadyRunning: true);
+            previous = await SaveStopAsync(actor, existing, now, ct);
         }
+
+        var clock = new RunningClock { UserId = me, TaskId = task.Id, StartedAt = now, LastSeenAt = now };
+        db.RunningClocks.Add(clock);
+        audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.ClockStarted, task.DepartmentId, task.Title, new { clock.StartedAt });
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            // Started at the same moment from another tab of this task: the unique index refused this one.
+            throw new ValidationException("The clock is already running on this task. Reload the page to see it.");
+        }
+        return new ClockStartResult(clock, previous, AlreadyRunning: false);
     }
 
     /// <summary>
-    /// Stops the caller's running clock and logs the elapsed time as a time entry. Returns null when no clock was
-    /// running (or, if <paramref name="onlyTaskId"/> is given, when the clock is running on a different task).
-    /// Under half a minute is discarded rather than logged; anything over 24 hours is capped at 24 hours.
+    /// Stops the caller's clock on the task and logs the elapsed time as a time entry. Returns null when no clock was
+    /// running on it. Under half a minute is discarded rather than logged; anything over 24 hours is capped at 24 hours.
     /// </summary>
-    public async Task<ClockStopResult?> StopClockAsync(Guid? onlyTaskId = null, CancellationToken ct = default)
+    public async Task<ClockStopResult?> StopClockAsync(Guid taskId, CancellationToken ct = default)
     {
         var actor = await actors.GetAsync(ct);
         if (actor.UserId is not Guid me) return null;
-        var result = await StopClockCoreAsync(actor, me, onlyTaskId, ct);
-        if (result is null) return null;
+        var clock = await FindClockAsync(me, taskId, ct);
+        return clock is null ? null : await SaveStopAsync(actor, clock, DateTime.UtcNow, ct);
+    }
+
+    /// <summary>
+    /// A task page's heartbeat: keeps the caller's clock on the task alive. A clock found stale (its page was asleep or
+    /// frozen for longer than <see cref="TimeRules.ClockStaleAfter"/>) is stopped at its last heartbeat instead, so the
+    /// time nobody was watching isn't logged. Not running tells the page to reload.
+    /// </summary>
+    public async Task<ClockHeartbeatResult> HeartbeatAsync(Guid taskId, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        if (actor.UserId is not Guid me) return new ClockHeartbeatResult(false, null);
+        var clock = await FindClockAsync(me, taskId, ct);
+        if (clock is null) return new ClockHeartbeatResult(false, null);
+
+        var now = DateTime.UtcNow;
+        if (TimeRules.IsClockStale(clock.LastSeenAt, now))
+            return new ClockHeartbeatResult(false, await SaveStopAsync(actor, clock, now, ct));
+        clock.LastSeenAt = now; // not audited: a row a minute per running clock would bury the task's history
         try
         {
             await db.SaveChangesAsync(ct);
         }
         catch (DbUpdateConcurrencyException)
         {
-            // Already stopped by a concurrent request (e.g. the Stop button and the page-leave beacon both firing).
+            // Stopped meanwhile (the Stop button in another tab of this task, say).
             db.ChangeTracker.Clear();
-            return null;
+            return new ClockHeartbeatResult(false, null);
         }
-        return result;
+        return new ClockHeartbeatResult(true, null);
     }
 
-    private async Task<ClockStopResult?> StopClockCoreAsync(Actor actor, Guid me, Guid? onlyTaskId, CancellationToken ct)
+    /// <summary>Stops the caller's stale clocks, each at its last heartbeat, so the task page can say so.</summary>
+    public async Task<IReadOnlyList<ClockStopResult>> StopStaleClocksAsync(CancellationToken ct = default)
     {
-        var clock = await db.RunningClocks.Include(c => c.Task).FirstOrDefaultAsync(c => c.UserId == me, ct);
-        if (clock is null || (onlyTaskId is Guid only && clock.TaskId != only)) return null;
+        var actor = await actors.GetAsync(ct);
+        return actor.UserId is Guid me ? await StopStaleCoreAsync(actor, me, ct) : [];
+    }
 
-        var stoppedAt = DateTime.UtcNow;
+    /// <summary>Stops every user's stale clocks, each at its last heartbeat, as the system. Run by ClockSweepJob.</summary>
+    public async Task<int> StopAllStaleClocksAsync(CancellationToken ct = default) =>
+        (await StopStaleCoreAsync(Actor.System, userId: null, ct)).Count;
+
+    private async Task<List<ClockStopResult>> StopStaleCoreAsync(Actor actor, Guid? userId, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var cutoff = now - TimeRules.ClockStaleAfter;
+        var stale = await db.RunningClocks.Include(c => c.Task)
+            .Where(c => c.LastSeenAt < cutoff && (userId == null || c.UserId == userId))
+            .ToListAsync(ct);
+        var stopped = new List<ClockStopResult>();
+        foreach (var clock in stale)
+        {
+            if (await SaveStopAsync(actor, clock, now, ct) is { } result) stopped.Add(result);
+        }
+        return stopped;
+    }
+
+    private Task<RunningClock?> FindClockAsync(Guid userId, Guid taskId, CancellationToken ct) =>
+        db.RunningClocks.Include(c => c.Task).FirstOrDefaultAsync(c => c.UserId == userId && c.TaskId == taskId, ct);
+
+    /// <summary>
+    /// Stops a tracked clock, logs its time for its user and saves. Null when a concurrent request stopped it first
+    /// (the Stop button and the page-leave beacon both firing, or the sweep).
+    /// </summary>
+    private async Task<ClockStopResult?> SaveStopAsync(Actor actor, RunningClock clock, DateTime now, CancellationToken ct)
+    {
         var startedAt = DateTime.SpecifyKind(clock.StartedAt, DateTimeKind.Utc);
-        var minutes = (int)Math.Round((stoppedAt - startedAt).TotalMinutes, MidpointRounding.AwayFromZero);
-        minutes = Math.Clamp(minutes, 0, MaxEntryMinutes);
+        var lastSeenAt = DateTime.SpecifyKind(clock.LastSeenAt, DateTimeKind.Utc);
+        var stale = TimeRules.IsClockStale(lastSeenAt, now);
+        var stoppedAt = TimeRules.ClockStoppedAt(lastSeenAt, now);
+        var minutes = TimeRules.ClockMinutes(startedAt, stoppedAt);
         var task = clock.Task;
 
         db.RunningClocks.Remove(clock);
@@ -236,19 +287,28 @@ public sealed class TimeEntryService(ApplicationDbContext db, IActorProvider act
             entry = new TimeEntry
             {
                 TaskId = task.Id,
-                UserId = me,
+                UserId = clock.UserId,
                 Date = DateOnly.FromDateTime(startedAt),
                 DurationMinutes = minutes,
                 Note = $"Clock {startedAt.ToLocalTime():HH:mm}-{stoppedAt.ToLocalTime():HH:mm}",
-                CreatedAt = stoppedAt
+                CreatedAt = now
             };
             db.TimeEntries.Add(entry);
             audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.TimeLogged, task.DepartmentId, task.Title,
                 new { timeEntryId = entry.Id, entry.UserId, entry.Date, entry.DurationMinutes, clock = true });
         }
         audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.ClockStopped, task.DepartmentId, task.Title,
-            new { startedAt, stoppedAt, minutes, timeEntryId = entry?.Id });
-        return new ClockStopResult(task, entry, minutes);
+            new { startedAt, stoppedAt, minutes, timeEntryId = entry?.Id, stale });
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            db.ChangeTracker.Clear();
+            return null;
+        }
+        return new ClockStopResult(task, entry, minutes, stale ? stoppedAt : null);
     }
 
     private const int MaxNoteLength = 1000;

@@ -250,6 +250,29 @@ document.addEventListener('DOMContentLoaded', function () {
   });
   // Coming back via the back/forward cache would show a clock that was already stopped: reload instead.
   window.addEventListener('pageshow', function (e) { if (e.persisted) location.reload(); });
+
+  // Heartbeat: while this page is open it checks in every minute, so the server can tell a clock whose page is gone
+  // without the beacon (crash, killed tab, asleep) and stop it at its last check-in. The reply says whether the clock
+  // still runs here; when it doesn't (stopped from another tab of this task, or found stale after the computer slept),
+  // reload to show that. Clocks on other tasks, in other tabs, run independently (§6.10).
+  var heartbeat = document.querySelector('form.js-clock-heartbeat');
+  var beating = false;
+  function beat() {
+    if (!heartbeat || beating) return;
+    beating = true;
+    fetch(heartbeat.action, { method: 'POST', body: new FormData(heartbeat), credentials: 'same-origin', headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; }) // a lapsed sign-in answers with the login page: leave the page as it is
+      .then(function (data) {
+        beating = false;
+        if (!data || data.running !== false) return;
+        stayingOnPage = true; // no clock on this task left for the beacon to stop
+        location.reload();
+      });
+  }
+  setInterval(beat, (parseInt(clock.dataset.heartbeatSeconds, 10) || 60) * 1000);
+  // A background tab's timers may be slowed or paused: check in as soon as it is shown again.
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') beat(); });
 })();
 
 // Inline due-date control: a date input fires "change" on every keystroke that yields a valid date, so submitting

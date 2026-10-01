@@ -40,8 +40,17 @@ public static class TimeFormat
     };
 }
 
-/// <summary>Outcome of stopping a running clock. <see cref="Entry"/> is null when too little time elapsed to log anything.</summary>
-public sealed record ClockStopResult(TaskItem Task, TimeEntry? Entry, int Minutes);
+/// <summary>
+/// Outcome of stopping a running clock. <see cref="Entry"/> is null when too little time elapsed to log anything.
+/// <see cref="PageLostAt"/> is set when the clock was stale: its run ended at its last heartbeat, given here (UTC).
+/// </summary>
+public sealed record ClockStopResult(TaskItem Task, TimeEntry? Entry, int Minutes, DateTime? PageLostAt = null);
 
-/// <summary>Outcome of starting a clock. <see cref="Previous"/> is set when a clock already running elsewhere was stopped first.</summary>
-public sealed record ClockStartResult(RunningClock Clock, ClockStopResult? Previous);
+/// <summary>
+/// Outcome of starting a clock. <see cref="AlreadyRunning"/>: the caller's clock was already running on the task (it is
+/// open in another tab) and was left as it was. <see cref="Previous"/>: a stale clock on the task was stopped first.
+/// </summary>
+public sealed record ClockStartResult(RunningClock Clock, ClockStopResult? Previous, bool AlreadyRunning);
+
+/// <summary>Outcome of a page's clock heartbeat: whether the clock still runs, and the stop when it was found stale.</summary>
+public sealed record ClockHeartbeatResult(bool Running, ClockStopResult? Stopped);

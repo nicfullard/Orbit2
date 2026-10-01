@@ -12,6 +12,7 @@ public sealed class JobOptions
     public const string Section = "Jobs";
     public RecurringTaskJobOptions RecurringTasks { get; set; } = new();
     public DueDateNotificationJobOptions DueDateNotifications { get; set; } = new();
+    public ClockSweepJobOptions ClockSweep { get; set; } = new();
 }
 
 /// <summary>Schedule for the Quartz.NET recurring-task generator.</summary>
@@ -33,6 +34,14 @@ public sealed class DueDateNotificationJobOptions
     /// <summary>Quartz cron expression (seconds first). Default: every day at 07:00 server time.</summary>
     public string Cron { get; set; } = "0 0 7 * * ?";
     public bool RunOnStartup { get; set; } = true;
+}
+
+/// <summary>Schedule for the Quartz.NET job that stops task clocks whose page has stopped checking in (§6.10).</summary>
+public sealed class ClockSweepJobOptions
+{
+    public bool Enabled { get; set; } = true;
+    /// <summary>Quartz cron expression (seconds first). Default: every minute.</summary>
+    public string Cron { get; set; } = "0 * * * * ?";
 }
 
 public sealed class SeedOptions

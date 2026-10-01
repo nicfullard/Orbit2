@@ -204,8 +204,8 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
                 .HasForeignKey(c => c.TaskId).OnDelete(DeleteBehavior.Cascade);
             b.HasOne(c => c.User).WithMany()
                 .HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Cascade);
-            // One running clock per user, enforced at the database level as well.
-            b.HasIndex(c => c.UserId).IsUnique();
+            // One running clock per user per task, enforced at the database level as well.
+            b.HasIndex(c => new { c.UserId, c.TaskId }).IsUnique();
             b.HasIndex(c => c.TaskId);
         });
 

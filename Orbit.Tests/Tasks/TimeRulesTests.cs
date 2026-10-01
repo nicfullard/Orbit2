@@ -4,7 +4,10 @@ using Orbit.Tests.Access;
 
 namespace Orbit.Tests.Tasks;
 
-/// <summary>Setting your own task Done without having logged time on it asks first (spec §6.10, §13 item 63).</summary>
+/// <summary>
+/// Setting your own task Done without having logged time on it asks first (spec §6.10, §13 item 63), and the task
+/// clock's heartbeat and logged minutes (§13 item 64).
+/// </summary>
 public class TimeRulesTests
 {
     private static readonly Guid It = Guid.NewGuid();
@@ -50,5 +53,36 @@ public class TimeRulesTests
         var noTimeLog = TestActors.Grants(It, (Permission.TasksView, PermissionScope.Own), (Permission.TasksEdit, PermissionScope.Own));
         Assert.False(TimeRules.AskBeforeDoneWithoutTime(noTimeLog, Task(noTimeLog.UserId), hasLoggedTime: false, clockRunning: false));
         Assert.False(TimeRules.AskBeforeDoneWithoutTime(Actor.System, Task(null), hasLoggedTime: false, clockRunning: false));
+    }
+
+    private static readonly DateTime Now = new(2026, 10, 1, 12, 0, 0, DateTimeKind.Utc);
+
+    /// <summary>TIME-005: a clock is stale only once its page hasn't checked in for more than five minutes (§13 item 64).</summary>
+    [Fact]
+    public void A_clock_is_stale_after_five_minutes_without_a_heartbeat()
+    {
+        Assert.False(TimeRules.IsClockStale(Now, Now));
+        Assert.False(TimeRules.IsClockStale(Now.AddSeconds(-TimeRules.ClockHeartbeatSeconds * 2), Now));
+        Assert.False(TimeRules.IsClockStale(Now.AddMinutes(-5), Now));
+        Assert.True(TimeRules.IsClockStale(Now.AddMinutes(-5).AddSeconds(-1), Now));
+    }
+
+    /// <summary>TIME-006: a live clock stops now; a stale one at its last heartbeat, so the time since its page was lost isn't logged.</summary>
+    [Fact]
+    public void A_stale_clock_stops_at_its_last_heartbeat()
+    {
+        Assert.Equal(Now, TimeRules.ClockStoppedAt(Now.AddMinutes(-1), Now));
+        Assert.Equal(Now.AddHours(-3), TimeRules.ClockStoppedAt(Now.AddHours(-3), Now));
+    }
+
+    /// <summary>TIME-007: a clock run logs whole minutes, rounded to the nearest; under 30 seconds logs nothing; at most 24 hours.</summary>
+    [Fact]
+    public void A_clock_run_logs_rounded_minutes_up_to_a_day()
+    {
+        Assert.Equal(0, TimeRules.ClockMinutes(Now, Now.AddSeconds(29)));
+        Assert.Equal(1, TimeRules.ClockMinutes(Now, Now.AddSeconds(30)));
+        Assert.Equal(90, TimeRules.ClockMinutes(Now, Now.AddMinutes(90).AddSeconds(20)));
+        Assert.Equal(TimeRules.MaxEntryMinutes, TimeRules.ClockMinutes(Now, Now.AddHours(30)));
+        Assert.Equal(0, TimeRules.ClockMinutes(Now, Now.AddMinutes(-5)));
     }
 }

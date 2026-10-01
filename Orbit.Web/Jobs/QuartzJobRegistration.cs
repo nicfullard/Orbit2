@@ -19,6 +19,8 @@ public static class QuartzJobRegistration
             Schedule<DueDateNotificationJob>(q, DueDateNotificationJob.Key,
                 options.DueDateNotifications.Enabled, options.DueDateNotifications.Cron, options.DueDateNotifications.RunOnStartup,
                 startupDelay: TimeSpan.FromSeconds(30));
+            Schedule<ClockSweepJob>(q, ClockSweepJob.Key,
+                options.ClockSweep.Enabled, options.ClockSweep.Cron, runOnStartup: false, startupDelay: TimeSpan.Zero);
         });
 
         // Runs the scheduler as a hosted service; on shutdown, lets in-flight jobs finish.
