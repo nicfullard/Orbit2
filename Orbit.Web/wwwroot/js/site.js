@@ -47,6 +47,34 @@ document.addEventListener('submit', function (e) {
   }
 });
 
+// Setting your own task Done without having logged time on it (spec §6.10): a status select with data-done-check asks that
+// URL first, and confirms if it answers with a warning. Cancel puts the select back; a failed check lets the change through.
+// Registered before the task clock's submit listener, which must see the held-back first submit as cancelled. Razor
+// renders a null data- attribute as empty, so an empty data-done-check (a task already Done) means no check.
+(function () {
+  function revert(select) {
+    for (var i = 0; i < select.options.length; i++) {
+      if (select.options[i].defaultSelected) { select.selectedIndex = i; return; }
+    }
+  }
+  document.addEventListener('submit', function (e) {
+    var form = e.target;
+    var select = form && form.querySelector ? form.querySelector('select[data-done-check]') : null;
+    if (e.defaultPrevented || !select || !select.dataset.doneCheck || select.value !== 'Done' || !form.requestSubmit) return;
+    if (form.dataset.doneChecked) { delete form.dataset.doneChecked; return; }
+    e.preventDefault();
+    var submitter = e.submitter;
+    fetch(select.dataset.doneCheck, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; })
+      .then(function (data) {
+        if (data && data.warning && !window.confirm(data.warning)) { revert(select); return; }
+        form.dataset.doneChecked = '1';
+        form.requestSubmit(submitter || undefined);
+      });
+  });
+})();
+
 // Copy-to-clipboard buttons
 document.addEventListener('click', function (e) {
   var btn = e.target.closest('[data-copy-target]');

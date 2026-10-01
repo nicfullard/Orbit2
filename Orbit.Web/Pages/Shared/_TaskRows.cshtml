@@ -183,7 +183,8 @@ else
                             @if (canView && statuses.Count > 1)
                             {
                                 <form method="post" asp-page="/Tasks/Status" asp-route-id="@t.Id" asp-route-returnUrl="@Model.ReturnUrl" class="d-inline">
-                                    <select name="status" class="form-select form-select-sm status-select js-autosubmit" aria-label="Status">
+                                    <select name="status" class="form-select form-select-sm status-select js-autosubmit" aria-label="Status"
+                                            data-done-check="@(t.Status != TaskItemStatus.Done ? Url.Page("/Tasks/Status", "DoneCheck", new { id = t.Id }) : null)">
                                         @foreach (var s in statuses)
                                         {
                                             <option value="@s" selected="@(s == t.Status)">@s.Label()</option>

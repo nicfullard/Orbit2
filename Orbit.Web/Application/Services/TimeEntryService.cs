@@ -17,6 +17,22 @@ public sealed class TimeEntryService(ApplicationDbContext db, IActorProvider act
             .Where(e => e.TaskId == taskId).OrderByDescending(e => e.Date).ThenByDescending(e => e.CreatedAt).ToListAsync(ct);
     }
 
+    /// <summary>
+    /// Whether the caller should confirm before setting the task Done: it's theirs and they haven't logged time on it (§6.10).
+    /// Asked by the web UI's status controls when Done is picked, so the answer is current.
+    /// </summary>
+    public async Task<bool> AskBeforeDoneWithoutTimeAsync(Guid taskId, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        var task = await db.Tasks.AsNoTracking().FirstOrDefaultAsync(t => t.Id == taskId, ct)
+            ?? throw new NotFoundException("Task not found.");
+        AccessPolicy.Require(AccessPolicy.CanViewTask(actor, task), "This task belongs to another department.");
+        if (actor.UserId is not Guid me || task.AssigneeId != me) return false;
+        var logged = await db.TimeEntries.AnyAsync(e => e.TaskId == taskId && e.UserId == me, ct);
+        var clockRunning = await db.RunningClocks.AnyAsync(c => c.TaskId == taskId && c.UserId == me, ct);
+        return TimeRules.AskBeforeDoneWithoutTime(actor, task, logged, clockRunning);
+    }
+
     public async Task<TimeEntry> GetAsync(Guid id, CancellationToken ct = default)
     {
         var actor = await actors.GetAsync(ct);

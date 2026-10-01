@@ -111,7 +111,8 @@
         {
             <form method="post" asp-page="/Tasks/Status" asp-route-id="@t.Id" asp-route-returnUrl="@returnUrl" class="d-flex align-items-center gap-1">
                 <label class="small text-muted" for="quickStatus">Status</label>
-                <select id="quickStatus" name="status" class="form-select form-select-sm status-select js-autosubmit">
+                <select id="quickStatus" name="status" class="form-select form-select-sm status-select js-autosubmit"
+                        data-done-check="@(t.Status != TaskItemStatus.Done ? Url.Page("/Tasks/Status", "DoneCheck", new { id = t.Id }) : null)">
                     @foreach (var s in Model.Statuses)
                     {
                         <option value="@s" selected="@(s == t.Status)">@s.Label()</option>

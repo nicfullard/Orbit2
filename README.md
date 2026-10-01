@@ -113,6 +113,11 @@ requestee, if your reach covers both the old and the new person. The Tasks list'
 also finds your tasks that other departments hold. The shipped roles hold the permission at Own, so an admin gives
 Department or All to the roles that need it (a helpdesk, a PA, a team lead).
 
+Setting a task assigned to you to **Done** in the web UI (the status control on the task page, a task list or the
+sprint board, or the edit form) asks first if you haven't logged any time on it and have no clock running on it
+(spec §6.10); Cancel leaves the status as it was. It's a reminder, not a rule: nobody else is asked, and neither is
+MCP's `update_task`.
+
 A project is owned by one department, but someone whose role may create tasks in every department can file
 tasks under it for other departments (unassigned, or assigned to someone in that department). Each such task
 belongs to its own department, which sees and works it as usual; a department with tasks on another

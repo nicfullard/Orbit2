@@ -139,7 +139,8 @@
     {
         <div class="col-md-3">
             <label class="form-label" for="Form_Status">Status</label>
-            <select class="form-select" id="Form_Status" name="Form.Status" asp-items="Ui.EnumItems<TaskItemStatus>(form.Status, label: s => s.Label())"></select>
+            <select class="form-select" id="Form_Status" name="Form.Status" asp-items="Ui.EnumItems<TaskItemStatus>(form.Status, label: s => s.Label())"
+                    data-done-check="@(existing is not null && existing.Status != TaskItemStatus.Done ? Url.Page("/Tasks/Status", "DoneCheck", new { id = existing.Id }) : null)"></select>
         </div>
     }
     else
