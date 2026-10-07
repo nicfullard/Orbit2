@@ -60,7 +60,7 @@ public static class PermissionCatalog
             "Move tasks between the backlog and a sprint, and put them on the day plan (the Today tick).",
             PlanningGroup, OwnDeptAll),
         new(Permission.ProjectsView, "View projects",
-            "See projects, their files and their critical path results. Own = projects you own. Department also shows, read-only, other departments' projects that have tasks in yours.",
+            "See projects, their comments, files and critical path results, and comment on them. Own = projects you own. Department also shows other departments' projects that have tasks in yours - read-only, apart from commenting.",
             ProjectsGroup, OwnDeptAll),
         new(Permission.ProjectsCreate, "Create projects",
             "Create projects in the department, or anywhere at All departments.",

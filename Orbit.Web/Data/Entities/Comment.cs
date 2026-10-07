@@ -1,11 +1,16 @@
 namespace Orbit.Data.Entities;
 
-/// <summary>A comment on a task or on an asset (spec §6.19): exactly one of <see cref="TaskId"/> / <see cref="AssetId"/> is set.</summary>
+/// <summary>
+/// A comment on a task, a project or an asset (spec §6.1, §6.19): exactly one of <see cref="TaskId"/> / <see cref="ProjectId"/> /
+/// <see cref="AssetId"/> is set.
+/// </summary>
 public class Comment
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid? TaskId { get; set; }
     public TaskItem? Task { get; set; }
+    public Guid? ProjectId { get; set; }
+    public Project? Project { get; set; }
     public Guid? AssetId { get; set; }
     public Asset? Asset { get; set; }
     /// <summary>API comments point at the synthetic Claude user rather than null.</summary>

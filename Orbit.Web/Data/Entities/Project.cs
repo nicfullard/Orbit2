@@ -25,4 +25,6 @@ public class Project
     public ICollection<RecurringTaskDefinition> RecurringTaskDefinitions { get; set; } = new List<RecurringTaskDefinition>();
     /// <summary>Files attached to this project (spec §6.18).</summary>
     public ICollection<Attachment> Attachments { get; set; } = new List<Attachment>();
+    /// <summary>The project's own comment thread (spec §6.1).</summary>
+    public ICollection<Comment> Comments { get; set; } = new List<Comment>();
 }

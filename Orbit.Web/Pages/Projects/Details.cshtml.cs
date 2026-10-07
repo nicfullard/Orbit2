@@ -16,6 +16,7 @@ public class DetailsModel(
     TaskStructureService structure,
     CriticalPathService criticalPaths,
     AttachmentService attachments,
+    CommentService comments,
     IOptions<AttachmentOptions> attachmentOptions,
     IActorProvider actors) : OrbitPageModel
 {
@@ -58,6 +59,20 @@ public class DetailsModel(
         {
             await attachments.DeleteAsync(attachmentId, ct);
             Success("Attachment deleted.");
+        }
+        catch (ValidationException ex) { Error(ex.Message); }
+        return RedirectToPage(new { id });
+    }
+
+    /// <summary>The project's own comment thread (§6.1): whoever can open the page can read it and post to it, archived or not.</summary>
+    public IReadOnlyList<Comment> Comments { get; private set; } = [];
+
+    public async Task<IActionResult> OnPostCommentAsync(Guid id, string? commentBody, CancellationToken ct)
+    {
+        try
+        {
+            await comments.AddToProjectAsync(id, commentBody ?? string.Empty, ct);
+            Success("Comment added.");
         }
         catch (ValidationException ex) { Error(ex.Message); }
         return RedirectToPage(new { id });
@@ -117,6 +132,7 @@ public class DetailsModel(
         CanRunAnalysis = AccessPolicy.CanRunCriticalPath(Actor, Project);
         Attachments = await attachments.ListForProjectAsync(id, ct);
         CanAttach = Project.Status != ProjectStatus.Archived && AccessPolicy.CanAttachToProject(Actor, Project);
+        Comments = await comments.ListForProjectAsync(id, ct);
         return Page();
     }
 

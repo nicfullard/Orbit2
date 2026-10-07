@@ -240,39 +240,50 @@ public sealed class OrbitTools(
     // ------------------------------------------------------------- comments
 
     [McpServerTool(Name = "add_comment"), Description(
-        "Add a comment to a task - e.g. to explain why you created or changed it - or to an asset. Pass exactly one of taskId or assetId. " +
-        "Shown in the UI attributed to Claude. Anyone who can see the task or asset can comment on it.")]
+        "Add a comment to a task - e.g. to explain why you created or changed it - to a project, or to an asset. " +
+        "Pass exactly one of taskId, projectId or assetId. Shown in the UI attributed to Claude. Anyone who can see the task, project or asset " +
+        "can comment on it; on a project that includes a key whose department only has tasks filed under it, and an archived project still takes comments.")]
     public Task<string> AddComment(
         [Description("Comment text (markdown is fine).")] string body,
         [Description("Task id (GUID), or task number such as T-26-00012.")] string? taskId = null,
+        [Description("Project id (GUID), or project number such as P-26-00003.")] string? projectId = null,
         [Description("Asset id (GUID), or its ERP asset number when it has one.")] string? assetId = null,
         CancellationToken ct = default) => Run(async () =>
     {
-        var comment = await CommentParentAsync(taskId, assetId, ct) is { IsTask: true } parent
-            ? await comments.AddAsync(parent.Id, body, ct)
-            : await comments.AddToAssetAsync(await assets.ResolveIdAsync(assetId, ct), body, ct);
+        var comment = await CommentParentAsync(taskId, projectId, assetId, ct) switch
+        {
+            { TaskId: Guid task } => await comments.AddAsync(task, body, ct),
+            { ProjectId: Guid project } => await comments.AddToProjectAsync(project, body, ct),
+            var parent => await comments.AddToAssetAsync(parent.AssetId!.Value, body, ct)
+        };
         return CommentDto(comment);
     });
 
-    [McpServerTool(Name = "list_comments"), Description("List a task's or an asset's comments, oldest first. Pass exactly one of taskId or assetId.")]
+    [McpServerTool(Name = "list_comments"), Description(
+        "List a task's, a project's or an asset's comments, oldest first. Pass exactly one of taskId, projectId or assetId.")]
     public Task<string> ListComments(
         [Description("Task id (GUID), or task number such as T-26-00012.")] string? taskId = null,
+        [Description("Project id (GUID), or project number such as P-26-00003.")] string? projectId = null,
         [Description("Asset id (GUID), or its ERP asset number when it has one.")] string? assetId = null,
         CancellationToken ct = default) => Run(async () =>
     {
-        var list = await CommentParentAsync(taskId, assetId, ct) is { IsTask: true } parent
-            ? await comments.ListAsync(parent.Id, ct)
-            : await comments.ListForAssetAsync(await assets.ResolveIdAsync(assetId, ct), ct);
+        var list = await CommentParentAsync(taskId, projectId, assetId, ct) switch
+        {
+            { TaskId: Guid task } => await comments.ListAsync(task, ct),
+            { ProjectId: Guid project } => await comments.ListForProjectAsync(project, ct),
+            var parent => await comments.ListForAssetAsync(parent.AssetId!.Value, ct)
+        };
         return new { items = list.Select(CommentDto).ToList(), totalCount = list.Count };
     });
 
-    /// <summary>A comment tool's parent: exactly one of a task or an asset.</summary>
-    private async Task<(bool IsTask, Guid Id)> CommentParentAsync(string? taskId, string? assetId, CancellationToken ct)
+    /// <summary>A comment tool's parent: exactly one of a task, a project or an asset, resolved to its id.</summary>
+    private async Task<(Guid? TaskId, Guid? ProjectId, Guid? AssetId)> CommentParentAsync(string? taskId, string? projectId, string? assetId, CancellationToken ct)
     {
-        var hasTask = !string.IsNullOrWhiteSpace(taskId);
-        var hasAsset = !string.IsNullOrWhiteSpace(assetId);
-        if (hasTask == hasAsset) throw new McpException("Pass exactly one of taskId or assetId.");
-        return hasTask ? (true, await TaskIdAsync(taskId, ct)) : (false, Guid.Empty);
+        var given = new[] { taskId, projectId, assetId }.Count(v => !string.IsNullOrWhiteSpace(v));
+        if (given != 1) throw new McpException("Pass exactly one of taskId, projectId or assetId.");
+        if (!string.IsNullOrWhiteSpace(taskId)) return (await TaskIdAsync(taskId, ct), null, null);
+        if (!string.IsNullOrWhiteSpace(projectId)) return (null, await ProjectIdAsync(projectId, ct), null);
+        return (null, null, await assets.ResolveIdAsync(assetId, ct));
     }
 
     // ---------------------------------------------------------------- time (§6.10)
@@ -462,7 +473,8 @@ public sealed class OrbitTools(
     [McpServerTool(Name = "get_project"), Description(
         "Get a project's detail including all of its tasks, each with its department. A project can hold tasks for several departments " +
         "(crossDepartment = true). Visible within the key's View projects scope, and to any department that has tasks filed under it; " +
-        "the key's department scoping still applies per task when you go on to get_task / update_task.")]
+        "the key's department scoping still applies per task when you go on to get_task / update_task. " +
+        "Also the project's own attachments (read one with get_attachment) and how many comments it has (commentCount; read them with list_comments).")]
     public Task<string> GetProject(
         [Description("Project id (GUID), or project number such as P-26-00003.")] string projectId,
         CancellationToken ct = default) => Run(async () =>
@@ -470,7 +482,8 @@ public sealed class OrbitTools(
         var project = await projects.GetAsync(await ProjectIdAsync(projectId, ct), ct);
         var links = await structure.ListForProjectAsync(project.Id, ct);
         var files = await attachments.ListForProjectAsync(project.Id, ct);
-        return ProjectDto(project, includeTasks: true, links, files);
+        var commentCount = (await comments.ListForProjectAsync(project.Id, ct)).Count;
+        return ProjectDto(project, includeTasks: true, links, files, commentCount);
     });
 
     [McpServerTool(Name = "get_project_status"), Description("Lightweight status summary of a project: task counts by status, overdue count, progress, time logged, and the headline of its last critical path analysis (criticalPath, null if never run; see get_critical_path). No task list.")]
@@ -506,7 +519,7 @@ public sealed class OrbitTools(
 
     [McpServerTool(Name = "list_projects"), Description(
         "List projects with open/total task counts. Same department scoping as list_tasks, plus other departments' projects that have " +
-        "tasks filed for the key's department (shared, read-only). Archived projects are excluded unless includeArchived is true.")]
+        "tasks filed for the key's department (shared: read-only, apart from commenting). Archived projects are excluded unless includeArchived is true.")]
     public Task<string> ListProjects(
         [Description("Filter by department id (GUID). Only useful for a key that sees every department.")] string? departmentId = null,
         [Description("Active, OnHold, Completed or Archived.")] string? status = null,
@@ -1247,6 +1260,7 @@ public sealed class OrbitTools(
     {
         id = c.Id,
         taskId = c.TaskId,
+        projectId = c.ProjectId,
         assetId = c.AssetId,
         authorId = c.AuthorId,
         author = c.Author is null ? "Claude" : c.Author.IsSystemAccount ? "Claude" : c.Author.DisplayName,
@@ -1268,7 +1282,8 @@ public sealed class OrbitTools(
         createdAt = e.CreatedAt
     };
 
-    private static object ProjectDto(Project p, bool includeTasks, IReadOnlyList<TaskDependency>? dependencies = null, IReadOnlyList<Attachment>? attachments = null)
+    private static object ProjectDto(Project p, bool includeTasks, IReadOnlyList<TaskDependency>? dependencies = null, IReadOnlyList<Attachment>? attachments = null,
+        int? commentCount = null)
     {
         var all = p.Tasks ?? [];
         return new
@@ -1308,7 +1323,9 @@ public sealed class OrbitTools(
                 type = l.Type, code = l.Type.Code(), lagDays = l.LagDays
             }).ToList(),
             // Files attached to the project itself (§6.18); each task's own files come with get_task.
-            attachments = attachments?.Select(AttachmentDto).ToList()
+            attachments = attachments?.Select(AttachmentDto).ToList(),
+            // The project's own thread (§6.1) is read with list_comments; only get_project counts it.
+            commentCount
         };
     }
 

@@ -5,7 +5,7 @@ using Orbit.Data.Entities;
 
 namespace Orbit.Application.Services;
 
-/// <summary>Comments on tasks and on assets (spec §6.19). Whoever can see the task or asset can read and add them.</summary>
+/// <summary>Comments on tasks, projects and assets (spec §6.1, §6.2, §6.19). Whoever can see the task, project or asset can read and add them.</summary>
 public sealed class CommentService(ApplicationDbContext db, IActorProvider actors, AuditService audit)
 {
     public async Task<IReadOnlyList<Comment>> ListAsync(Guid taskId, CancellationToken ct = default)
@@ -31,6 +31,39 @@ public sealed class CommentService(ApplicationDbContext db, IActorProvider actor
         db.Comments.Add(comment);
         task.UpdatedAt = comment.CreatedAt;
         audit.Add(actor, AuditEntity.Task, taskId, AuditAction.CommentAdded, task.DepartmentId, task.Title, Details(comment));
+        await db.SaveChangesAsync(ct);
+
+        await db.Entry(comment).Reference(c => c.Author).LoadAsync(ct);
+        return comment;
+    }
+
+    /// <summary>A project's comments, oldest first: whoever can see the project can read them, a department that only shares it (§6.2.1) included.</summary>
+    public async Task<IReadOnlyList<Comment>> ListForProjectAsync(Guid projectId, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        var project = await db.Projects.AsNoTracking().FirstOrDefaultAsync(p => p.Id == projectId, ct)
+            ?? throw new NotFoundException("Project not found.");
+        AccessPolicy.Require(AccessPolicy.CanViewProject(actor, project, await IsSharedWithAsync(projectId, actor, ct)), "This project belongs to another department.");
+        return await db.Comments.AsNoTracking().Include(c => c.Author)
+            .Where(c => c.ProjectId == projectId).OrderBy(c => c.CreatedAt).ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Comment on a project (§6.1): follows viewing it, as on tasks - so a department with tasks on another department's project can
+    /// join in, though it can't attach files to it. An archived project takes comments too, unlike attachments.
+    /// </summary>
+    public async Task<Comment> AddToProjectAsync(Guid projectId, string body, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        var text = CleanBody(body);
+        var project = await db.Projects.FirstOrDefaultAsync(p => p.Id == projectId, ct)
+            ?? throw new NotFoundException("Project not found.");
+        AccessPolicy.Require(AccessPolicy.CanCommentOnProject(actor, project, await IsSharedWithAsync(projectId, actor, ct)), "This project belongs to another department.");
+
+        var comment = new Comment { ProjectId = projectId, AuthorId = actor.UserId, Body = text, CreatedAt = DateTime.UtcNow };
+        db.Comments.Add(comment);
+        project.UpdatedAt = comment.CreatedAt;
+        audit.Add(actor, AuditEntity.Project, projectId, AuditAction.CommentAdded, project.DepartmentId, project.Name, Details(comment));
         await db.SaveChangesAsync(ct);
 
         await db.Entry(comment).Reference(c => c.Author).LoadAsync(ct);
@@ -66,6 +99,10 @@ public sealed class CommentService(ApplicationDbContext db, IActorProvider actor
         await db.Entry(comment).Reference(c => c.Author).LoadAsync(ct);
         return comment;
     }
+
+    /// <summary>True when the caller's department has tasks filed under the project (§6.2.1 shared visibility).</summary>
+    private async Task<bool> IsSharedWithAsync(Guid projectId, Actor actor, CancellationToken ct) =>
+        actor.DepartmentId is Guid d && await db.Tasks.AnyAsync(t => t.ProjectId == projectId && t.DepartmentId == d, ct);
 
     private static string CleanBody(string? body)
     {

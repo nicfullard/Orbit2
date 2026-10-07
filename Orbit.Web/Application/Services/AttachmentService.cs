@@ -8,9 +8,10 @@ namespace Orbit.Application.Services;
 
 /// <summary>
 /// Files attached to tasks and projects (spec §6.18). The metadata is an <see cref="Attachment"/> row; the bytes are its
-/// <see cref="AttachmentContent"/> row, written on upload and read only for a download. Attaching follows the commenting
-/// rule (anyone who can see the task, or the project's own department); removing takes the uploader or someone who may edit
-/// the parent. Every upload and removal is audited on the parent.
+/// <see cref="AttachmentContent"/> row, written on upload and read only for a download. Attaching to a task follows the
+/// commenting rule (anyone who can see it); attaching to a project is narrower than commenting on it (the project's own
+/// department, and not once it is archived). Removing takes the uploader or someone who may edit the parent. Every upload
+/// and removal is audited on the parent.
 /// </summary>
 public sealed class AttachmentService(
     ApplicationDbContext db,

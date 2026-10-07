@@ -117,6 +117,12 @@ public static class AccessPolicy
     /// <summary>Attaching a file to a project: whoever may see it outright. A department that only shares the project (§6.2.1) sees its files read-only.</summary>
     public static bool CanAttachToProject(Actor a, Project p) => CanViewProject(a, p);
 
+    /// <summary>
+    /// Commenting on a project (§6.1) follows viewing it, as it does on tasks and assets - a department that only shares the project
+    /// through its own tasks (§6.2.1) included, though it may not attach files to it (<see cref="CanAttachToProject"/>) or edit it.
+    /// </summary>
+    public static bool CanCommentOnProject(Actor a, Project p, bool hasTasksInActorDepartment) => CanViewProject(a, p, hasTasksInActorDepartment);
+
     /// <summary>Removing an attachment: whoever uploaded it, or anyone who may edit the task it is attached to.</summary>
     public static bool CanDeleteAttachment(Actor a, Attachment at, TaskItem parent) =>
         (a.UserId is not null && at.UploadedById == a.UserId) || CanEditTask(a, parent);

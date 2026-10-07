@@ -73,7 +73,7 @@ scopes below it, and a role with no grants sees nothing.
 | `tasks.edit` | Own / Dept / All | Edit any field, incl. every status change (close/reopen), parent, dependencies, assignee | Own | Dept |
 | `tasks.take` | Dept / All | Take an open, unassigned task for yourself | Dept | Dept |
 | `tasks.plan` | Own / Dept / All | Backlog/sprint moves and the Today tick | Dept | Dept |
-| `projects.view` | Own / Dept / All | See projects, their files and critical path results | Dept | Dept |
+| `projects.view` | Own / Dept / All | See projects, comment on them, their files and critical path results | Dept | Dept |
 | `projects.create` | Dept / All | Create projects | Dept | Dept |
 | `projects.edit` | Own / Dept / All | Edit/archive projects, run the critical path analysis; moving to another department needs All | Own | Dept |
 | `time.log` | Own / Dept / All | Log, edit, delete time (Own: yours on tasks assigned to you; Dept: for anyone in the department) | Own | Dept |
@@ -127,7 +127,10 @@ check-in.
 A project is owned by one department, but someone whose role may create tasks in every department can file
 tasks under it for other departments (unassigned, or assigned to someone in that department). Each such task
 belongs to its own department, which sees and works it as usual; a department with tasks on another
-department's project sees that project read-only.
+department's project sees that project read-only, apart from its comment thread.
+
+A project has its own **Comments** card, like a task's: anyone who can see the project reads the thread and
+posts to it, the departments that only have tasks on it included, and an archived project still takes comments.
 
 ## Directory sign-in (LDAP / Active Directory)
 
@@ -191,10 +194,11 @@ one-off: nothing is kept in step with AD afterwards.
   `list_assets`, `get_asset`, `create_asset`, `update_asset`, `record_asset_check`, `create_assets`, `update_assets`,
   `record_asset_checks`, `list_asset_types`, `list_asset_locations`, `get_asset_type`, `create_asset_type`, `update_asset_type`,
   `get_asset_location`, `create_asset_location`, `update_asset_location`.
+- Comments: `add_comment` / `list_comments` take exactly one of `taskId`, `projectId` or `assetId`; `get_task`
+  includes the thread, `get_project` and `get_asset` give a `commentCount`.
 - Assets (spec §6.19): any `assetId` argument takes the GUID or, when the asset has one, its ERP asset number;
   `create_asset` takes an optional `idempotencyKey` so a retry can't register an asset twice; `create_asset` / `update_asset` take
-  the type and location by id or name and property values by name; `add_comment` / `list_comments` take `assetId`
-  in place of `taskId`. Types and locations are created and changed with `create_/update_asset_type` and
+  the type and location by id or name and property values by name. Types and locations are created and changed with `create_/update_asset_type` and
   `create_/update_asset_location` (Configure assets permission); a type's properties can be added and changed over MCP,
   all or nothing per call, but deleting one (which deletes its values) is web-UI only.
 - Batches: `create_assets`, `update_assets` and `record_asset_checks` take up to 100 items per call, each with the

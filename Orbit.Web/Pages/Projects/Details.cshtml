@@ -60,7 +60,7 @@
 {
     <div class="alert alert-info py-2">
         This project is owned by <strong>@p.Department.Name</strong>. It is shown to you because it has tasks for your department:
-        you can open and work those, and see the rest of the project read-only.
+        you can open and work those, see the rest of the project read-only, and comment on it.
     </div>
 }
 
@@ -347,5 +347,30 @@
         {
             <p class="text-muted small mb-0">Only @p.Department.Name can attach files to this project.</p>
         }
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-header fw-semibold">Comments <span class="text-muted fw-normal">(@Model.Comments.Count)</span></div>
+    <div class="card-body">
+        @foreach (var c in Model.Comments)
+        {
+            var isClaude = c.Author is null || c.Author.IsSystemAccount;
+            <div class="border-bottom pb-2 mb-2">
+                <div class="small">
+                    <span class="fw-semibold">@Ui.AuthorName(c.Author)</span>
+                    @if (isClaude)
+                    {
+                        <span class="badge badge-claude">Claude</span>
+                    }
+                    <span class="text-muted">· @Ui.When(c.CreatedAt)</span>
+                </div>
+                <div class="description-box">@c.Body</div>
+            </div>
+        }
+        <form method="post" asp-page-handler="Comment" asp-route-id="@p.Id">
+            <textarea class="form-control mb-2" name="CommentBody" rows="3" placeholder="Add a comment" required></textarea>
+            <button class="btn btn-sm btn-primary" type="submit">Post comment</button>
+        </form>
     </div>
 </div>

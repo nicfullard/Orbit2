@@ -172,17 +172,20 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 
         builder.Entity<Comment>(b =>
         {
-            // On exactly one task or one asset (§6.19); the comment dies with it.
+            // On exactly one task, project or asset (§6.1, §6.19); the comment dies with it.
             b.Property(c => c.Body).IsRequired();
             b.HasOne(c => c.Task).WithMany(t => t.Comments)
                 .HasForeignKey(c => c.TaskId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(c => c.Project).WithMany(p => p.Comments)
+                .HasForeignKey(c => c.ProjectId).OnDelete(DeleteBehavior.Cascade);
             b.HasOne(c => c.Asset).WithMany(a => a.Comments)
                 .HasForeignKey(c => c.AssetId).OnDelete(DeleteBehavior.Cascade);
             b.HasOne(c => c.Author).WithMany(u => u.Comments)
                 .HasForeignKey(c => c.AuthorId).OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(c => c.TaskId);
+            b.HasIndex(c => c.ProjectId);
             b.HasIndex(c => c.AssetId);
-            b.ToTable(t => t.HasCheckConstraint("CK_Comments_OneParent", "(\"TaskId\" IS NULL) <> (\"AssetId\" IS NULL)"));
+            b.ToTable(t => t.HasCheckConstraint("CK_Comments_OneParent", "num_nonnulls(\"TaskId\", \"ProjectId\", \"AssetId\") = 1"));
         });
 
         builder.Entity<TimeEntry>(b =>

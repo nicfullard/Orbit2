@@ -175,6 +175,8 @@ builder.Services.AddMcpServer(o =>
             "For a project's critical path, task float and project-buffer status use get_critical_path - Orbit's stored, deterministic analysis - " +
             "rather than deriving criticality from raw tasks; run_critical_path_analysis runs and stores a fresh one. " +
             "Files attached to tasks and projects are listed by get_task / get_project and read with get_attachment. " +
+            "Tasks, projects and assets each have a comment thread: add_comment / list_comments take exactly one of taskId, projectId or assetId; " +
+            "get_task includes the thread, get_project and get_asset report a commentCount. " +
             "log_time records time a person worked on a task: pass their userId from list_users, and an idempotencyKey so a retry can't log it twice. " +
             "The asset register (laptops, vehicles, equipment) belongs to no project: list_assets / get_asset read it, " +
             "create_asset / update_asset / record_asset_check write it; each department has its own asset types and locations " +
