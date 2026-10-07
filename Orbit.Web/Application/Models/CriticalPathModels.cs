@@ -68,7 +68,11 @@ public sealed class ScheduleSummary
     public string? Note { get; init; }
 }
 
-/// <summary>One scheduled task's place in the analysis. Floats are working days; null for standalone activities.</summary>
+/// <summary>
+/// One scheduled task's place in the analysis. Floats are working days; null for standalone activities. <c>Assignee</c>, here
+/// and on the records below, is the task's assignees by name, comma-separated (§6.2.3) - one string, as a stored analysis has
+/// always had it - or null when nobody is assigned.
+/// </summary>
 public sealed record TaskAnalysis(
     Guid TaskId,
     string Title,

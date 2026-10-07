@@ -27,15 +27,17 @@ public sealed class DueDateNotificationJob(
         {
             var today = DateOnly.FromDateTime(DateTime.UtcNow);
             var horizon = today.AddDays(Math.Max(0, options.Value.DueDateNotifications.LeadDays));
-            var due = await db.Tasks.Include(t => t.Assignee)
+            var due = await db.Tasks
                 .Where(t => t.Status != TaskItemStatus.Done && t.Status != TaskItemStatus.Cancelled
-                    && t.AssigneeId != null && t.DueSoonNotifiedAt == null
+                    && t.Assignments.Any() && t.DueSoonNotifiedAt == null
                     && t.DueDate != null && t.DueDate >= today && t.DueDate <= horizon)
                 .ToListAsync(ct);
 
+            // Every assignee is told (§6.2.3), and the task is stamped once: someone added later isn't reminded again.
             foreach (var task in due)
             {
-                await notifications.TaskDueSoonAsync(task, task.Assignee!, today, ct);
+                foreach (var assignee in task.Assignees)
+                    await notifications.TaskDueSoonAsync(task, assignee, today, ct);
                 task.DueSoonNotifiedAt = DateTime.UtcNow;
             }
             await db.SaveChangesAsync(ct);

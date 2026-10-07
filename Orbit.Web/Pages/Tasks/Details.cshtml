@@ -6,6 +6,12 @@
     var today = DateOnly.FromDateTime(DateTime.UtcNow);
     var overdue = t.IsOverdue(today);
     var returnUrl = Request.Path.ToString();
+    // "Assign someone" on the Assignees card (§6.2.3): picking a person of the task's department posts at once.
+    var assignPicker = new Orbit.Pages.Assets.PersonPickerVm
+    {
+        Id = "assign-picker", FieldName = "userId", SearchUrl = Url.Page("/Tasks/Assignees", new { departmentId = t.DepartmentId })!,
+        SubmitOnPick = true, Browse = true, Placeholder = "Assign someone...", Label = "Assign someone to this task"
+    };
 }
 
 <nav aria-label="breadcrumb">
@@ -173,7 +179,7 @@
                                         }
                                     </td>
                                     <td><span class="badge text-bg-light border">@c.Department.Name</span></td>
-                                    <td>@(c.Assignee?.DisplayName ?? "-")</td>
+                                    <td>@(c.AssigneeNames ?? "-")</td>
                                     <td>@Ui.Day(c.StartDate)</td>
                                     <td class="@(c.IsOverdue(today) ? "text-danger fw-semibold" : "")">@Ui.Day(c.DueDate)</td>
                                     <td><span class="badge @Ui.StatusBadge(c.Status)">@c.Status.Label()</span></td>
@@ -491,6 +497,45 @@
     </div>
 
     <div class="col-lg-4">
+        @* Who does the task (§6.2.3): any number of people, added and removed here without saving anything else on it. *@
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Assignees</div>
+            <ul class="list-group list-group-flush small">
+                @if (t.Assignments.Count == 0)
+                {
+                    <li class="list-group-item text-muted fst-italic">Unassigned</li>
+                }
+                @foreach (var x in t.Assignments.OrderBy(x => x.User.DisplayName))
+                {
+                    <li class="list-group-item d-flex justify-content-between align-items-start gap-2">
+                        <div>
+                            <div class="fw-semibold">
+                                @x.User.DisplayName
+                                @if (!x.User.IsActive) { <span class="badge text-bg-warning">deactivated</span> }
+                            </div>
+                            <div class="text-muted">
+                                @(x.User.Department?.Name ?? "No department") · since @Ui.When(x.AssignedAt)@(x.AssignedBy is null ? "" : $" by {Ui.AuthorName(x.AssignedBy)}")
+                            </div>
+                        </div>
+                        @if (Model.CanEdit)
+                        {
+                            <form method="post" asp-page-handler="Unassign" asp-route-id="@t.Id" asp-route-userId="@x.UserId" data-confirm="Take @x.User.DisplayName off this task?">
+                                <button class="btn btn-sm btn-outline-danger py-0" type="submit" title="@x.User.DisplayName is no longer assigned to it">Remove</button>
+                            </form>
+                        }
+                    </li>
+                }
+                @if (Model.CanEdit)
+                {
+                    <li class="list-group-item">
+                        <form method="post" asp-page-handler="Assign" asp-route-id="@t.Id">
+                            <partial name="/Pages/Assets/_PersonPicker.cshtml" model="assignPicker" />
+                        </form>
+                    </li>
+                }
+            </ul>
+        </div>
+
         <div class="card mb-3">
             <div class="card-header fw-semibold">Details</div>
             <div class="card-body small">
@@ -552,7 +597,6 @@
                         }
                     </dd>
                     <dt class="col-5">Department</dt><dd class="col-7">@t.Department.Name</dd>
-                    <dt class="col-5">Assignee</dt><dd class="col-7">@(t.Assignee?.DisplayName ?? "Unassigned")</dd>
                     @if (t.Requestee is not null)
                     {
                         <dt class="col-5">Requestee</dt><dd class="col-7">@t.Requestee.DisplayName@(t.Requestee.IsActive ? "" : " (deactivated)")</dd>

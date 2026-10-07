@@ -105,8 +105,9 @@ public static class ProjectReportRules
 
     /// <summary>
     /// One row per person with time logged on the project or a task on it that isn't Cancelled, and an Unassigned row for
-    /// such tasks with nobody on them, so the rows add up to the project's figures. Ordered by time in the range, then time
-    /// to date, then name; Unassigned last.
+    /// such tasks with nobody on them, so the rows add up to the project's figures - unless tasks are shared: a task several
+    /// people are assigned to (§6.2.3) is in each one's row, whole, and so in the rows' sum once per assignee. Logged time is
+    /// each person's own and always adds up. Ordered by time in the range, then time to date, then name; Unassigned last.
     /// </summary>
     private static IReadOnlyList<ProjectPersonRow> People(
         IReadOnlyList<ProjectTaskFacts> tasks, IEnumerable<ProjectPersonTime> time, Func<Guid?, string> name,
@@ -114,7 +115,9 @@ public static class ProjectReportRules
     {
         var logged = time.GroupBy(t => t.UserId)
             .ToDictionary(g => g.Key, g => (Period: g.Sum(t => t.PeriodMinutes), Total: g.Sum(t => t.TotalMinutes)));
-        var assigned = tasks.Where(t => t.Task.Status != TaskItemStatus.Cancelled).ToLookup(t => t.Task.AssigneeId);
+        var assigned = tasks.Where(t => t.Task.Status != TaskItemStatus.Cancelled)
+            .SelectMany(t => TimeReportRules.AssigneesOrNone(t.Task.AssigneeIds).Select(id => (UserId: id, Task: t)))
+            .ToLookup(x => x.UserId, x => x.Task);
 
         var people = logged.Keys.Select(id => (Guid?)id)
             .Union(assigned.Select(g => g.Key).Where(id => id is not null))
@@ -158,7 +161,7 @@ public static class ProjectReportRules
             })
             .Where(x => x.Listed)
             .Select(x => new ProjectTaskRow(x.Facts.Task.Id, x.Facts.Task.Number, x.Facts.Task.Title, x.Facts.Task.Status,
-                name(x.Facts.Task.AssigneeId), x.Facts.DueDate, IsOverdue(x.Facts, today), x.Facts.Task.EstimateMinutes,
+                TimeReportRules.AssigneeNames(x.Facts.Task.AssigneeIds, name), x.Facts.DueDate, IsOverdue(x.Facts, today), x.Facts.Task.EstimateMinutes,
                 x.Facts.PeriodMinutes, x.Facts.Task.TotalMinutes, x.Created, x.Done))
             .OrderBy(r => r.Status)
             .ThenBy(r => r.DueDate is null)

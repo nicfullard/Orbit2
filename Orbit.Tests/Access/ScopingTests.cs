@@ -12,11 +12,11 @@ public class ScopingTests
 
     private static readonly List<TaskItem> Tasks =
     [
-        new() { Title = "it-mine", DepartmentId = It, AssigneeId = Me },
-        new() { Title = "it-created", DepartmentId = It, CreatedById = Me, AssigneeId = Guid.NewGuid() },
-        new() { Title = "it-other", DepartmentId = It, AssigneeId = Guid.NewGuid(), CreatedById = Guid.NewGuid() },
-        new() { Title = "mk-mine", DepartmentId = Marketing, AssigneeId = Me },
-        new() { Title = "mk-other", DepartmentId = Marketing, CreatedById = Guid.NewGuid() }
+        new() { Title = "it-mine", DepartmentId = It, Assignments = Assigned.To(Me) },
+        new() { Title = "it-created", DepartmentId = It, CreatedById = Me, Assignments = Assigned.To(Guid.NewGuid()) },
+        new() { Title = "it-other", DepartmentId = It, Assignments = Assigned.To(Guid.NewGuid()), CreatedById = Guid.NewGuid() },
+        new() { Title = "mk-mine", DepartmentId = Marketing, Assignments = Assigned.To(Me) },
+        new() { Title = "mk-other", DepartmentId = Marketing, CreatedById = Guid.NewGuid(), Assignments = Assigned.To() }
     ];
 
     private static Actor Viewer(PermissionScope scope) =>
@@ -76,9 +76,9 @@ public class ScopingTests
     {
         var defs = new List<RecurringTaskDefinition>
         {
-            new() { Title = "it-mine", DepartmentId = It, AssigneeId = Me },
-            new() { Title = "it-other", DepartmentId = It, CreatedById = Guid.NewGuid() },
-            new() { Title = "mk-created", DepartmentId = Marketing, CreatedById = Me }
+            new() { Title = "it-mine", DepartmentId = It, Assignments = Assigned.ToDefinition(Me) },
+            new() { Title = "it-other", DepartmentId = It, CreatedById = Guid.NewGuid(), Assignments = Assigned.ToDefinition() },
+            new() { Title = "mk-created", DepartmentId = Marketing, CreatedById = Me, Assignments = Assigned.ToDefinition() }
         };
         Assert.Equal(2, Scoping.RecurringDefinitions(defs.AsQueryable(), Viewer(PermissionScope.Department)).Count());
         Assert.Equal(new[] { "it-mine", "mk-created" }, Scoping.RecurringDefinitions(defs.AsQueryable(), Viewer(PermissionScope.Own)).Select(d => d.Title).OrderBy(t => t).ToArray());

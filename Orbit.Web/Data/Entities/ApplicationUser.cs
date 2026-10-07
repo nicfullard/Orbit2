@@ -4,7 +4,7 @@ namespace Orbit.Data.Entities;
 
 /// <summary>
 /// The application's user. Profile fields live directly on the Identity user (Guid key) so
-/// domain foreign keys (AssigneeId, OwnerId, AuthorId, ...) point straight at AspNetUsers.
+/// domain foreign keys (OwnerId, AuthorId, an assignment's UserId, ...) point straight at AspNetUsers.
 /// </summary>
 public class ApplicationUser : IdentityUser<Guid>
 {
@@ -28,7 +28,6 @@ public class ApplicationUser : IdentityUser<Guid>
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-    public ICollection<TaskItem> AssignedTasks { get; set; } = new List<TaskItem>();
     public ICollection<TaskItem> CreatedTasks { get; set; } = new List<TaskItem>();
     public ICollection<Project> OwnedProjects { get; set; } = new List<Project>();
     public ICollection<Comment> Comments { get; set; } = new List<Comment>();

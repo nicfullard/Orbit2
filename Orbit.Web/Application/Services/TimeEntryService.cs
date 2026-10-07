@@ -27,7 +27,7 @@ public sealed class TimeEntryService(ApplicationDbContext db, IActorProvider act
         var task = await db.Tasks.AsNoTracking().FirstOrDefaultAsync(t => t.Id == taskId, ct)
             ?? throw new NotFoundException("Task not found.");
         AccessPolicy.Require(AccessPolicy.CanViewTask(actor, task), "This task belongs to another department.");
-        if (actor.UserId is not Guid me || task.AssigneeId != me) return false;
+        if (actor.UserId is not Guid me || !task.IsAssignedTo(me)) return false;
         var logged = await db.TimeEntries.AnyAsync(e => e.TaskId == taskId && e.UserId == me, ct);
         var clockRunning = await db.RunningClocks.AnyAsync(c => c.TaskId == taskId && c.UserId == me, ct);
         return TimeRules.AskBeforeDoneWithoutTime(actor, task, logged, clockRunning);

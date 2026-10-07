@@ -122,15 +122,31 @@ else
                         <td><span class="badge @Ui.PriorityBadge(t.Priority)">@t.Priority</span></td>
                         @if (Model.ShowAssignee)
                         {
+                            var assignees = t.Assignees;
                             <td>
-                                @if (quickEdit)
+                                @if (assignees.Count > 1)
                                 {
+                                    @* Several assignees (§6.2.3) are shown, not edited here: the task page and the edit form change them. *@
+                                    foreach (var u in assignees)
+                                    {
+                                        <div class="small">@u.DisplayName</div>
+                                    }
+                                }
+                                else if (quickEdit)
+                                {
+                                    var sole = assignees.FirstOrDefault();
+                                    var candidates = Model.QuickEditAssignees!.Where(u => u.DepartmentId == t.DepartmentId || u.CanViewAllTasks).ToList();
                                     <form method="post" asp-page="/Tasks/Quick" asp-page-handler="Assignee" asp-route-id="@t.Id" asp-route-returnUrl="@Model.ReturnUrl" class="d-inline">
                                         <select name="assigneeId" class="form-select form-select-sm assignee-select js-autosubmit" aria-label="Assignee">
-                                            <option value="" selected="@(t.AssigneeId is null)">Unassigned</option>
-                                            @foreach (var u in Model.QuickEditAssignees!.Where(u => u.DepartmentId == t.DepartmentId || u.CanViewAllTasks))
+                                            <option value="" selected="@(sole is null)">Unassigned</option>
+                                            @if (sole is not null && candidates.All(u => u.Id != sole.Id))
                                             {
-                                                <option value="@u.Id" selected="@(u.Id == t.AssigneeId)">@u.DisplayName</option>
+                                                @* Someone who could no longer be picked - deactivated, or moved to another department - stays on show. *@
+                                                <option value="@sole.Id" selected>@sole.DisplayName@(sole.IsActive ? "" : " (deactivated)")</option>
+                                            }
+                                            @foreach (var u in candidates)
+                                            {
+                                                <option value="@u.Id" selected="@(u.Id == sole?.Id)">@u.DisplayName</option>
                                             }
                                         </select>
                                     </form>
@@ -143,7 +159,7 @@ else
                                 }
                                 else
                                 {
-                                    @(t.Assignee?.DisplayName ?? "-")
+                                    @(t.AssigneeNames ?? "-")
                                 }
                             </td>
                         }

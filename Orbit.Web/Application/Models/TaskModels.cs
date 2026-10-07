@@ -7,6 +7,7 @@ public sealed class TaskFilter
     public Guid? ProjectId { get; set; }
     public Guid? DepartmentId { get; set; }
     public TaskItemStatus? Status { get; set; }
+    /// <summary>Only tasks this person is one of the assignees of (§6.2.3).</summary>
     public Guid? AssigneeId { get; set; }
     /// <summary>Only tasks with no assignee - work nobody has picked up yet. Takes precedence over <see cref="AssigneeId"/>.</summary>
     public bool Unassigned { get; set; }
@@ -55,7 +56,12 @@ public sealed class TaskInput
     public TaskType Type { get; set; } = TaskType.Task;
     /// <summary>Estimated effort in minutes (§6.10). Null or 0 = no estimate.</summary>
     public int? EstimateMinutes { get; set; }
-    public Guid? AssigneeId { get; set; }
+    /// <summary>
+    /// The complete set of assignees (§6.2.3); empty = nobody. Null on create also means nobody; null on update keeps the task's
+    /// assignees as they are. Each person added must be an active user in the task's department, or one whose role sees tasks
+    /// everywhere; people kept aren't re-checked unless the task changes department.
+    /// </summary>
+    public IReadOnlyList<Guid>? AssigneeIds { get; set; }
     /// <summary>
     /// The requestee, whom the task is for (§6.2.2); null = nobody else. Must be an active person within the caller's
     /// tasks.create_for reach. On update a change needs that reach over the person removed as well as the person added; an

@@ -173,7 +173,7 @@ public sealed class CriticalPathService(
     {
         var project = await db.Projects.AsNoTracking()
             .Include(p => p.Department)
-            .Include(p => p.Tasks).ThenInclude(t => t.Assignee)
+            .Include(p => p.Tasks)
             .AsSplitQuery()
             .FirstOrDefaultAsync(p => p.Id == projectId, ct)
             ?? throw new NotFoundException("Project not found.");

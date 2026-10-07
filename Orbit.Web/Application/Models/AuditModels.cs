@@ -63,6 +63,9 @@ public static class AuditAction
     /// <summary>Working-calendar exceptions (§6.17), recorded against the calendar.</summary>
     public const string ExceptionAdded = "ExceptionAdded";
     public const string ExceptionRemoved = "ExceptionRemoved";
+    /// <summary>A person assigned to, or taken off, a task or a recurring definition (§6.2.3): one entry per person.</summary>
+    public const string AssigneeAdded = "AssigneeAdded";
+    public const string AssigneeRemoved = "AssigneeRemoved";
     /// <summary>A person given or relieved of an asset (§6.19), recorded on the asset.</summary>
     public const string AssetAssigned = "AssetAssigned";
     public const string AssetUnassigned = "AssetUnassigned";

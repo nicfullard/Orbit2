@@ -23,7 +23,7 @@ public sealed class TaskStructureService(ApplicationDbContext db, IActorProvider
         var actor = await actors.GetAsync(ct);
         var ancestors = await LoadAncestorsAsync(task.ParentTaskId, ct);
         var children = await db.Tasks.AsNoTracking()
-            .Include(t => t.Department).Include(t => t.Assignee)
+            .Include(t => t.Department)
             .Where(t => t.ParentTaskId == task.Id)
             .OrderBy(t => t.Status == TaskItemStatus.Done || t.Status == TaskItemStatus.Cancelled)
             .ThenBy(t => t.DueDate == null).ThenBy(t => t.DueDate).ThenBy(t => t.Title)

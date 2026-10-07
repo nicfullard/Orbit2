@@ -205,7 +205,7 @@ public sealed class AssetService(ApplicationDbContext db, IActorProvider actors,
         var visible = Scoping.Tasks(linked, actor);
         var visibleCount = await visible.CountAsync(ct);
         var tasks = visibleCount == 0 ? [] : await visible
-            .Include(t => t.Assignee).Include(t => t.Department)
+            .Include(t => t.Department)
             .OrderBy(t => t.Status == TaskItemStatus.Done || t.Status == TaskItemStatus.Cancelled)
             .ThenByDescending(t => t.CreatedAt).ThenBy(t => t.Id)
             .Take(Math.Clamp(take, 1, 200))

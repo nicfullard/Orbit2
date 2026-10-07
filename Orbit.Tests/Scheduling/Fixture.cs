@@ -26,7 +26,8 @@ internal static class Fixture
         DueDate = due is null ? null : D(due),
         EstimateMinutes = estimateMinutes,
         ParentTaskId = parentId,
-        CompletedAt = completedAt
+        CompletedAt = completedAt,
+        Assignments = Assigned.To()
     };
 
     public static TaskDependency Link(TaskItem predecessor, TaskItem successor, DependencyType type = DependencyType.FinishToStart, int lag = 0) => new()

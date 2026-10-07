@@ -22,7 +22,9 @@ public static class Scoping
         {
             PermissionScope.All => q,
             PermissionScope.Department => q.Where(t => t.DepartmentId == dept),
-            PermissionScope.Own => me is null ? q.Where(t => false) : q.Where(t => t.AssigneeId == me || t.CreatedById == me || t.RequesteeId == me),
+            PermissionScope.Own => me is null
+                ? q.Where(t => false)
+                : q.Where(t => t.Assignments.Any(x => x.UserId == me) || t.CreatedById == me || t.RequesteeId == me),
             _ => q.Where(t => false)
         };
     }
@@ -40,7 +42,7 @@ public static class Scoping
         return actor.ScopeOf(Permission.TasksView) switch
         {
             PermissionScope.Department when me is not null =>
-                q.Where(t => t.DepartmentId == dept || t.AssigneeId == me || t.CreatedById == me || t.RequesteeId == me),
+                q.Where(t => t.DepartmentId == dept || t.Assignments.Any(x => x.UserId == me) || t.CreatedById == me || t.RequesteeId == me),
             _ => Tasks(q, actor)
         };
     }
@@ -73,7 +75,7 @@ public static class Scoping
         {
             PermissionScope.All => q,
             PermissionScope.Department => q.Where(r => r.DepartmentId == dept),
-            PermissionScope.Own => me is null ? q.Where(r => false) : q.Where(r => r.AssigneeId == me || r.CreatedById == me),
+            PermissionScope.Own => me is null ? q.Where(r => false) : q.Where(r => r.Assignments.Any(x => x.UserId == me) || r.CreatedById == me),
             _ => q.Where(r => false)
         };
     }

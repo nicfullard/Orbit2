@@ -308,7 +308,7 @@ public static class CriticalPathEngine
                     var readiness = !canPropagate ? $"Still held by {Titles(holders)}: finishing early would not release it."
                         : ready ? "Could be released earlier."
                         : "Could be released earlier once its other links are met.";
-                    successors.Add(new SuccessorReadiness(s.Id, s.Title, s.Assignee?.DisplayName, canPropagate, ready, readiness, "Requires management confirmation."));
+                    successors.Add(new SuccessorReadiness(s.Id, s.Title, s.AssigneeNames, canPropagate, ready, readiness, "Requires management confirmation."));
                 }
                 if (drivingOut[u].Count == 0)
                     successors.Add(new SuccessorReadiness(null, null, null, true, true, "No downstream task: the planned completion itself would move earlier.", "Not applicable."));
@@ -318,7 +318,7 @@ public static class CriticalPathEngine
                 ? "Only expedite this task if the downstream work can be brought forward: confirm the assignee's earlier availability first."
                 : critical[u] ? "Expediting this task would not advance the project while another predecessor still controls its successor."
                 : "Not on the critical path: finishing early would not change the planned completion.";
-            opportunities.Add(new EarlyCompletionOpportunity(t.Id, t.Title, t.Assignee?.DisplayName, t.EstimateMinutes!.Value, estDays, span[u], span[u] - estDays,
+            opportunities.Add(new EarlyCompletionOpportunity(t.Id, t.Title, t.AssigneeNames, t.EstimateMinutes!.Value, estDays, span[u], span[u] - estDays,
                 critical[u], recovery, successors, action));
         }
         opportunities = opportunities
@@ -341,13 +341,13 @@ public static class CriticalPathEngine
         for (var u = 0; u < n; u++)
         {
             var t = network[u];
-            rows.Add(new TaskAnalysis(t.Id, t.Title, t.Status, t.Assignee?.DisplayName, t.StartDate, t.DueDate,
+            rows.Add(new TaskAnalysis(t.Id, t.Title, t.Status, t.AssigneeNames, t.StartDate, t.DueDate,
                 cal.Date(es[u]), cal.Date(ef[u]), cal.Date(ls[u]), cal.Date(lf[u]), tf[u], ff[u], span[u], true, critical[u], near[u]));
         }
         foreach (var t in standalone)
         {
             var node = nodes[t.Id];
-            rows.Add(new TaskAnalysis(t.Id, t.Title, t.Status, t.Assignee?.DisplayName, t.StartDate, t.DueDate,
+            rows.Add(new TaskAnalysis(t.Id, t.Title, t.Status, t.AssigneeNames, t.StartDate, t.DueDate,
                 node.First, node.Last, null, null, null, null, node.Span, false, false, false));
         }
         rows = rows.OrderBy(r => r.EarlyStart).ThenBy(r => r.EarlyFinish).ThenBy(r => r.Title).ToList();

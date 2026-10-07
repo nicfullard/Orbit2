@@ -13,7 +13,7 @@ public class TimeRulesTests
     private static readonly Guid It = Guid.NewGuid();
 
     private static TaskItem Task(Guid? assignee, TaskItemStatus status = TaskItemStatus.InProgress) =>
-        new() { DepartmentId = It, AssigneeId = assignee, Status = status };
+        new() { DepartmentId = It, Assignments = Assigned.To(assignee), Status = status };
 
     /// <summary>TIME-001: the assignee is asked when they have logged no time and have no clock running on the open task.</summary>
     [Fact]

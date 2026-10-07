@@ -89,21 +89,26 @@ document.addEventListener('click', function (e) {
   });
 });
 
-// Task / recurring-task forms (System Admin): picking a project defaults the department to the project's own,
-// and the assignee list narrows to people in the chosen department (System Admins are always assignable).
-function orbitFilterAssignees(deptSelect) {
-  var assignees = document.querySelector(deptSelect.dataset.assigneeTarget || '#Form_AssigneeId');
-  if (!assignees) return;
-  var dept = deptSelect.value;
-  var selectedHidden = false;
-  Array.prototype.forEach.call(assignees.options, function (opt) {
-    var own = opt.dataset.department || '';
-    var show = !dept || !own || own === dept;
-    opt.hidden = !show;
-    opt.disabled = !show;
-    if (!show && opt.selected) selectedHidden = true;
+// Task / recurring-task forms: picking a project defaults the department to the project's own (for whoever may choose the
+// department), and the Assignees picker (spec §6.2.3) offers the people of the task's department - System Admins are always
+// assignable. The department is the department field's (a select, or a hidden input for those who can't choose it); while that
+// is blank, the chosen project's; failing that the caller's own. The picker's search is pointed at it, and when it changes the
+// chips of people who belong to another department are dropped. Opening the form never drops anyone: the server has the last word.
+function orbitFollowDepartment(prune) {
+  document.querySelectorAll('.js-picker').forEach(function (picker) {
+    // Every people picker carries the attribute; it is blank on the ones that don't follow a department (an asset's holders).
+    if (!picker.dataset.departmentSource) return;
+    var source = document.querySelector(picker.dataset.departmentSource);
+    var project = picker.dataset.projectSource ? document.querySelector(picker.dataset.projectSource) : null;
+    var chosen = project && project.options ? project.options[project.selectedIndex] : null;
+    var dept = (source && source.value) || (chosen && chosen.dataset.department) || picker.dataset.defaultDepartment || '';
+    var base = picker.dataset.searchBase;
+    picker.dataset.searchUrl = base + (base.indexOf('?') < 0 ? '?' : '&') + 'departmentId=' + encodeURIComponent(dept);
+    if (!prune || !dept) return;
+    picker.dispatchEvent(new CustomEvent('picker:prune', {
+      detail: { keep: function (chip) { return !chip.dataset.scope || chip.dataset.scope === dept; } }
+    }));
   });
-  if (selectedHidden) assignees.value = '';
 }
 document.addEventListener('change', function (e) {
   var el = e.target;
@@ -113,15 +118,13 @@ document.addEventListener('change', function (e) {
     if (deptSelect && deptSelect.tagName === 'SELECT') {
       var opt = el.options[el.selectedIndex];
       deptSelect.value = opt && opt.dataset.department ? opt.dataset.department : '';
-      orbitFilterAssignees(deptSelect);
     }
+    orbitFollowDepartment(true);
   } else if (el.classList.contains('js-department-select')) {
-    orbitFilterAssignees(el);
+    orbitFollowDepartment(true);
   }
 });
-document.addEventListener('DOMContentLoaded', function () {
-  document.querySelectorAll('select.js-department-select').forEach(orbitFilterAssignees);
-});
+document.addEventListener('DOMContentLoaded', function () { orbitFollowDepartment(false); });
 
 // Task form: the Parent task picker only offers tasks on the chosen project - or, for a standalone task,
 // standalone tasks in the chosen department (spec §6.15). The department source may be a select or a hidden input.
@@ -390,11 +393,13 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 })();
 
-// Type-ahead pickers (spec §6.19): the people picker and the asset picker. The choices are chips over a search against the server
-// (data-search-url?q=, at most 20 matches, so it works however many people or assets Orbit has). In "multi" mode each chip carries
-// a hidden input the form posts; in "single" mode there is at most one chip, and picking replaces it (× leaves none, so nothing is
-// posted); in "submit" mode picking fills the picker's hidden field and posts its form at once (the asset page's "Assign someone").
-// A match is { id, name, detail, tag, exact }; the people search's email and department stand in for detail and tag.
+// Type-ahead pickers (spec §6.19, §6.2.3): the people picker and the asset picker. The choices are chips over a search against the
+// server (data-search-url?q=, at most 20 matches, so it works however many people or assets Orbit has). In "multi" mode each chip
+// carries a hidden input the form posts; in "single" mode there is at most one chip, and picking replaces it (× leaves none, so
+// nothing is posted); in "submit" mode picking fills the picker's hidden field and posts its form at once (the asset page's
+// "Assign someone"). A match is { id, name, detail, tag, exact, scope }; the people search's email and department stand in for
+// detail and tag, and scope (a task assignee's own department) is kept on the chip for the form to prune by ("picker:prune").
+// With data-browse, clicking the empty box or pressing Down lists the first matches, so a short list needs no typing.
 // Keyboard: Up/Down move through the results, Enter picks, Escape closes. Enter straight after typing or scanning searches at once
 // and picks the one match flagged exact (a scanned serial or ERP number); Enter never submits the form. Changes are announced.
 (function () {
@@ -416,6 +421,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var status = root.querySelector('.js-picker-status');
     var submitMode = root.dataset.mode === 'submit';
     var singleMode = root.dataset.mode === 'single';
+    var browse = !!root.dataset.browse;
     var timer = null, items = [], active = -1, seq = 0, shownFor = null;
 
     function say(message) { if (status) status.textContent = message; }
@@ -455,7 +461,8 @@ document.addEventListener('DOMContentLoaded', function () {
       active = -1;
       shownFor = query;
       if (!matches.length) {
-        list.appendChild(text('li', 'list-group-item small text-muted', (root.dataset.noMatch || 'Nothing matches') + ' "' + query + '".'));
+        list.appendChild(text('li', 'list-group-item small text-muted',
+          query ? (root.dataset.noMatch || 'Nothing matches') + ' "' + query + '".' : 'Nobody else to choose from.'));
       }
       matches.forEach(function (p, i) {
         var li = text('li', 'list-group-item list-group-item-action py-1 small');
@@ -476,6 +483,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var chip = text('span', 'badge rounded-pill text-bg-light border person-chip js-picker-chip');
       chip.dataset.id = p.id;
       chip.dataset.name = p.name;
+      if (p.scope) chip.dataset.scope = p.scope;
       chip.appendChild(text('span', 'fw-semibold', p.name));
       var tag = tagOf(p);
       if (tag) chip.appendChild(text('span', 'text-muted fw-normal ms-1', tag));
@@ -513,7 +521,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // pickExact: Enter was pressed, so a single match flagged exact (a scan) is chosen straight away.
     function search(pickExact) {
       var query = input.value.trim();
-      if (!query) { close(); return; }
+      if (!query && !browse) { close(); return; }
       var mine = ++seq;
       fetch(withParam(root.dataset.searchUrl, 'q', query), { credentials: 'same-origin', headers: { Accept: 'application/json' } })
         .then(function (r) { return r.ok ? r.json() : []; })
@@ -546,6 +554,24 @@ document.addEventListener('DOMContentLoaded', function () {
       else if (e.key === 'Escape') { if (open) { e.preventDefault(); close(); } }
     });
     input.addEventListener('blur', function () { setTimeout(close, 150); });
+    if (browse) {
+      input.addEventListener('click', function () {
+        if (list.classList.contains('d-none') && !input.value.trim()) search();
+      });
+    }
+    // The form's department changed (the task forms' Assignees): drop the chips the form says no longer fit.
+    root.addEventListener('picker:prune', function (e) {
+      var dropped = [];
+      Array.prototype.forEach.call(chipList(), function (chip) {
+        if (e.detail.keep(chip)) return;
+        dropped.push(chip.dataset.name);
+        chip.remove();
+      });
+      if (!dropped.length) return;
+      updateEmpty();
+      close();
+      say(dropped.join(', ') + ' removed: not in this department.');
+    });
     list.addEventListener('mousedown', function (e) {
       var option = e.target.closest('[role="option"]');
       if (!option) return;

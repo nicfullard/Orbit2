@@ -117,12 +117,12 @@ public class DetailsModel(
         foreach (var t in Project.Tasks) t.Project = Project;
         var tasks = Project.Tasks.AsEnumerable();
         if (Status is TaskItemStatus s) tasks = tasks.Where(t => t.Status == s);
-        if (AssigneeId is Guid a) tasks = tasks.Where(t => t.AssigneeId == a);
+        if (AssigneeId is Guid a) tasks = tasks.Where(t => t.IsAssignedTo(a));
         if (DepartmentId is Guid d) tasks = tasks.Where(t => t.DepartmentId == d);
         Tasks = tasks
             .OrderBy(t => t.Status.IsClosed()).ThenBy(t => t.DueDate == null).ThenBy(t => t.DueDate)
             .ThenByDescending(t => t.Priority).ThenByDescending(t => t.CreatedAt).ToList();
-        Assignees = Project.Tasks.Where(t => t.Assignee is not null).Select(t => t.Assignee!)
+        Assignees = Project.Tasks.SelectMany(t => t.Assignees)
             .DistinctBy(u => u.Id).OrderBy(u => u.DisplayName).ToList();
         Departments = Project.Tasks.Select(t => t.Department)
             .DistinctBy(x => x.Id).OrderBy(x => x.Name).ToList();

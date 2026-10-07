@@ -36,7 +36,7 @@ public sealed class DashboardService(ApplicationDbContext db, IActorProvider act
         var open = db.Tasks.AsNoTracking()
             .Where(t => t.Status != TaskItemStatus.Done && t.Status != TaskItemStatus.Cancelled);
 
-        IQueryable<TaskItem> InTier(IQueryable<TaskItem> q) => personal ? q.Where(t => t.AssigneeId == me) : Scoping.Tasks(q, actor);
+        IQueryable<TaskItem> InTier(IQueryable<TaskItem> q) => personal ? q.Where(t => t.Assignments.Any(x => x.UserId == me)) : Scoping.Tasks(q, actor);
         var scope = InTier(open);
         var scopeLabel = tier switch
         {
@@ -57,7 +57,7 @@ public sealed class DashboardService(ApplicationDbContext db, IActorProvider act
 
         var openTasks = await Detailed(scope).Take(12).ToListAsync(ct);
         List<TaskItem> myOpen = personal ? openTasks
-            : canEdit ? await Detailed(open.Where(t => t.AssigneeId == me)).Take(8).ToListAsync(ct)
+            : canEdit ? await Detailed(open.Where(t => t.Assignments.Any(x => x.UserId == me))).Take(8).ToListAsync(ct)
             : [];
 
         // Work nobody has picked up yet, which the viewer may take (§6.5). The wider tiers already list the whole department above.
@@ -66,7 +66,7 @@ public sealed class DashboardService(ApplicationDbContext db, IActorProvider act
         if (showUpForGrabs)
         {
             var dept = actor.DepartmentId;
-            upForGrabs = await Detailed(open.Where(t => t.DepartmentId == dept && t.AssigneeId == null)).Take(8).ToListAsync(ct);
+            upForGrabs = await Detailed(open.Where(t => t.DepartmentId == dept && !t.Assignments.Any())).Take(8).ToListAsync(ct);
         }
 
         // Active sprint
@@ -80,7 +80,7 @@ public sealed class DashboardService(ApplicationDbContext db, IActorProvider act
             sprintTotal = await all.CountAsync(ct);
             sprintDone = await all.CountAsync(t => t.Status == TaskItemStatus.Done, ct);
             sprintTasks = await InTier(all)
-                .Include(t => t.Project).Include(t => t.Assignee).Include(t => t.Department).Include(t => t.Asset)
+                .Include(t => t.Project).Include(t => t.Department).Include(t => t.Asset)
                 .OrderBy(EnumOrder.ByTaskStatus).ThenByDescending(EnumOrder.ByTaskPriority).Take(20).ToListAsync(ct);
             if (tier == PermissionScope.All)
             {
@@ -94,7 +94,7 @@ public sealed class DashboardService(ApplicationDbContext db, IActorProvider act
         // Projects at a glance: the projects the viewer may see; on the personal tier only those with their own tasks.
         var projects = Scoping.Projects(db.Projects.AsNoTracking().Include(p => p.Department).Include(p => p.Owner)
             .Where(p => p.Status == ProjectStatus.Active), actor);
-        if (personal) projects = projects.Where(p => p.Tasks.Any(t => t.AssigneeId == me));
+        if (personal) projects = projects.Where(p => p.Tasks.Any(t => t.Assignments.Any(x => x.UserId == me)));
         var projectRows = await projects.OrderBy(p => p.Name).Take(12).Select(p => new
         {
             Project = p,
@@ -104,7 +104,7 @@ public sealed class DashboardService(ApplicationDbContext db, IActorProvider act
         }).ToListAsync(ct);
 
         var dueSoon = await scope.Where(t => t.DueDate != null && t.DueDate <= dueHorizon)
-            .Include(t => t.Project).Include(t => t.Assignee).Include(t => t.Department).Include(t => t.Asset)
+            .Include(t => t.Project).Include(t => t.Department).Include(t => t.Asset)
             .OrderBy(t => t.DueDate).Take(10).ToListAsync(ct);
 
         List<NameCount> byAssignee = [];
@@ -112,11 +112,14 @@ public sealed class DashboardService(ApplicationDbContext db, IActorProvider act
         List<DepartmentLoad> byDepartment = [];
         if (tier >= PermissionScope.Department)
         {
-            var assigneeRows = await scope
-                .GroupBy(t => t.Assignee != null ? t.Assignee.DisplayName : "Unassigned")
-                .Select(g => new { Name = g.Key, Count = g.Count() })
-                .OrderByDescending(x => x.Count).ThenBy(x => x.Name).ToListAsync(ct);
-            byAssignee = assigneeRows.Select(r => new NameCount(r.Name, r.Count)).ToList();
+            // A task several people share counts under each of them (§6.2.3), so the rows can add up to more than the open tasks.
+            var assigneeRows = await scope.SelectMany(t => t.Assignments)
+                .GroupBy(x => new { x.UserId, x.User.DisplayName })
+                .Select(g => new { Name = g.Key.DisplayName, Count = g.Count() })
+                .ToListAsync(ct);
+            var unassigned = await scope.CountAsync(t => !t.Assignments.Any(), ct);
+            if (unassigned > 0) assigneeRows.Add(new { Name = "Unassigned", Count = unassigned });
+            byAssignee = assigneeRows.OrderByDescending(r => r.Count).ThenBy(r => r.Name).Select(r => new NameCount(r.Name, r.Count)).ToList();
 
             var feed = db.AuditLogs.AsNoTracking().Where(a => a.EntityType == AuditEntity.Task);
             if (tier == PermissionScope.Department) feed = feed.Where(a => a.DepartmentId == actor.DepartmentId);
@@ -187,6 +190,6 @@ public sealed class DashboardService(ApplicationDbContext db, IActorProvider act
     public static bool IsViewOnly(Actor actor) => actor.Has(Permission.TasksView) && !actor.Has(Permission.TasksEdit);
 
     private static IQueryable<TaskItem> Detailed(IQueryable<TaskItem> q) => q
-        .Include(t => t.Project).Include(t => t.Assignee).Include(t => t.Department).Include(t => t.Asset)
+        .Include(t => t.Project).Include(t => t.Department).Include(t => t.Asset)
         .OrderBy(t => t.DueDate == null).ThenBy(t => t.DueDate).ThenByDescending(EnumOrder.ByTaskPriority).ThenByDescending(t => t.CreatedAt);
 }

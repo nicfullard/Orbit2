@@ -100,8 +100,8 @@ public class CreateForAccessTests
     public void The_requestee_has_the_creators_rights()
     {
         var member = TestActors.With(DefaultRoles.MemberGrants, Finance, DefaultRoles.Member, Me);
-        var forMe = new TaskItem { DepartmentId = It, CreatedById = Guid.NewGuid(), RequesteeId = Me };
-        var forSomeoneElse = new TaskItem { DepartmentId = It, CreatedById = Guid.NewGuid(), RequesteeId = Guid.NewGuid() };
+        var forMe = new TaskItem { DepartmentId = It, CreatedById = Guid.NewGuid(), RequesteeId = Me, Assignments = Assigned.To() };
+        var forSomeoneElse = new TaskItem { DepartmentId = It, CreatedById = Guid.NewGuid(), RequesteeId = Guid.NewGuid(), Assignments = Assigned.To() };
 
         Assert.True(AccessPolicy.CanViewTask(member, forMe));
         Assert.True(AccessPolicy.CanEditTask(member, forMe));
@@ -121,12 +121,12 @@ public class CreateForAccessTests
 
     private static readonly List<TaskItem> Tasks =
     [
-        new() { Title = "fin-other", DepartmentId = Finance, CreatedById = Guid.NewGuid() },
-        new() { Title = "fin-for-me", DepartmentId = Finance, CreatedById = Guid.NewGuid(), RequesteeId = Me },
-        new() { Title = "it-for-me", DepartmentId = It, CreatedById = Guid.NewGuid(), RequesteeId = Me },
-        new() { Title = "it-created", DepartmentId = It, CreatedById = Me, RequesteeId = Guid.NewGuid() },
-        new() { Title = "it-assigned", DepartmentId = It, CreatedById = Guid.NewGuid(), AssigneeId = Me },
-        new() { Title = "it-other", DepartmentId = It, CreatedById = Guid.NewGuid(), RequesteeId = Guid.NewGuid() }
+        new() { Title = "fin-other", DepartmentId = Finance, CreatedById = Guid.NewGuid(), Assignments = Assigned.To() },
+        new() { Title = "fin-for-me", DepartmentId = Finance, CreatedById = Guid.NewGuid(), RequesteeId = Me, Assignments = Assigned.To() },
+        new() { Title = "it-for-me", DepartmentId = It, CreatedById = Guid.NewGuid(), RequesteeId = Me, Assignments = Assigned.To() },
+        new() { Title = "it-created", DepartmentId = It, CreatedById = Me, RequesteeId = Guid.NewGuid(), Assignments = Assigned.To() },
+        new() { Title = "it-assigned", DepartmentId = It, CreatedById = Guid.NewGuid(), Assignments = Assigned.To(Me) },
+        new() { Title = "it-other", DepartmentId = It, CreatedById = Guid.NewGuid(), RequesteeId = Guid.NewGuid(), Assignments = Assigned.To() }
     ];
 
     private static Actor Viewer(PermissionScope scope, Guid? department) =>

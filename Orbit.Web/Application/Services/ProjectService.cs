@@ -83,12 +83,10 @@ public sealed class ProjectService(NumberingService numbering, ApplicationDbCont
             .Include(p => p.Department)
             .Include(p => p.Owner)
             .Include(p => p.Tasks).ThenInclude(t => t.Department)
-            .Include(p => p.Tasks).ThenInclude(t => t.Assignee)
             .Include(p => p.Tasks).ThenInclude(t => t.Sprint)
             .Include(p => p.Tasks).ThenInclude(t => t.ParentTask)
             .Include(p => p.Tasks).ThenInclude(t => t.Asset)
             .Include(p => p.RecurringTaskDefinitions).ThenInclude(r => r.Department)
-            .Include(p => p.RecurringTaskDefinitions).ThenInclude(r => r.Assignee)
             .AsSplitQuery()
             .FirstOrDefaultAsync(p => p.Id == id, ct)
             ?? throw new NotFoundException("Project not found.");

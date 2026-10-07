@@ -22,7 +22,6 @@ public sealed class TaskService(
         .Include(t => t.Department)
         .Include(t => t.ParentTask)
         .Include(t => t.Project).ThenInclude(p => p!.Department)
-        .Include(t => t.Assignee)
         .Include(t => t.CreatedBy)
         .Include(t => t.Requestee)
         .Include(t => t.Sprint)
@@ -37,8 +36,8 @@ public sealed class TaskService(
 
         if (f.ProjectId is Guid projectId) q = q.Where(t => t.ProjectId == projectId);
         if (f.Status is TaskItemStatus status) q = q.Where(t => t.Status == status);
-        if (f.Unassigned) q = q.Where(t => t.AssigneeId == null);
-        else if (f.AssigneeId is Guid assigneeId) q = q.Where(t => t.AssigneeId == assigneeId);
+        if (f.Unassigned) q = q.Where(t => !t.Assignments.Any());
+        else if (f.AssigneeId is Guid assigneeId) q = q.Where(t => t.Assignments.Any(x => x.UserId == assigneeId));
         if (f.RequesteeId is Guid requesteeId) q = q.Where(t => t.RequesteeId == requesteeId);
         if (f.Priority is TaskPriority priority) q = q.Where(t => t.Priority == priority);
         if (f.Type is TaskType type) q = q.Where(t => t.Type == type);
@@ -88,7 +87,11 @@ public sealed class TaskService(
     {
         var actor = await actors.GetAsync(ct);
         // The asset's holders decide whether the viewer may open the asset (§6.19), so the task page links it only then.
-        var task = await WithIncludes(db.Tasks).Include(t => t.Asset!.Assignments).FirstOrDefaultAsync(t => t.Id == id, ct)
+        // Who assigned each assignee, and their department, are for the task page's Assignees card (§6.2.3).
+        var task = await WithIncludes(db.Tasks).Include(t => t.Asset!.Assignments)
+            .Include(t => t.Assignments).ThenInclude(x => x.AssignedBy)
+            .Include(t => t.Assignments).ThenInclude(x => x.User).ThenInclude(u => u.Department)
+            .FirstOrDefaultAsync(t => t.Id == id, ct)
             ?? throw new NotFoundException("Task not found.");
         AccessPolicy.Require(AccessPolicy.CanViewTask(actor, task), "This task belongs to another department.");
         return task;
@@ -97,8 +100,8 @@ public sealed class TaskService(
     public async Task<IReadOnlyList<TaskItem>> GetMyTasksAsync(bool openOnly = true, CancellationToken ct = default)
     {
         var actor = await actors.GetAsync(ct);
-        if (actor.UserId is null) return [];
-        var q = WithIncludes(db.Tasks.AsNoTracking()).Where(t => t.AssigneeId == actor.UserId);
+        if (actor.UserId is not Guid me) return [];
+        var q = WithIncludes(db.Tasks.AsNoTracking()).Where(t => t.Assignments.Any(x => x.UserId == me));
         if (openOnly) q = q.Where(t => t.Status != TaskItemStatus.Done && t.Status != TaskItemStatus.Cancelled);
         return await q.OrderBy(t => t.DueDate == null).ThenBy(t => t.DueDate)
             .ThenByDescending(EnumOrder.ByTaskPriority).ThenByDescending(t => t.CreatedAt).ToListAsync(ct);
@@ -120,7 +123,7 @@ public sealed class TaskService(
         AccessPolicy.Require(AccessPolicy.CanCreateTaskIn(actor, departmentId), "You don't have permission to create tasks in this department.");
         await RequireOpenDepartmentAsync(departmentId, ct);
 
-        var assignee = await ValidateAssigneeAsync(input.AssigneeId, departmentId, ct);
+        var assignees = await AssigneeResolver.ResolveAsync(db, [], input.AssigneeIds ?? [], departmentId, departmentChanging: false, ct);
         var requestee = await ValidateRequesteeAsync(actor, input.RequesteeId, ct);
         await ValidateSprintAsync(input.SprintId, ct);
         await assets.CheckLinkAsync(input.AssetId, null, ct);
@@ -139,7 +142,7 @@ public sealed class TaskService(
             Priority = input.Priority,
             Type = input.Type,
             EstimateMinutes = CleanEstimate(input.EstimateMinutes),
-            AssigneeId = assignee?.Id,
+            Assignments = [],
             RequesteeId = requestee?.Id,
             ParentTaskId = parent?.Id,
             StartDate = input.StartDate,
@@ -148,12 +151,13 @@ public sealed class TaskService(
             Source = source,
             IdempotencyKey = Clean(input.IdempotencyKey)
         };
+        foreach (var assignee in assignees.Added)
+            task.Assignments.Add(new TaskAssignment { TaskId = task.Id, UserId = assignee.Id, AssignedById = actor.UserId });
         await InsertAsync(actor, task, status, null, ct);
 
-        if (assignee is not null && assignee.Id != actor.UserId)
-            await notifications.TaskAssignedAsync(task, assignee, actor, ct);
+        var told = await NotifyAssignedAsync(task, assignees.Added, actor, ct);
         // The requestee hears of it unless they made it, or the assignment email has just told them (§6.2.2).
-        if (requestee is not null && requestee.Id != actor.UserId && requestee.Id != assignee?.Id)
+        if (requestee is not null && requestee.Id != actor.UserId && !told.Contains(requestee.Id))
             await notifications.TaskCreatedForAsync(task, requestee, actor, ct: ct);
 
         return await GetAsync(task.Id, ct);
@@ -204,6 +208,7 @@ public sealed class TaskService(
             Type = input.Type,
             DueDate = input.DueDate,
             Source = TaskSource.Request,
+            Assignments = [],
             RequesteeId = input.RequesteeId,
             IdempotencyKey = key
         };
@@ -225,13 +230,13 @@ public sealed class TaskService(
         db.Tasks.Add(task);
         audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.Created, task.DepartmentId, task.Title, new
         {
-            task.Number, task.Title, task.Status, task.Priority, task.Type, task.EstimateMinutes, task.ProjectId, task.DepartmentId, task.AssigneeId,
+            task.Number, task.Title, task.Status, task.Priority, task.Type, task.EstimateMinutes, task.ProjectId, task.DepartmentId, task.AssigneeIds,
             task.ParentTaskId, task.StartDate, task.DueDate, task.Source, task.SprintId, task.AssetId, task.RequesteeId, request
         });
         await db.SaveChangesAsync(ct);
     }
 
-    /// <summary>Full edit: the input is the complete new state (null assignee/due date/sprint clears them).</summary>
+    /// <summary>Full edit: the input is the complete new state (a null due date or sprint clears it; null assignees keeps them, an empty list clears them).</summary>
     public async Task<TaskItem> UpdateAsync(Guid id, TaskInput input, CancellationToken ct = default)
     {
         var actor = await actors.GetAsync(ct);
@@ -248,7 +253,9 @@ public sealed class TaskService(
             await RequireOpenDepartmentAsync(departmentId, ct);
         }
 
-        var assignee = await ValidateAssigneeAsync(input.AssigneeId, departmentId, ct);
+        // §6.2.3: the people added are checked; the people kept only when the task is moving to another department.
+        var assignees = await AssigneeResolver.ResolveAsync(db, task.AssigneeIds, input.AssigneeIds, departmentId,
+            departmentChanging: departmentId != task.DepartmentId, ct);
         // §6.2.2: a kept requestee isn't re-checked; changing one needs tasks.create_for over the person removed and the person added.
         ApplicationUser? newRequestee = null;
         var requesteeChanged = input.RequesteeId != task.RequesteeId;
@@ -271,7 +278,6 @@ public sealed class TaskService(
         var subtree = await structure.PrepareMoveAsync(task, input.ProjectId, departmentId, input.ParentTaskId, actor, ct);
         var parent = await structure.ValidateParentAsync(task, input.ParentTaskId, input.ProjectId, departmentId, childOpen: !newStatus.IsClosed(), ct);
 
-        var previousAssigneeId = task.AssigneeId;
         var previousParentId = task.ParentTaskId;
         var estimate = CleanEstimate(input.EstimateMinutes);
         var changes = new ChangeSet()
@@ -283,7 +289,6 @@ public sealed class TaskService(
             .Track("priority", task.Priority, input.Priority)
             .Track("type", task.Type, input.Type)
             .Track("estimateMinutes", task.EstimateMinutes, estimate)
-            .Track("assigneeId", task.AssigneeId, assignee?.Id)
             .Track("requesteeId", task.RequesteeId, input.RequesteeId)
             .Track("parentTaskId", task.ParentTaskId, parent?.Id)
             .Track("startDate", task.StartDate, input.StartDate)
@@ -291,7 +296,7 @@ public sealed class TaskService(
             .Track("status", task.Status, newStatus)
             .Track("sprintId", task.SprintId, input.SprintId);
 
-        if (!changes.HasChanges) return task;
+        if (!changes.HasChanges && assignees.IsEmpty) return task;
 
         var now = DateTime.UtcNow;
         task.Title = title;
@@ -302,7 +307,7 @@ public sealed class TaskService(
         task.Priority = input.Priority;
         task.Type = input.Type;
         task.EstimateMinutes = estimate;
-        task.AssigneeId = assignee?.Id;
+        ApplyAssignees(actor, task, assignees, now);
         if (requesteeChanged)
         {
             task.RequesteeId = newRequestee?.Id;
@@ -339,10 +344,8 @@ public sealed class TaskService(
                 new { parent = new { from = previousParentId, to = parent?.Id }, parentTitle = parent?.Title });
         await db.SaveChangesAsync(ct);
 
-        var assignedNotified = assignee is not null && assignee.Id != previousAssigneeId && assignee.Id != actor.UserId;
-        if (assignedNotified)
-            await notifications.TaskAssignedAsync(task, assignee!, actor, ct);
-        if (newRequestee is not null && newRequestee.Id != actor.UserId && !(assignedNotified && assignee!.Id == newRequestee.Id))
+        var told = await NotifyAssignedAsync(task, assignees.Added, actor, ct);
+        if (newRequestee is not null && newRequestee.Id != actor.UserId && !told.Contains(newRequestee.Id))
             await notifications.TaskCreatedForAsync(task, newRequestee, actor, namedLater: true, ct);
 
         return await GetAsync(task.Id, ct);
@@ -370,61 +373,131 @@ public sealed class TaskService(
         return task;
     }
 
-    /// <summary>Quick inline assignee change (the task list control). Same rights as a full edit.</summary>
-    public async Task<TaskItem> ChangeAssigneeAsync(Guid id, Guid? assigneeId, CancellationToken ct = default)
+    /// <summary>
+    /// Quick inline assignee change (the task list control, §6.2.3): make this person the task's one assignee, or leave it with
+    /// nobody. Same rights as a full edit. The control is offered only while a task has at most one assignee, so a task that has
+    /// since gained several is left as it is rather than have them dropped by a stale page.
+    /// </summary>
+    public async Task<TaskItem> SetSoleAssigneeAsync(Guid id, Guid? assigneeId, CancellationToken ct = default)
     {
         var actor = await actors.GetAsync(ct);
-        var task = await db.Tasks.Include(t => t.Assignee).FirstOrDefaultAsync(t => t.Id == id, ct)
+        var task = await db.Tasks.FirstOrDefaultAsync(t => t.Id == id, ct)
             ?? throw new NotFoundException("Task not found.");
         AccessPolicy.Require(AccessPolicy.CanViewTask(actor, task), "This task belongs to another department.");
         // Taking an unassigned task for yourself (§6.5) needs no edit rights, only tasks.take in its department.
-        var taking = assigneeId is not null && assigneeId == actor.UserId && AccessPolicy.CanTakeTask(actor, task);
-        AccessPolicy.Require(taking || AccessPolicy.CanEditTask(actor, task), "You don't have permission to edit this task.");
-        if (task.AssigneeId == assigneeId) return task;
+        if (assigneeId is not null && assigneeId == actor.UserId && !AccessPolicy.CanEditTask(actor, task) && AccessPolicy.CanTakeTask(actor, task))
+            return await TakeAsync(id, ct);
+        AccessPolicy.Require(AccessPolicy.CanEditTask(actor, task), "You don't have permission to edit this task.");
+        if (task.Assignments.Count > 1)
+            throw new ValidationException($"\"{task.Title}\" now has several assignees ({task.AssigneeNames}). Open the task to change them.");
+        return await ChangeAssigneesAsync(actor, task, assigneeId is Guid one ? [one] : [], ct);
+    }
 
-        var assignee = await ValidateAssigneeAsync(assigneeId, task.DepartmentId, ct);
-        var changes = new ChangeSet().Track("assigneeId", task.AssigneeId, assignee?.Id);
-        task.AssigneeId = assignee?.Id;
-        task.Assignee = assignee;
-        task.UpdatedAt = DateTime.UtcNow;
-        audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.Updated, task.DepartmentId, task.Title, changes.Changes);
+    /// <summary>Add one person to a task's assignees (the task page, §6.2.3). Same rights as a full edit; someone already on it is left as is.</summary>
+    public async Task<TaskItem> AddAssigneeAsync(Guid id, Guid userId, CancellationToken ct = default)
+    {
+        var (actor, task) = await LoadForAssigneeChangeAsync(id, ct);
+        return await ChangeAssigneesAsync(actor, task, [.. task.AssigneeIds, userId], ct);
+    }
+
+    /// <summary>Take one person off a task's assignees (the task page, §6.2.3). Same rights as a full edit.</summary>
+    public async Task<TaskItem> RemoveAssigneeAsync(Guid id, Guid userId, CancellationToken ct = default)
+    {
+        var (actor, task) = await LoadForAssigneeChangeAsync(id, ct);
+        return await ChangeAssigneesAsync(actor, task, task.AssigneeIds.Where(x => x != userId).ToList(), ct);
+    }
+
+    private async Task<(Actor Actor, TaskItem Task)> LoadForAssigneeChangeAsync(Guid id, CancellationToken ct)
+    {
+        var actor = await actors.GetAsync(ct);
+        var task = await db.Tasks.FirstOrDefaultAsync(t => t.Id == id, ct)
+            ?? throw new NotFoundException("Task not found.");
+        AccessPolicy.Require(AccessPolicy.CanViewTask(actor, task), "This task belongs to another department.");
+        AccessPolicy.Require(AccessPolicy.CanEditTask(actor, task), "You don't have permission to edit this task.");
+        return (actor, task);
+    }
+
+    /// <summary>Set a task's assignees to <paramref name="wanted"/>, save, and tell the people added. The caller has checked the actor's rights.</summary>
+    private async Task<TaskItem> ChangeAssigneesAsync(Actor actor, TaskItem task, IReadOnlyCollection<Guid> wanted, CancellationToken ct)
+    {
+        var change = await AssigneeResolver.ResolveAsync(db, task.AssigneeIds, wanted, task.DepartmentId, departmentChanging: false, ct);
+        if (change.IsEmpty) return task;
+
+        var now = DateTime.UtcNow;
+        ApplyAssignees(actor, task, change, now);
+        task.UpdatedAt = now;
         await db.SaveChangesAsync(ct);
-
-        if (assignee is not null && assignee.Id != actor.UserId)
-            await notifications.TaskAssignedAsync(task, assignee, actor, ct);
+        await NotifyAssignedAsync(task, change.Added, actor, ct);
         return task;
     }
 
     /// <summary>
+    /// Write a change of assignees (§6.2.3) with its audit entries - one per person, as an asset's holders are recorded (§6.19).
+    /// The caller saves, and stamps the task's UpdatedAt in the same save: every change of assignees writes the task row, which
+    /// is what <see cref="TakeAsync"/> queues behind.
+    /// </summary>
+    private void ApplyAssignees(Actor actor, TaskItem task, AssigneeResolver.Change change, DateTime now)
+    {
+        foreach (var row in task.Assignments.Where(x => change.Removed.Contains(x.UserId)).ToList())
+        {
+            db.TaskAssignments.Remove(row);
+            audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.AssigneeRemoved, task.DepartmentId, task.Title,
+                new { userId = row.UserId, user = row.User.DisplayName });
+        }
+        foreach (var assignee in change.Added)
+        {
+            db.TaskAssignments.Add(new TaskAssignment { TaskId = task.Id, UserId = assignee.Id, AssignedAt = now, AssignedById = actor.UserId });
+            audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.AssigneeAdded, task.DepartmentId, task.Title,
+                new { userId = assignee.Id, user = assignee.DisplayName });
+        }
+    }
+
+    /// <summary>Email each person just assigned, other than whoever assigned them (§6.7). Returns who was told, for the requestee's email to skip.</summary>
+    private async Task<HashSet<Guid>> NotifyAssignedAsync(TaskItem task, IReadOnlyList<ApplicationUser> added, Actor actor, CancellationToken ct)
+    {
+        var told = AssigneeRules.ToNotify(added.Select(u => u.Id), actor.UserId).ToHashSet();
+        foreach (var assignee in added.Where(u => told.Contains(u.Id)))
+            await notifications.TaskAssignedAsync(task, assignee, actor, ct);
+        return told;
+    }
+
+    /// <summary>
     /// Take an unassigned task (§6.5): assign an open, unassigned task within the actor's tasks.take reach to the actor - the
-    /// one assignee change someone may make on a task they can't otherwise edit. First come, first served: the update only
-    /// lands while the task is still unassigned, so two people taking it at the same moment can't both win.
+    /// one assignee change someone may make on a task they can't otherwise edit. First come, first served: takers queue on the
+    /// task's row, and each looks for an assignee only once it holds the row, so two people taking it at the same moment can't
+    /// both win.
     /// </summary>
     public async Task<TaskItem> TakeAsync(Guid id, CancellationToken ct = default)
     {
         var actor = await actors.GetAsync(ct);
         if (actor.UserId is not Guid me) throw new ForbiddenException("Only a signed-in user can take a task.");
-        var task = await db.Tasks.AsNoTracking().Include(t => t.Assignee).FirstOrDefaultAsync(t => t.Id == id, ct)
+        var task = await db.Tasks.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id, ct)
             ?? throw new NotFoundException("Task not found.");
         AccessPolicy.Require(AccessPolicy.CanViewTask(actor, task), "This task belongs to another department.");
-        if (task.AssigneeId == me) return await GetAsync(id, ct);
-        if (task.AssigneeId is not null)
-            throw new ValidationException($"\"{task.Title}\" is already assigned to {task.Assignee!.DisplayName}.");
+        if (task.IsAssignedTo(me)) return await GetAsync(id, ct);
+        if (!task.IsUnassigned)
+            throw new ValidationException($"\"{task.Title}\" is already assigned to {task.AssigneeNames}.");
         if (!task.IsOpen) throw new ValidationException("A closed task can't be taken.");
         AccessPolicy.Require(AccessPolicy.CanTakeTask(actor, task), "You don't have permission to take tasks in this department.");
-        await ValidateAssigneeAsync(me, task.DepartmentId, ct);
+        var taker = (await AssigneeResolver.ResolveAsync(db, [], [me], task.DepartmentId, departmentChanging: false, ct)).Added[0];
 
         var now = DateTime.UtcNow;
         await using var tx = await db.Database.BeginTransactionAsync(ct);
-        var taken = await db.Tasks.Where(t => t.Id == id && t.AssigneeId == null)
-            .ExecuteUpdateAsync(s => s.SetProperty(t => t.AssigneeId, me).SetProperty(t => t.UpdatedAt, now), ct);
-        if (taken == 0)
-        {
-            var by = await db.Tasks.AsNoTracking().Where(t => t.Id == id).Select(t => t.Assignee!.DisplayName).FirstOrDefaultAsync(ct);
-            throw new ValidationException($"\"{task.Title}\" was just taken by {by ?? "someone else"}.");
-        }
-        audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.Updated, task.DepartmentId, task.Title,
-            new ChangeSet().Track("assigneeId", (Guid?)null, me).Changes);
+        // Writing the task row locks it: a second taker waits here until this one commits or gives up.
+        var open = await db.Tasks.Where(t => t.Id == id && t.Status != TaskItemStatus.Done && t.Status != TaskItemStatus.Cancelled)
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.UpdatedAt, now), ct);
+        if (open == 0) throw new ValidationException("A closed task can't be taken.");
+        // A statement of its own, run with the row held, so it sees what an earlier taker committed. As part of the update's
+        // WHERE it would not: after waiting for a lock PostgreSQL re-checks only the row it waited for.
+        var holders = await db.TaskAssignments.AsNoTracking().Where(x => x.TaskId == id)
+            .OrderBy(x => x.User.DisplayName).Select(x => new { x.UserId, x.User.DisplayName }).ToListAsync(ct);
+        if (holders.Any(h => h.UserId == me)) return await GetAsync(id, ct);
+        if (holders.Count > 0)
+            throw new ValidationException($"\"{task.Title}\" was just taken by {string.Join(", ", holders.Select(h => h.DisplayName))}.");
+
+        db.TaskAssignments.Add(new TaskAssignment { TaskId = id, UserId = me, AssignedAt = now, AssignedById = me });
+        audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.AssigneeAdded, task.DepartmentId, task.Title,
+            new { userId = me, user = taker.DisplayName, taken = true });
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return await GetAsync(id, ct);
@@ -486,7 +559,7 @@ public sealed class TaskService(
     public async Task<TaskItem> SetPlannedForAsync(Guid id, DateOnly? date, CancellationToken ct = default)
     {
         var actor = await actors.GetAsync(ct);
-        var task = await db.Tasks.Include(t => t.Assignee).FirstOrDefaultAsync(t => t.Id == id, ct)
+        var task = await db.Tasks.FirstOrDefaultAsync(t => t.Id == id, ct)
             ?? throw new NotFoundException("Task not found.");
         AccessPolicy.Require(AccessPolicy.CanViewTask(actor, task), "This task belongs to another department.");
         AccessPolicy.Require(AccessPolicy.CanPlanTask(actor, task), "You can't plan tasks from another department.");
@@ -532,7 +605,7 @@ public sealed class TaskService(
 
         var planned = await scoped.Where(t => t.PlannedFor == date)
             .OrderBy(t => t.Status == TaskItemStatus.Done || t.Status == TaskItemStatus.Cancelled)
-            .ThenBy(t => t.Assignee == null).ThenBy(t => t.Assignee!.DisplayName)
+            .ThenBy(t => !t.Assignments.Any()).ThenBy(t => t.Assignments.Min(x => x.User.DisplayName))
             .ThenByDescending(EnumOrder.ByTaskPriority).ThenBy(t => t.DueDate == null).ThenBy(t => t.DueDate)
             .ToListAsync(ct);
 
@@ -541,7 +614,7 @@ public sealed class TaskService(
             && t.Status != TaskItemStatus.Done && t.Status != TaskItemStatus.Cancelled);
         var previous = await leftOver.MaxAsync(t => t.PlannedFor, ct);
         List<TaskItem> unfinished = previous is null ? [] : await leftOver.Where(t => t.PlannedFor == previous)
-            .OrderBy(t => t.Assignee == null).ThenBy(t => t.Assignee!.DisplayName).ThenByDescending(EnumOrder.ByTaskPriority)
+            .OrderBy(t => !t.Assignments.Any()).ThenBy(t => t.Assignments.Min(x => x.User.DisplayName)).ThenByDescending(EnumOrder.ByTaskPriority)
             .ToListAsync(ct);
 
         // How often each of them has slipped to a later day, from their Planned audit rows - one query for the page.
@@ -655,19 +728,6 @@ public sealed class TaskService(
         var dept = await db.Departments.AsNoTracking().FirstOrDefaultAsync(d => d.Id == departmentId, ct)
             ?? throw new NotFoundException("Department not found.");
         if (dept.IsArchived) throw new ValidationException($"Department \"{dept.Name}\" is archived.");
-    }
-
-    /// <summary>Assignees must be active users in the task's department, or users whose role sees tasks everywhere (tasks.view at All).</summary>
-    private async Task<ApplicationUser?> ValidateAssigneeAsync(Guid? assigneeId, Guid departmentId, CancellationToken ct)
-    {
-        if (assigneeId is not Guid id) return null;
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == id, ct)
-            ?? throw new NotFoundException("Assignee not found.");
-        if (!user.IsActive || user.IsSystemAccount)
-            throw new ValidationException("The assignee must be an active user.");
-        if (user.DepartmentId != departmentId && !await RoleResolver.HasScopeAsync(db, user.Id, Permission.TasksView, PermissionScope.All, ct))
-            throw new ValidationException("A task can't be assigned to a user outside its own department.");
-        return user;
     }
 
     /// <summary>

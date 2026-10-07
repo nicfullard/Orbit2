@@ -23,7 +23,7 @@ public class TimeAccessTests
     private static Actor KeyWithTimeLog(PermissionScope scope) =>
         Key(new Dictionary<string, PermissionScope> { [Permission.TasksView] = scope, [Permission.TimeLog] = scope });
 
-    private static TaskItem Task(Guid department, Guid? assignee = null) => new() { DepartmentId = department, AssigneeId = assignee };
+    private static TaskItem Task(Guid department, Guid? assignee = null) => new() { DepartmentId = department, Assignments = Assigned.To(assignee) };
 
     [Fact]
     public void A_department_scoped_key_logs_for_a_person_on_its_own_departments_tasks_only()

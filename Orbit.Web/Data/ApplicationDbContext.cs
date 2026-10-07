@@ -10,9 +10,11 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<Department> Departments => Set<Department>();
     public DbSet<Project> Projects => Set<Project>();
     public DbSet<TaskItem> Tasks => Set<TaskItem>();
+    public DbSet<TaskAssignment> TaskAssignments => Set<TaskAssignment>();
     public DbSet<TaskDependency> TaskDependencies => Set<TaskDependency>();
     public DbSet<Sprint> Sprints => Set<Sprint>();
     public DbSet<RecurringTaskDefinition> RecurringTaskDefinitions => Set<RecurringTaskDefinition>();
+    public DbSet<RecurringTaskAssignment> RecurringTaskAssignments => Set<RecurringTaskAssignment>();
     public DbSet<Comment> Comments => Set<Comment>();
     public DbSet<TimeEntry> TimeEntries => Set<TimeEntry>();
     public DbSet<RunningClock> RunningClocks => Set<RunningClock>();
@@ -98,8 +100,9 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
                 .HasForeignKey(t => t.DepartmentId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(t => t.Project).WithMany(p => p.Tasks)
                 .HasForeignKey(t => t.ProjectId).OnDelete(DeleteBehavior.Restrict);
-            b.HasOne(t => t.Assignee).WithMany(u => u.AssignedTasks)
-                .HasForeignKey(t => t.AssigneeId).OnDelete(DeleteBehavior.Restrict);
+            // The assignees (§6.2.3) come with every task, however it was reached: being one is part of what makes a task
+            // someone's own (§6.5), and a task is checked in many places that never asked for its assignees.
+            b.Navigation(t => t.Assignments).AutoInclude();
             b.HasOne(t => t.CreatedBy).WithMany(u => u.CreatedTasks)
                 .HasForeignKey(t => t.CreatedById).OnDelete(DeleteBehavior.Restrict);
             // The requestee, whom the task is for (§6.2.2); users are deactivated, never deleted.
@@ -120,7 +123,6 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             b.HasIndex(t => t.ParentTaskId);
             b.HasIndex(t => t.StartDate);
             b.HasIndex(t => t.ProjectId);
-            b.HasIndex(t => t.AssigneeId);
             b.HasIndex(t => t.Status);
             b.HasIndex(t => t.DepartmentId);
             b.HasIndex(t => t.SprintId);
@@ -129,6 +131,24 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             b.HasIndex(t => t.IdempotencyKey).IsUnique().HasFilter("\"IdempotencyKey\" IS NOT NULL");
             b.HasIndex(t => new { t.RecurringTaskDefinitionId, t.DueDate });
             b.Ignore(t => t.IsOpen);
+            b.Ignore(t => t.IsUnassigned);
+            b.Ignore(t => t.AssigneeIds);
+            b.Ignore(t => t.Assignees);
+            b.Ignore(t => t.AssigneeNames);
+        });
+
+        builder.Entity<TaskAssignment>(b =>
+        {
+            // A person is assigned to a task at most once; the row dies with the task, and users are deactivated rather than deleted.
+            b.HasKey(x => new { x.TaskId, x.UserId });
+            b.HasOne(x => x.Task).WithMany(t => t.Assignments)
+                .HasForeignKey(x => x.TaskId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.User).WithMany()
+                .HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(x => x.AssignedBy).WithMany()
+                .HasForeignKey(x => x.AssignedById).OnDelete(DeleteBehavior.Restrict);
+            b.Navigation(x => x.User).AutoInclude();
+            b.HasIndex(x => x.UserId);
         });
 
         builder.Entity<TaskDependency>(b =>
@@ -160,14 +180,28 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
                 .HasForeignKey(r => r.DepartmentId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(r => r.Project).WithMany(p => p.RecurringTaskDefinitions)
                 .HasForeignKey(r => r.ProjectId).OnDelete(DeleteBehavior.Restrict);
-            b.HasOne(r => r.Assignee).WithMany()
-                .HasForeignKey(r => r.AssigneeId).OnDelete(DeleteBehavior.Restrict);
+            // As a task's are (§6.2.3): a definition is its assignees' own too.
+            b.Navigation(r => r.Assignments).AutoInclude();
             b.HasOne(r => r.Asset).WithMany()
                 .HasForeignKey(r => r.AssetId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(r => r.CreatedBy).WithMany()
                 .HasForeignKey(r => r.CreatedById).OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(r => r.AssetId);
             b.HasIndex(r => new { r.Active, r.NextRunDate });
+            b.Ignore(r => r.AssigneeIds);
+            b.Ignore(r => r.Assignees);
+            b.Ignore(r => r.AssigneeNames);
+        });
+
+        builder.Entity<RecurringTaskAssignment>(b =>
+        {
+            b.HasKey(x => new { x.RecurringTaskDefinitionId, x.UserId });
+            b.HasOne(x => x.RecurringTaskDefinition).WithMany(r => r.Assignments)
+                .HasForeignKey(x => x.RecurringTaskDefinitionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.User).WithMany()
+                .HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+            b.Navigation(x => x.User).AutoInclude();
+            b.HasIndex(x => x.UserId);
         });
 
         builder.Entity<Comment>(b =>

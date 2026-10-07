@@ -11,7 +11,7 @@ public class AttachmentTests
     private static readonly Guid Marketing = Guid.NewGuid();
 
     private static TaskItem Task(Guid department, Guid? assignee = null) =>
-        new() { DepartmentId = department, AssigneeId = assignee, CreatedById = Guid.NewGuid() };
+        new() { DepartmentId = department, Assignments = Assigned.To(assignee), CreatedById = Guid.NewGuid() };
 
     private static Project Project(Guid department, Guid? owner = null) =>
         new() { DepartmentId = department, OwnerId = owner ?? Guid.NewGuid() };

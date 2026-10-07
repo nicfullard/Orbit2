@@ -184,6 +184,8 @@ public static class Ui
         "CriticalPathAnalysed" => "ran a critical path analysis on",
         "ExceptionAdded" => "added a calendar exception to the",
         "ExceptionRemoved" => "removed a calendar exception from the",
+        "AssigneeAdded" => "added an assignee to",
+        "AssigneeRemoved" => "removed an assignee from",
         "AssetAssigned" => "assigned",
         "AssetUnassigned" => "unassigned",
         "CheckRecorded" => "recorded a check on",

@@ -47,8 +47,8 @@ public class AssetReportRulesTests
 
     private static AssetTaskFacts Task(
         AssetFacts a, TaskItemStatus status = TaskItemStatus.InProgress, Guid? assignee = null, DateOnly? due = null,
-        DateTime? created = null, DateTime? completed = null, int period = 0) =>
-        new(Guid.NewGuid(), $"T-26-{Interlocked.Increment(ref _number):00000}", "Task", status, assignee, a.Id, due,
+        DateTime? created = null, DateTime? completed = null, int period = 0, Guid[]? assignees = null) =>
+        new(Guid.NewGuid(), $"T-26-{Interlocked.Increment(ref _number):00000}", "Task", status, assignees ?? (assignee is Guid u ? [u] : []), a.Id, due,
             created ?? From.AddDays(-50), completed, period);
 
     private static AssetStatusChange Change(AssetFacts a, DateTime at, AssetStatus from, AssetStatus to) => new(a.Id, at, from, to);

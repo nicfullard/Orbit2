@@ -9,10 +9,19 @@ namespace Orbit.Application;
 /// <item>Estimates are compared over tasks that have one and aren't Cancelled, against all time logged on them to date.</item>
 /// <item>Every task stands alone: subtask time isn't rolled into the parent (§6.10).</item>
 /// <item>A task several people worked on shows under each of them, but totals count it once.</item>
+/// <item>So does a task several people are assigned to (§6.2.3), whole: an estimate is never split between them.</item>
 /// </list>
 /// </summary>
 public static class TimeReportRules
 {
+    /// <summary>Whom a task is listed under in a report grouped by assignee: each of its assignees, or null - the Unassigned row - when it has none.</summary>
+    public static IEnumerable<Guid?> AssigneesOrNone(IReadOnlyList<Guid> assigneeIds) =>
+        assigneeIds.Count == 0 ? [null] : assigneeIds.Distinct().Select(id => (Guid?)id);
+
+    /// <summary>A task's assignees as a report's task list names them: by name, comma-separated, or the name given for nobody.</summary>
+    public static string AssigneeNames(IReadOnlyList<Guid> assigneeIds, Func<Guid?, string> name) =>
+        string.Join(", ", AssigneesOrNone(assigneeIds).Select(name).Order(StringComparer.CurrentCultureIgnoreCase));
+
     /// <summary>Estimated against actual over <paramref name="tasks"/>; each task should appear once.</summary>
     public static EstimateComparison Compare(IEnumerable<TaskTimeFacts> tasks)
     {
@@ -66,12 +75,14 @@ public static class TimeReportRules
 
     /// <summary>
     /// Estimate accuracy: completed tasks grouped by assignee (no assignee = "Unassigned"), ordered by count then
-    /// name; each row's tasks with the largest overrun first and unestimated ones last.
+    /// name; each row's tasks with the largest overrun first and unestimated ones last. A task with several assignees is
+    /// under each of them, and counted once in the report's own totals.
     /// </summary>
     public static EstimateAccuracyReport EstimateAccuracy(IEnumerable<TaskTimeFacts> doneTasks, Func<Guid?, string> name)
     {
         var tasks = doneTasks.DistinctBy(t => t.Id).ToList();
-        var rows = tasks.GroupBy(t => t.AssigneeId)
+        var rows = tasks.SelectMany(t => AssigneesOrNone(t.AssigneeIds).Select(id => (UserId: id, Task: t)))
+            .GroupBy(x => x.UserId, x => x.Task)
             .Select(g => new AssigneeAccuracyRow(g.Key, name(g.Key), g.Count(), Compare(g),
                 g.Select(t => new TaskEstimateRow(t.Id, t.Number, t.Title, t.EstimateMinutes, t.TotalMinutes))
                     .OrderBy(r => r.VarianceMinutes is null)

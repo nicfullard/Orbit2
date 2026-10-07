@@ -17,7 +17,7 @@ public class StatusTests
         [TaskItemStatus.Todo, TaskItemStatus.InProgress, TaskItemStatus.Waiting, TaskItemStatus.Blocked, TaskItemStatus.Done, TaskItemStatus.Cancelled];
 
     private static TaskItem Task(Guid department, TaskItemStatus status = TaskItemStatus.Todo, Guid? assignee = null, Guid? createdBy = null) =>
-        new() { DepartmentId = department, Status = status, AssigneeId = assignee, CreatedById = createdBy ?? Guid.NewGuid() };
+        new() { DepartmentId = department, Status = status, Assignments = Assigned.To(assignee), CreatedById = createdBy ?? Guid.NewGuid() };
 
     [Fact]
     public void Waiting_is_open_and_sits_between_in_progress_and_blocked()
@@ -70,7 +70,7 @@ public class StatusTests
         Assert.False(AccessPolicy.CanChangeStatus(member, task));
         Assert.True(AccessPolicy.CanTakeTask(member, task));
 
-        task.AssigneeId = member.UserId;
+        task.Assignments = Assigned.To(member.UserId);
         Assert.True(AccessPolicy.CanChangeStatus(member, task));
     }
 

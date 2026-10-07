@@ -47,7 +47,8 @@ public sealed class OrbitTools(
         "falling back to the API key's own department (a key whose role isn't scoped to a department may have none, so pass departmentId for standalone tasks). " +
         "A key whose Create tasks permission covers all departments may pass a departmentId that differs from the project's to file a cross-department project task: " +
         "the task then belongs to, and is worked by, that department while staying on the project. Other keys are rejected for that. " +
-        "Pass requesteeId to create the task on someone's behalf - the requestee, whom it is for, beside the assignee who does it.")]
+        "Pass assigneeIds to assign it - to one person, or to several who share it. " +
+        "Pass requesteeId to create the task on someone's behalf - the requestee, whom it is for, beside the assignees who do it.")]
     public Task<string> CreateTask(
         [Description("Task title (required).")] string title,
         [Description("Longer description; markdown is fine.")] string? description = null,
@@ -56,7 +57,7 @@ public sealed class OrbitTools(
         [Description("Low, Medium, High or Critical. Default Medium.")] string? priority = null,
         [Description("Meeting, Planning, Task, Training, Audit, Change or Request - what kind of work it is. Default Task.")] string? type = null,
         [Description("Due date as yyyy-MM-dd.")] string? dueDate = null,
-        [Description("Assignee user id (GUID). Must be an active user in the task's department (not necessarily the project's), or a user whose role sees tasks in every department. Omit to leave unassigned.")] string? assigneeId = null,
+        [Description("The assignees' user ids (GUID, from list_users): one person, or several who share the task. Each must be an active user in the task's department (not necessarily the project's), or a user whose role sees tasks in every department. Omit to leave unassigned.")] string[]? assigneeIds = null,
         [Description("Optional idempotency key. Retrying with the same key returns the already-created task instead of a duplicate.")] string? idempotencyKey = null,
         [Description("Planned start date as yyyy-MM-dd (not after the due date).")] string? startDate = null,
         [Description("Parent task id (GUID) to create this as a subtask. The parent must be on the same project (or, for a standalone task, be a standalone task in the same department) and still open.")] string? parentTaskId = null,
@@ -77,7 +78,7 @@ public sealed class OrbitTools(
             Type = ParseEnum<TaskType>(type, "type") ?? TaskType.Task,
             StartDate = ParseDate(startDate, "startDate"),
             DueDate = ParseDate(dueDate, "dueDate"),
-            AssigneeId = ParseGuid(assigneeId, "assigneeId"),
+            AssigneeIds = assigneeIds?.Select(u => RequireGuid(u, "assigneeIds")).ToList(),
             ParentTaskId = ParseGuid(parentTaskId, "parentTaskId"),
             EstimateMinutes = estimateMinutes,
             IdempotencyKey = idempotencyKey
@@ -108,7 +109,7 @@ public sealed class OrbitTools(
             {
                 id = c.Id, title = c.Title, status = c.Status, priority = c.Priority,
                 departmentId = c.DepartmentId, department = c.Department?.Name,
-                assigneeId = c.AssigneeId, assignee = c.Assignee?.DisplayName, startDate = c.StartDate, dueDate = c.DueDate
+                assignees = AssigneesDto(c), startDate = c.StartDate, dueDate = c.DueDate
             }).ToList(),
             subtasksClosed = s.ChildrenClosed,
             predecessors = s.Predecessors.Select(LinkDto).ToList(),
@@ -132,7 +133,7 @@ public sealed class OrbitTools(
         [Description("Filter by project id (GUID).")] string? projectId = null,
         [Description("Filter by department id (GUID). Only useful for a key that sees every department.")] string? departmentId = null,
         [Description("Todo, InProgress, Waiting, Blocked, Done or Cancelled.")] string? status = null,
-        [Description("Filter by assignee user id (GUID).")] string? assigneeId = null,
+        [Description("Filter by assignee user id (GUID): the tasks that person is one of the assignees of.")] string? assigneeId = null,
         [Description("true = only tasks with no assignee - work nobody has picked up yet. Overrides assigneeId.")] bool? unassigned = null,
         [Description("Manual, Api, Recurring or Request (logged through a department's request flow) - where the task originated.")] string? source = null,
         [Description("Low, Medium, High or Critical.")] string? priority = null,
@@ -180,8 +181,9 @@ public sealed class OrbitTools(
 
     [McpServerTool(Name = "update_task"), Description(
         "Update any field of a task. Only the arguments you pass change; omit an argument to leave it as is. " +
-        "Pass the literal string \"none\" to clear assigneeId, requesteeId, dueDate, startDate, parentTaskId, estimateMinutes, projectId, sprintId, assetId or plannedFor (sprintId \"none\" moves the task to the backlog;" +
+        "Pass the literal string \"none\" to clear requesteeId, dueDate, startDate, parentTaskId, estimateMinutes, projectId, sprintId, assetId or plannedFor (sprintId \"none\" moves the task to the backlog;" +
         "plannedFor \"none\" takes it off the day plan, plannedFor \"today\" puts it on today's plan - closed tasks can't be planned). " +
+        "assigneeIds replaces the task's assignees with the set given: [] unassigns everyone, and to add or remove one person pass the whole new set (get_task has the current one). " +
         "A key whose Edit tasks permission is scoped to Own can only edit tasks the Claude user created or is assigned; that covers every field, including setting status to Done or Cancelled. " +
         "Changing or clearing the requestee needs the key's Create tasks for others permission to reach both the person removed and the person added. " +
         "departmentId moves the task to another department (needs Edit tasks for that department); if that differs from the project's department the task " +
@@ -193,7 +195,7 @@ public sealed class OrbitTools(
         [Description("Todo, InProgress, Waiting, Blocked, Done or Cancelled.")] string? status = null,
         [Description("Low, Medium, High or Critical.")] string? priority = null,
         [Description("Meeting, Planning, Task, Training, Audit, Change or Request.")] string? type = null,
-        [Description("Assignee user id (GUID), or \"none\" to unassign.")] string? assigneeId = null,
+        [Description("The complete set of assignees' user ids (GUID); [] unassigns everyone. Omit to leave them as they are. Each person added must be an active user in the task's department, or one whose role sees tasks in every department; people kept aren't re-checked unless the task changes department.")] string[]? assigneeIds = null,
         [Description("Due date yyyy-MM-dd, or \"none\" to clear.")] string? dueDate = null,
         [Description("Project id (GUID), or \"none\" to make the task standalone.")] string? projectId = null,
         [Description("Sprint id (GUID) to plan the task into, or \"none\" for the backlog.")] string? sprintId = null,
@@ -219,7 +221,8 @@ public sealed class OrbitTools(
             DepartmentId = ParseGuid(departmentId, "departmentId"),
             Priority = ParseEnum<TaskPriority>(priority, "priority") ?? current.Priority,
             Type = ParseEnum<TaskType>(type, "type") ?? current.Type,
-            AssigneeId = IsClear(assigneeId) ? null : ParseGuid(assigneeId, "assigneeId") ?? current.AssigneeId,
+            // Null keeps the assignees as they are (§6.2.3), so an omitted argument needs no carrying over.
+            AssigneeIds = assigneeIds?.Select(u => RequireGuid(u, "assigneeIds")).ToList(),
             StartDate = IsClear(startDate) ? null : ParseDate(startDate, "startDate") ?? current.StartDate,
             DueDate = IsClear(dueDate) ? null : ParseDate(dueDate, "dueDate") ?? current.DueDate,
             ParentTaskId = IsClear(parentTaskId) ? null : ParseGuid(parentTaskId, "parentTaskId") ?? current.ParentTaskId,
@@ -1218,6 +1221,10 @@ public sealed class OrbitTools(
         totalPages = result.TotalPages
     };
 
+    /// <summary>A task's assignees (§6.2.3) as every task payload carries them, by name: the shape an asset's holders have.</summary>
+    private static object AssigneesDto(TaskItem t) =>
+        t.Assignees.Select(u => new { id = u.Id, name = u.DisplayName, active = u.IsActive }).ToList();
+
     private static object TaskDto(TaskItem t) => new
     {
         id = t.Id,
@@ -1235,8 +1242,7 @@ public sealed class OrbitTools(
         project = t.Project?.Name,
         assetId = t.AssetId,
         asset = t.Asset is null ? null : Orbit.Application.Assets.AssetRules.Label(t.Asset.AssetNumber, t.Asset.Name),
-        assigneeId = t.AssigneeId,
-        assignee = t.Assignee?.DisplayName,
+        assignees = AssigneesDto(t),
         requesteeId = t.RequesteeId,
         requestee = t.Requestee?.DisplayName,
         createdById = t.CreatedById,
@@ -1310,7 +1316,7 @@ public sealed class OrbitTools(
                 {
                     id = t.Id, title = t.Title, status = t.Status, priority = t.Priority, type = t.Type, source = t.Source,
                     departmentId = t.DepartmentId, department = t.Department?.Name,
-                    assigneeId = t.AssigneeId, assignee = t.Assignee?.DisplayName,
+                    assignees = AssigneesDto(t),
                     parentTaskId = t.ParentTaskId, startDate = t.StartDate, dueDate = t.DueDate,
                     sprintId = t.SprintId, updatedAt = t.UpdatedAt
                 }).ToList()
@@ -1392,7 +1398,7 @@ public sealed class OrbitTools(
             tasks = history?.Tasks.Select(t => new
             {
                 id = t.Id, number = t.Number, title = t.Title, status = t.Status, departmentId = t.DepartmentId, department = t.Department?.Name,
-                assigneeId = t.AssigneeId, assignee = t.Assignee?.DisplayName, dueDate = t.DueDate, createdAt = t.CreatedAt, completedAt = t.CompletedAt
+                assignees = AssigneesDto(t), dueDate = t.DueDate, createdAt = t.CreatedAt, completedAt = t.CompletedAt
             }).ToList(),
             tasksVisible = history?.VisibleCount,
             tasksNotVisible = history?.HiddenCount

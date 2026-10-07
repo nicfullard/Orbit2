@@ -18,6 +18,12 @@ public sealed record ReportFilter(DateTime FromUtc, DateTime ToUtc, Guid? Projec
 
 public sealed record PersonCountRow(Guid? UserId, string Name, int Count);
 
+/// <summary>
+/// A count of tasks by person (§12). <see cref="Total"/> counts each task once, so it is less than the rows' sum when a task
+/// several people share (§6.2.3) is under each of them.
+/// </summary>
+public sealed record PersonCountReport(IReadOnlyList<PersonCountRow> Rows, int Total);
+
 public sealed record PersonAverageRow(Guid? UserId, string Name, int Count, double AverageHours);
 
 public sealed record MeanTimeReport(IReadOnlyList<PersonAverageRow> Rows, int OverallCount, double? OverallAverageHours);
@@ -27,7 +33,7 @@ public sealed record LoggedTime(Guid UserId, Guid TaskId, int Minutes);
 
 /// <summary>What the time reports need to know about a task. <see cref="TotalMinutes"/> is all time logged on it to date, by anyone.</summary>
 public sealed record TaskTimeFacts(
-    Guid Id, string Number, string Title, TaskItemStatus Status, Guid? AssigneeId, int? EstimateMinutes, int TotalMinutes);
+    Guid Id, string Number, string Title, TaskItemStatus Status, IReadOnlyList<Guid> AssigneeIds, int? EstimateMinutes, int TotalMinutes);
 
 /// <summary>
 /// Estimated against actual effort over a set of tasks. Only tasks with an estimate that aren't Cancelled count
@@ -62,7 +68,10 @@ public sealed record PersonTaskTimeRow(
     public bool IsOver => !IsCancelled && EstimateMinutes is int e && TotalMinutes > e;
 }
 
-/// <summary>Estimate accuracy (§12): tasks completed in the range, grouped by assignee.</summary>
+/// <summary>
+/// Estimate accuracy (§12): tasks completed in the range, grouped by assignee. A task several people share (§6.2.3) is under each
+/// of them with its whole estimate, and counts once in <see cref="DoneCount"/> and <see cref="Overall"/>.
+/// </summary>
 public sealed record EstimateAccuracyReport(
     IReadOnlyList<AssigneeAccuracyRow> Rows, int DoneCount, EstimateComparison Overall);
 
@@ -135,13 +144,17 @@ public sealed record ProjectStatusRow(
 
 /// <summary>
 /// A person on a project: their assigned tasks (open now, done in the range) and the estimates of those that aren't
-/// Cancelled, against the time they logged on the project. <see cref="UserId"/> null is the Unassigned row.
+/// Cancelled, against the time they logged on the project. <see cref="UserId"/> null is the Unassigned row. A task several
+/// people share (§6.2.3) is in each one's figures, whole.
 /// </summary>
 public sealed record ProjectPersonRow(
     Guid? UserId, string Name, int OpenTasks, int DoneInPeriod, int EstimatedTasks, int EstimatedMinutes,
     int LoggedInPeriodMinutes, int LoggedToDateMinutes);
 
-/// <summary>A task in a project's list: <see cref="PeriodMinutes"/> is everyone's time on it in the range, <see cref="TotalMinutes"/> to date.</summary>
+/// <summary>
+/// A task in a project's list: <see cref="PeriodMinutes"/> is everyone's time on it in the range, <see cref="TotalMinutes"/> to date.
+/// <see cref="Assignee"/> is its assignees' names, or "Unassigned".
+/// </summary>
 public sealed record ProjectTaskRow(
     Guid TaskId, string Number, string Title, TaskItemStatus Status, string Assignee, DateOnly? DueDate, bool IsOverdue,
     int? EstimateMinutes, int PeriodMinutes, int TotalMinutes, bool CreatedInPeriod, bool DoneInPeriod)
@@ -174,7 +187,7 @@ public sealed record AssetStatusHistory(
 
 /// <summary>A task about an asset: <see cref="PeriodMinutes"/> is everyone's time on it in the range.</summary>
 public sealed record AssetTaskFacts(
-    Guid Id, string Number, string Title, TaskItemStatus Status, Guid? AssigneeId, Guid AssetId,
+    Guid Id, string Number, string Title, TaskItemStatus Status, IReadOnlyList<Guid> AssigneeIds, Guid AssetId,
     DateOnly? DueDate, DateTime CreatedAt, DateTime? CompletedAt, int PeriodMinutes);
 
 /// <summary>The linked tasks of some assets: open (and overdue) now; created, done and logged in the range.</summary>
@@ -254,7 +267,7 @@ public static class ReportCatalog
     public static readonly IReadOnlyList<ReportDefinition> All =
     [
         new(ReportKind.ClosedByPerson, "Closed count by person",
-            "Tasks set to Done in the period, grouped by the assignee who carried them to close."),
+            "Tasks set to Done in the period, grouped by the assignees who carried them to close. A shared task counts under each of them and once in the total."),
         new(ReportKind.CreatedByPerson, "Created count by person",
             "Tasks created in the period, grouped by who authored them. API-created tasks roll up under Claude."),
         new(ReportKind.MeanTimeToRespond, "Mean time to respond",
@@ -264,7 +277,7 @@ public static class ReportCatalog
         new(ReportKind.TimeByPerson, "Time by person",
             "Time each person logged in the period, and for the tasks they worked on, each task's estimate against all time logged on it to date."),
         new(ReportKind.EstimateAccuracy, "Estimate accuracy",
-            "Tasks completed in the period, grouped by assignee: the estimate against all time logged on them."),
+            "Tasks completed in the period, grouped by assignee: the estimate against all time logged on them. A shared task is under each of its assignees and counts once overall."),
         new(ReportKind.ProjectStatus, "Project status",
             "Every project open or active in the period, closed ones included: its status and status changes, tasks, schedule, and estimated and logged time by person."),
         new(ReportKind.AssetStatus, "Asset status",

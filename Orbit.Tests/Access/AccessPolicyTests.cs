@@ -13,7 +13,7 @@ public class AccessPolicyTests
     private static readonly Guid Marketing = Guid.NewGuid();
 
     private static TaskItem Task(Guid department, Guid? assignee = null, TaskItemStatus status = TaskItemStatus.Todo, Guid? createdBy = null) =>
-        new() { DepartmentId = department, AssigneeId = assignee, Status = status, CreatedById = createdBy ?? Guid.NewGuid() };
+        new() { DepartmentId = department, Assignments = Assigned.To(assignee), Status = status, CreatedById = createdBy ?? Guid.NewGuid() };
 
     [Theory]
     [InlineData(TaskItemStatus.Todo)]
@@ -84,7 +84,7 @@ public class AccessPolicyTests
         Assert.True(AccessPolicy.CanTakeTask(member, task));
         Assert.False(AccessPolicy.CanEditTask(member, task));
 
-        task.AssigneeId = member.UserId;
+        task.Assignments = Assigned.To(member.UserId);
         Assert.False(AccessPolicy.CanTakeTask(member, task));
         Assert.True(AccessPolicy.CanEditTask(member, task));
     }

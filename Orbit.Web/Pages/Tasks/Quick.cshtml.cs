@@ -25,14 +25,15 @@ public class QuickModel(TaskService tasks) : OrbitPageModel
         return LocalRedirect(SafeReturnUrl(returnUrl, "/Tasks"));
     }
 
+    /// <summary>The inline assignee dropdown, offered on a task with at most one assignee (§6.2.3): sets that one assignee, or nobody.</summary>
     public async Task<IActionResult> OnPostAssigneeAsync(Guid id, Guid? assigneeId, string? returnUrl, CancellationToken ct)
     {
         try
         {
-            var task = await tasks.ChangeAssigneeAsync(id, assigneeId, ct);
-            Success(task.Assignee is null
+            var task = await tasks.SetSoleAssigneeAsync(id, assigneeId, ct);
+            Success(task.AssigneeNames is not string names
                 ? $"\"{Ui.Truncate(task.Title, 40)}\" is now unassigned."
-                : $"\"{Ui.Truncate(task.Title, 40)}\" assigned to {task.Assignee.DisplayName}.");
+                : $"\"{Ui.Truncate(task.Title, 40)}\" assigned to {names}.");
         }
         catch (ValidationException ex)
         {

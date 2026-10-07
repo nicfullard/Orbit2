@@ -63,19 +63,20 @@
 <div class="card">
     <div class="card-header text-muted small">@Model.FilterSummary</div>
     <div class="card-body p-0">
-        @if (Model.CountRows is not null)
+        @if (Model.Counts is not null)
         {
-            @if (Model.CountRows.Count == 0)
+            @if (Model.Counts.Rows.Count == 0)
             {
                 <p class="text-muted fst-italic p-3 mb-0">No data for the selected filters.</p>
             }
             else
             {
-                var max = Model.CountRows.Max(r => r.Count);
+                var max = Model.Counts.Rows.Max(r => r.Count);
+                var shared = Model.Counts.Rows.Sum(r => r.Count) != Model.Counts.Total;
                 <table class="table table-sm align-middle mb-0">
                     <thead class="table-light"><tr><th style="width:30%">Person</th><th style="width:10%" class="text-end">Count</th><th></th></tr></thead>
                     <tbody>
-                        @foreach (var r in Model.CountRows)
+                        @foreach (var r in Model.Counts.Rows)
                         {
                             var pct = max == 0 ? 0 : (int)Math.Round(r.Count * 100.0 / max);
                             <tr>
@@ -85,7 +86,7 @@
                             </tr>
                         }
                     </tbody>
-                    <tfoot><tr class="table-light"><th>Total</th><th class="text-end">@Model.CountRows.Sum(r => r.Count)</th><th></th></tr></tfoot>
+                    <tfoot><tr class="table-light"><th>Total</th><th class="text-end">@Model.Counts.Total</th><th>@if (shared) { <span class="fw-normal text-muted small">A task with several assignees counts under each of them, and once here.</span> }</th></tr></tfoot>
                 </table>
             }
         }

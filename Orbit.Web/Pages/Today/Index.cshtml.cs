@@ -27,19 +27,9 @@ public class IndexModel(
     public Actor Actor { get; private set; } = null!;
     public DateOnly Today { get; private set; }
     public DayPlan Plan { get; private set; } = null!;
-    public IReadOnlyList<AssigneeGroup> Groups { get; private set; } = [];
+    public IReadOnlyList<DayPlanGroup> Groups { get; private set; } = [];
     public IReadOnlyList<UserSummary> QuickEditAssignees { get; private set; } = [];
     public IReadOnlyList<SelectListItem> DepartmentItems { get; private set; } = [];
-
-    public sealed record AssigneeGroup(Guid? AssigneeId, string Name, IReadOnlyList<TaskItem> Tasks)
-    {
-        public int Done => Tasks.Count(t => t.Status == TaskItemStatus.Done);
-        /// <summary>Estimated minutes (§6.10) over every task on the plan, and over the ones still open - the load left in the day.</summary>
-        public int EstimatedMinutes => Tasks.Sum(t => t.EstimateMinutes ?? 0);
-        public int OpenEstimatedMinutes => Tasks.Where(t => t.IsOpen).Sum(t => t.EstimateMinutes ?? 0);
-        /// <summary>Open tasks with no estimate, so the sum isn't read as the whole load.</summary>
-        public int OpenUnestimated => Tasks.Count(t => t.IsOpen && t.EstimateMinutes is null);
-    }
 
     public async Task OnGetAsync(CancellationToken ct)
     {
@@ -48,11 +38,7 @@ public class IndexModel(
         if (!Actor.CanAnywhere(Permission.TasksView)) DepartmentId = null;
         Plan = await tasks.GetDayPlanAsync(Today, DepartmentId, ct);
         Waiting = await structure.GetWaitingAsync(Plan.Planned.Concat(Plan.Unfinished), ct);
-        Groups = Plan.Planned
-            .GroupBy(t => t.AssigneeId)
-            .Select(g => new AssigneeGroup(g.Key, g.First().Assignee?.DisplayName ?? "Unassigned", g.ToList()))
-            .OrderBy(g => g.AssigneeId is null).ThenBy(g => g.Name)
-            .ToList();
+        Groups = DayPlanRules.GroupByAssignee(Plan.Planned);
         QuickEditAssignees = await users.GetQuickEditCandidatesAsync(ct);
         if (Actor.CanAnywhere(Permission.TasksView))
         {

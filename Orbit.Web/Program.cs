@@ -187,7 +187,11 @@ builder.Services.AddMcpServer(o =>
             "each saved or refused on its own and reported by index - rather than one call per asset. " +
             "A task can be about one asset - a repair, a service: pass assetId to create_task / update_task (\"none\" unlinks it); " +
             "get_asset lists the asset's task history and list_tasks filters on assetId. " +
-            "A task has an assignee, who does it, and may have a requestee, whom it is for: to log a task on someone's behalf " +
+            "A task has any number of assignees, who do it - one person, several who share it, or nobody yet: pass their userIds from " +
+            "list_users as assigneeIds to create_task; on update_task assigneeIds is the complete new set ([] unassigns everyone, omitted " +
+            "leaves them alone), and every task result lists them as assignees (id, name, active). list_tasks filters on one assigneeId, " +
+            "or on unassigned. " +
+            "A task may also have a requestee, whom it is for: to log a task on someone's behalf " +
             "(\"Bob asked for ...\") pass their userId from list_users as requesteeId to create_task; update_task changes it (\"none\" clears it) " +
             "and list_tasks filters on it. The requestee sees and updates the task as their own.";
     })

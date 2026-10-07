@@ -74,7 +74,7 @@
                         }
                     </div>
                     <div class="d-flex justify-content-between align-items-center small text-muted">
-                        <span>@(t.Assignee?.DisplayName ?? "Unassigned")</span>
+                        <span>@(t.AssigneeNames ?? "Unassigned")</span>
                         <span class="@(overdue ? "text-danger fw-semibold" : "")">@Ui.Day(t.DueDate)</span>
                     </div>
                     @if (canView && statuses.Count > 1)

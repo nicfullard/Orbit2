@@ -61,8 +61,8 @@ Self-registration is disabled: accounts are created under **Admin > Users** - on
 A user or API key has one **role**; a role is a set of **permissions**, each granted at a **scope** (spec §6.5).
 Roles are edited under **Admin > Roles**. The built-in **System Administrator** role holds every permission for
 all departments and can't be edited or deleted; **Member** and **Department Admin** ship with the grants below
-and can be changed like any other role. Scopes: *Own* = tasks assigned to, created by or created for you, projects you own,
-your own time; *Department* = everything in your department; *All* = every department. A grant covers the
+and can be changed like any other role. Scopes: *Own* = tasks assigned to you (alone or with others), created by or
+created for you, projects you own, your own time; *Department* = everything in your department; *All* = every department. A grant covers the
 scopes below it, and a role with no grants sees nothing.
 
 | Permission | Scopes | What it gates | Member | Dept Admin |
@@ -70,13 +70,13 @@ scopes below it, and a role with no grants sees nothing.
 | `tasks.view` | Own / Dept / All | See tasks, comment, attach; sets the dashboard tier and the Department column/filter | Dept | Dept |
 | `tasks.create` | Dept / All | Create tasks and recurring definitions; All also files tasks for other departments under a project (spec §6.2.1) | Dept | Dept |
 | `tasks.create_for` | Own / Dept / All | Name a task's requestee - the person it is created for (Own: only yourself, so the field isn't offered; Dept: anyone in your department; All: anyone) | Own | Own |
-| `tasks.edit` | Own / Dept / All | Edit any field, incl. every status change (close/reopen), parent, dependencies, assignee | Own | Dept |
-| `tasks.take` | Dept / All | Take an open, unassigned task for yourself | Dept | Dept |
+| `tasks.edit` | Own / Dept / All | Edit any field, incl. every status change (close/reopen), parent, dependencies, assignees | Own | Dept |
+| `tasks.take` | Dept / All | Take an open task nobody is assigned to for yourself (joining one that has an assignee is an edit) | Dept | Dept |
 | `tasks.plan` | Own / Dept / All | Backlog/sprint moves and the Today tick | Dept | Dept |
 | `projects.view` | Own / Dept / All | See projects, comment on them, their files and critical path results | Dept | Dept |
 | `projects.create` | Dept / All | Create projects | Dept | Dept |
 | `projects.edit` | Own / Dept / All | Edit/archive projects, run the critical path analysis; moving to another department needs All | Own | Dept |
-| `time.log` | Own / Dept / All | Log, edit, delete time (Own: yours on tasks assigned to you; Dept: for anyone in the department) | Own | Dept |
+| `time.log` | Own / Dept / All | Log, edit, delete time (Own: yours on tasks you are an assignee of; Dept: for anyone in the department) | Own | Dept |
 | `sprints.manage` | All | Create/start/complete sprints | - | - |
 | `reports.view` | Dept / All | Reports (Dept: fixed to your own department) | - | - |
 | `audit.view` | Dept / All | Admin > Activity Log and `list_activity` | - | - |
@@ -104,9 +104,21 @@ fixed roles in place (`SystemAdmin` becomes the built-in System Administrator) a
 Admin the grants above, so nobody's rights change. The asset, request and Create tasks for others permissions arrived
 later; the migrations that added them gave their defaults to the roles still named Member and Department Admin.
 
-A task can be created on someone else's behalf (spec §6.2.2). Besides its **assignee**, who does it, a task may have
+A task can have **several assignees** (spec §6.2.3): one person, several who share it, or nobody. They are equal -
+there is no lead - and each must be an active person in the task's department, or one whose role sees every
+department. The task and recurring forms pick them as chips over a search box (click it empty to list the
+department's people); the task page has an **Assignees** card to add or remove one without editing anything else. In
+task lists a task with one assignee or none keeps the inline dropdown, and a task with several shows their names. The
+task is each assignee's own: any of them can edit it, change its assignees, log their own time on it and is asked
+about their own time before setting it Done. Only the people a save adds are checked, so a colleague who has since
+been deactivated stays on the task until someone removes them; moving a task to another department re-checks everyone
+on it. **Take** is for a task with nobody assigned. Wherever tasks are counted by assignee - the reports, the
+dashboard, the Today page - a shared task is under each of its assignees, whole, and once in the total: an estimate
+is never split. Each person added is emailed, and the due-soon reminder goes to every assignee.
+
+A task can be created on someone else's behalf (spec §6.2.2). Besides its **assignees**, who do it, a task may have
 a **requestee**, whom it is for; its creator is always the person who actually created it. With **Create tasks for
-others** above Own, the task form shows a Requestee field under Assignee: anyone in your department at Department,
+others** above Own, the task form shows a Requestee field under Assignees: anyone in your department at Department,
 anyone at All (which badges the role company-wide). The requestee is emailed and the task counts as their own, so
 they can open, edit and plan it as its creator can, wherever it is filed. The edit form changes or clears the
 requestee, if your reach covers both the old and the new person. The Tasks list's **Requestee** filter (*Me* first)
@@ -115,8 +127,8 @@ Department or All to the roles that need it (a helpdesk, a PA, a team lead).
 
 Setting a task assigned to you to **Done** in the web UI (the status control on the task page, a task list or the
 sprint board, or the edit form) asks first if you haven't logged any time on it and have no clock running on it
-(spec §6.10); Cancel leaves the status as it was. It's a reminder, not a rule: nobody else is asked, and neither is
-MCP's `update_task`.
+(spec §6.10); Cancel leaves the status as it was. On a shared task each assignee is asked about their own time. It's a
+reminder, not a rule: nobody else is asked, and neither is MCP's `update_task`.
 
 The task clock (**Start Clock**) runs per task: each task page has its own, and leaving a page stops only that page's
 clock (spec §6.10). On a task page, subtasks and linked tasks (Waiting on, Blocks) open in a new tab, so you can run
@@ -210,9 +222,16 @@ one-off: nothing is kept in step with AD afterwards.
   unlinks it on `update_task`), `list_tasks` filters on it, task results carry `assetId` and `asset`, and `get_asset`
   returns the asset's task history (`tasks`, with `tasksVisible` / `tasksNotVisible`). The key can link only an asset
   it can see that isn't disposed.
+- A task has any number of assignees (spec §6.2.3): `create_task` / `update_task` take `assigneeIds`, an array of
+  user ids from `list_users`. On `update_task` it is the complete new set - `[]` unassigns everyone, and leaving it out
+  keeps the assignees as they are. Task results list `assignees` as `{ id, name, active }`; `list_tasks` filters on one
+  `assigneeId` (the tasks that person is on) or on `unassigned`. **This replaced the single `assigneeId`** on
+  `create_task` / `update_task` and the `assigneeId` / `assignee` fields in results. A caller that still passes
+  `assigneeId` to those two tools gets no error: the argument is ignored and the task is saved without the assignment,
+  so update any saved prompt, routine or script that names it.
 - A task can be created on someone's behalf (spec §6.2.2): `create_task` / `update_task` take `requesteeId` (a user
   id from `list_users`; `"none"` clears it on `update_task`), `list_tasks` filters on it, and task results carry
-  `requesteeId` and `requestee` beside the assignee. The key's **Create tasks for others** scope decides whom it may
+  `requesteeId` and `requestee` beside the assignees. The key's **Create tasks for others** scope decides whom it may
   name; a key on the shipped grants (Own) can name nobody.
 - Tasks can be subtasks (`parentTaskId`) and can depend on each other (`add_dependency`: FS, SS, FF or SF
   plus a lag in days, spec §6.15). Links gate status changes - the successor can't start / finish until the
@@ -295,6 +314,10 @@ reports:
   neither is) who logged nothing in the period are listed too, with 0, greyed out at the bottom.
 - **Estimate accuracy** - tasks completed in the period, grouped by assignee: estimated against actual time, the
   variance, and how many ran over. Expand a row to see its tasks, largest overrun first.
+
+A task with several assignees (spec §6.2.3) is under each of them in the reports grouped by assignee - closed count,
+the two mean times, estimate accuracy and the project report's people - and counts once in the total, so the rows can
+add up to more than it.
 
 And one about projects:
 

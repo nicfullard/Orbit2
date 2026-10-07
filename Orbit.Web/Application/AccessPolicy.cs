@@ -5,17 +5,20 @@ namespace Orbit.Application;
 /// <summary>
 /// The §6.5 rules as code: which permission, at which scope, each operation needs. Every service consults these,
 /// so the Razor Pages UI, the MCP tools and any future REST surface are bound by exactly the same checks.
-/// "Own" means assigned to, created by or (for tasks) created for the actor as the requestee, for tasks and recurring
-/// definitions; owned by the actor for projects.
+/// "Own" means assigned to (as one of the assignees, §6.2.3), created by or (for tasks) created for the actor as the requestee,
+/// for tasks and recurring definitions; owned by the actor for projects.
 /// </summary>
 public static class AccessPolicy
 {
-    /// <summary>A task is the actor's own when they are its assignee, its creator or its requestee (§6.2.2): the person it was created for has the creator's rights.</summary>
+    /// <summary>
+    /// A task is the actor's own when they are one of its assignees (§6.2.3), its creator or its requestee (§6.2.2): the person it
+    /// was created for has the creator's rights.
+    /// </summary>
     private static bool IsOwn(Actor a, TaskItem t) =>
-        a.UserId is Guid me && (t.AssigneeId == me || t.CreatedById == me || t.RequesteeId == me);
+        a.UserId is Guid me && (t.IsAssignedTo(me) || t.CreatedById == me || t.RequesteeId == me);
 
     private static bool IsOwn(Actor a, RecurringTaskDefinition d) =>
-        a.UserId is Guid me && (d.AssigneeId == me || d.CreatedById == me);
+        a.UserId is Guid me && (d.IsAssignedTo(me) || d.CreatedById == me);
 
     private static bool IsOwn(Actor a, Project p) => a.UserId is Guid me && p.OwnerId == me;
 
@@ -27,10 +30,11 @@ public static class AccessPolicy
     /// <summary>
     /// Taking an unassigned task: tasks.take in the task's department lets a signed-in user assign an open, unassigned
     /// task to themselves. This is the one assignee change someone may make on a task they can't otherwise edit;
-    /// once it is theirs, <see cref="CanEditTask"/> applies like any assigned task.
+    /// once it is theirs, <see cref="CanEditTask"/> applies like any assigned task. A task that already has an assignee
+    /// can't be taken: joining it is an edit (§6.2.3).
     /// </summary>
     public static bool CanTakeTask(Actor a, TaskItem t) =>
-        a.UserId is not null && t.IsOpen && t.AssigneeId is null && a.CanInDepartment(Permission.TasksTake, t.DepartmentId);
+        a.UserId is not null && t.IsOpen && t.IsUnassigned && a.CanInDepartment(Permission.TasksTake, t.DepartmentId);
 
     /// <summary>
     /// Changing a task's status, including closing it (Done/Cancelled) and reopening it, follows edit rights (§13 item 35).
@@ -98,11 +102,11 @@ public static class AccessPolicy
     public static bool CanEditRecurring(Actor a, RecurringTaskDefinition d) => a.Can(Permission.TasksEdit, d.DepartmentId, IsOwn(a, d));
 
     /// <summary>
-    /// time.log: at Own, the actor's own time on tasks assigned to them; at Department, for anyone in the task's department; at All, anyone anywhere.
+    /// time.log: at Own, the actor's own time on tasks they are an assignee of; at Department, for anyone in the task's department; at All, anyone anywhere.
     /// </summary>
     public static bool CanLogTimeFor(Actor a, TaskItem t, Guid targetUserId) =>
         a.CanInDepartment(Permission.TimeLog, t.DepartmentId) ||
-        (targetUserId == a.UserId && t.AssigneeId == a.UserId && a.ScopeOf(Permission.TimeLog) >= PermissionScope.Own);
+        (targetUserId == a.UserId && t.IsAssignedTo(targetUserId) && a.ScopeOf(Permission.TimeLog) >= PermissionScope.Own);
 
     public static bool CanEditTimeEntry(Actor a, TimeEntry e, TaskItem task) =>
         a.CanInDepartment(Permission.TimeLog, task.DepartmentId) ||

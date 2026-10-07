@@ -140,7 +140,7 @@ else
                                 <span class="fw-semibold">@t.Title</span>
                             }
                         </div>
-                        <div class="text-muted gantt-sub text-truncate">@dates@(t.Assignee is null ? "" : $" · {t.Assignee.DisplayName}")@(Model.IsCrossDepartment ? $" · {t.Department.Name}" : "")</div>
+                        <div class="text-muted gantt-sub text-truncate">@dates@(t.IsUnassigned ? "" : $" · {t.AssigneeNames}")@(Model.IsCrossDepartment ? $" · {t.Department.Name}" : "")</div>
                     </div>
                     @if (r.Critical)
                     {

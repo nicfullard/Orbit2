@@ -193,6 +193,37 @@ public class DetailsModel(
         return RedirectToPage(new { id });
     }
 
+    /// <summary>Assign the task to one more person (§6.2.3), without saving anything else on it.</summary>
+    public async Task<IActionResult> OnPostAssignAsync(Guid id, Guid? userId, CancellationToken ct)
+    {
+        if (userId is not Guid person)
+        {
+            Error("Choose someone to assign the task to.");
+            return RedirectToPage(new { id });
+        }
+        try
+        {
+            var task = await tasks.AddAssigneeAsync(id, person, ct);
+            Success($"Assigned to {task.Assignees.First(u => u.Id == person).DisplayName}.");
+        }
+        catch (ValidationException ex) { Error(ex.Message); }
+        return RedirectToPage(new { id });
+    }
+
+    public async Task<IActionResult> OnPostUnassignAsync(Guid id, Guid userId, CancellationToken ct)
+    {
+        try
+        {
+            var actor = await actors.GetAsync(ct);
+            var task = await tasks.RemoveAssigneeAsync(id, userId, ct);
+            Success(userId == actor.UserId ? "You are no longer assigned to this task." : "Assignee removed.");
+            // Someone whose only tie to the task was being assigned to it may not be able to open it any more.
+            if (!AccessPolicy.CanViewTask(actor, task)) return RedirectToPage("/Tasks/My");
+        }
+        catch (ValidationException ex) { Error(ex.Message); }
+        return RedirectToPage(new { id });
+    }
+
     /// <summary>Add a dependency (§6.15). direction "waits-on": this task waits on the other; "blocks": the other waits on this task.</summary>
     public async Task<IActionResult> OnPostAddDependencyAsync(Guid id, Guid? otherTaskId, string? direction, DependencyType type, int lagDays, CancellationToken ct)
     {

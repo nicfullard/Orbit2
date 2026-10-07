@@ -83,7 +83,7 @@ public sealed class RecurrenceService(
     // --- definitions CRUD ---------------------------------------------------------------------
 
     private static IQueryable<RecurringTaskDefinition> WithIncludes(IQueryable<RecurringTaskDefinition> q) => q
-        .Include(r => r.Department).Include(r => r.Project).ThenInclude(p => p!.Department).Include(r => r.Assignee).Include(r => r.Asset).Include(r => r.CreatedBy);
+        .Include(r => r.Department).Include(r => r.Project).ThenInclude(p => p!.Department).Include(r => r.Asset).Include(r => r.CreatedBy);
 
     public async Task<IReadOnlyList<RecurringTaskDefinition>> ListAsync(RecurringFilter f, CancellationToken ct = default)
     {
@@ -113,7 +113,7 @@ public sealed class RecurrenceService(
         var departmentId = await ResolveDepartmentAsync(input.ProjectId, input.DepartmentId, actor, existing: null, ct);
         AccessPolicy.Require(AccessPolicy.CanCreateTaskIn(actor, departmentId), "You don't have permission to create recurring tasks in this department.");
         await RequireOpenDepartmentAsync(departmentId, ct);
-        await ValidateAssigneeAsync(input.AssigneeId, departmentId, ct);
+        var assignees = await AssigneeResolver.ResolveAsync(db, [], input.AssigneeIds ?? [], departmentId, departmentChanging: false, ct);
         await assets.CheckLinkAsync(input.AssetId, null, ct);
         if (input.LeadTimeDays is < 0 or > 365) throw new ValidationException("Lead time must be between 0 and 365 days.");
 
@@ -126,7 +126,7 @@ public sealed class RecurrenceService(
             ProjectId = input.ProjectId,
             DepartmentId = departmentId,
             Priority = input.Priority,
-            AssigneeId = input.AssigneeId,
+            Assignments = [],
             AssetId = input.AssetId,
             RecurrenceRule = rule,
             StartDate = input.StartDate,
@@ -139,10 +139,12 @@ public sealed class RecurrenceService(
         def.NextRunDate = NextOccurrenceOnOrAfter(rule, def.StartDate, today > def.StartDate ? today : def.StartDate);
         if (def.NextRunDate is null)
             throw new ValidationException("The recurrence rule produces no future occurrences from the start date.");
+        foreach (var assignee in assignees.Added)
+            def.Assignments.Add(new RecurringTaskAssignment { RecurringTaskDefinitionId = def.Id, UserId = assignee.Id });
 
         db.RecurringTaskDefinitions.Add(def);
         audit.Add(actor, AuditEntity.RecurringTaskDefinition, def.Id, AuditAction.Created, departmentId, def.Title,
-            new { def.Title, def.RecurrenceRule, def.StartDate, def.NextRunDate, def.LeadTimeDays, def.ProjectId, def.DepartmentId, def.AssigneeId, def.AssetId });
+            new { def.Title, def.RecurrenceRule, def.StartDate, def.NextRunDate, def.LeadTimeDays, def.ProjectId, def.DepartmentId, def.AssigneeIds, def.AssetId });
         await db.SaveChangesAsync(ct);
         return await GetAsync(def.Id, ct);
     }
@@ -163,7 +165,9 @@ public sealed class RecurrenceService(
             AccessPolicy.Require(AccessPolicy.CanMoveTaskTo(actor, departmentId), "You don't have permission to move recurring tasks into that department.");
             await RequireOpenDepartmentAsync(departmentId, ct);
         }
-        await ValidateAssigneeAsync(input.AssigneeId, departmentId, ct);
+        // §6.2.3, as for a task: the people added are checked; the people kept only when the definition changes department.
+        var assignees = await AssigneeResolver.ResolveAsync(db, def.AssigneeIds, input.AssigneeIds, departmentId,
+            departmentChanging: departmentId != def.DepartmentId, ct);
         await assets.CheckLinkAsync(input.AssetId, def.AssetId, ct); // a kept asset isn't re-checked (§6.19)
         if (input.LeadTimeDays is < 0 or > 365) throw new ValidationException("Lead time must be between 0 and 365 days.");
 
@@ -173,19 +177,30 @@ public sealed class RecurrenceService(
             .Track("projectId", def.ProjectId, input.ProjectId)
             .Track("departmentId", def.DepartmentId, departmentId)
             .Track("priority", def.Priority, input.Priority)
-            .Track("assigneeId", def.AssigneeId, input.AssigneeId)
             .Track("assetId", def.AssetId, input.AssetId)
             .Track("recurrenceRule", def.RecurrenceRule, rule)
             .Track("startDate", def.StartDate, input.StartDate)
             .Track("leadTimeDays", def.LeadTimeDays, input.LeadTimeDays);
-        if (!changes.HasChanges) return def;
+        if (!changes.HasChanges && assignees.IsEmpty) return def;
 
         def.Title = title;
         def.Description = Clean(input.Description);
         def.ProjectId = input.ProjectId;
         def.DepartmentId = departmentId;
         def.Priority = input.Priority;
-        def.AssigneeId = input.AssigneeId;
+        // One audit entry per person, as on a task (§6.2.3).
+        foreach (var row in def.Assignments.Where(x => assignees.Removed.Contains(x.UserId)).ToList())
+        {
+            db.RecurringTaskAssignments.Remove(row);
+            audit.Add(actor, AuditEntity.RecurringTaskDefinition, def.Id, AuditAction.AssigneeRemoved, departmentId, title,
+                new { userId = row.UserId, user = row.User.DisplayName });
+        }
+        foreach (var assignee in assignees.Added)
+        {
+            db.RecurringTaskAssignments.Add(new RecurringTaskAssignment { RecurringTaskDefinitionId = def.Id, UserId = assignee.Id });
+            audit.Add(actor, AuditEntity.RecurringTaskDefinition, def.Id, AuditAction.AssigneeAdded, departmentId, title,
+                new { userId = assignee.Id, user = assignee.DisplayName });
+        }
         def.AssetId = input.AssetId;
         def.LeadTimeDays = input.LeadTimeDays;
         if (changes.Contains("recurrenceRule") || changes.Contains("startDate"))
@@ -198,7 +213,8 @@ public sealed class RecurrenceService(
                 throw new ValidationException("The recurrence rule produces no future occurrences from the start date.");
         }
         def.UpdatedAt = DateTime.UtcNow;
-        audit.Add(actor, AuditEntity.RecurringTaskDefinition, def.Id, AuditAction.Updated, departmentId, def.Title, changes.Changes);
+        if (changes.HasChanges)
+            audit.Add(actor, AuditEntity.RecurringTaskDefinition, def.Id, AuditAction.Updated, departmentId, def.Title, changes.Changes);
         await db.SaveChangesAsync(ct);
         return await GetAsync(def.Id, ct);
     }
@@ -301,7 +317,8 @@ public sealed class RecurrenceService(
         if (exists) return null;
 
         var projectId = def.Project is { Status: not ProjectStatus.Archived } ? def.ProjectId : null;
-        var assigneeId = def.Assignee is { IsActive: true, IsSystemAccount: false } ? def.AssigneeId : null;
+        // The definition's assignees who are still active (§6.2.3); none left means the task waits unassigned.
+        var assigneeIds = def.Assignees.Where(u => u is { IsActive: true, IsSystemAccount: false }).Select(u => u.Id).ToList();
         // A disposed asset is no longer worked on (§6.19): the task is generated without it, as an archived project is left off.
         var assetId = def.Asset is { Status: not AssetStatus.Disposed } ? def.AssetId : null;
         var now = DateTime.UtcNow;
@@ -314,7 +331,7 @@ public sealed class RecurrenceService(
             ProjectId = projectId,
             AssetId = assetId,
             Priority = def.Priority,
-            AssigneeId = assigneeId,
+            Assignments = [],
             DueDate = due,
             Status = TaskItemStatus.Todo,
             Source = TaskSource.Recurring,
@@ -324,10 +341,13 @@ public sealed class RecurrenceService(
             CreatedAt = now,
             UpdatedAt = now
         };
+        // The definition assigned them, not a person: AssignedById stays null.
+        foreach (var userId in assigneeIds)
+            task.Assignments.Add(new TaskAssignment { TaskId = task.Id, UserId = userId, AssignedAt = now });
         db.Tasks.Add(task);
         def.LastGeneratedAt = now;
         audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.Generated, def.DepartmentId, task.Title,
-            new { recurringTaskDefinitionId = def.Id, dueDate = due, task.Priority, task.AssigneeId, task.ProjectId, task.AssetId });
+            new { recurringTaskDefinitionId = def.Id, dueDate = due, task.Priority, task.AssigneeIds, task.ProjectId, task.AssetId });
         return task;
     }
 
@@ -383,15 +403,5 @@ public sealed class RecurrenceService(
         var department = await db.Departments.AsNoTracking().FirstOrDefaultAsync(x => x.Id == departmentId, ct)
             ?? throw new NotFoundException("Department not found.");
         if (department.IsArchived) throw new ValidationException($"Department \"{department.Name}\" is archived.");
-    }
-
-    private async Task ValidateAssigneeAsync(Guid? assigneeId, Guid departmentId, CancellationToken ct)
-    {
-        if (assigneeId is not Guid id) return;
-        var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == id, ct)
-            ?? throw new NotFoundException("Assignee not found.");
-        if (!user.IsActive || user.IsSystemAccount) throw new ValidationException("The assignee must be an active user.");
-        if (user.DepartmentId == departmentId) return;
-        if (!await RoleResolver.HasScopeAsync(db, id, Permission.TasksView, PermissionScope.All, ct)) throw new ValidationException("A task can't be assigned to a user outside its own department.");
     }
 }

@@ -46,7 +46,7 @@
                                 <td><code>@d.RecurrenceRule</code></td>
                                 <td>@Ui.Day(d.NextRunDate)</td>
                                 <td>@d.LeadTimeDays d</td>
-                                <td>@(d.Assignee?.DisplayName ?? "-")</td>
+                                <td>@(d.AssigneeNames ?? "-")</td>
                                 <td>@if (d.Active) { <span class="badge text-bg-success">Active</span> } else { <span class="badge text-bg-secondary">Paused</span> }</td>
                                 <td class="text-end text-nowrap">
                                     @if (canEdit)

@@ -12,6 +12,14 @@
         Id = "asset-picker", FieldName = "Form.AssetId", SearchUrl = Url.Page("/Assets/Lookup")!,
         SelectedId = form.AssetId, SelectedLabel = Model.SelectedAssetLabel, Label = "The asset this task is about"
     };
+    // The assignees (§6.2.3): the people of the task's department, so the picker follows the department and project fields.
+    var assigneePicker = new Orbit.Pages.Assets.PersonPickerVm
+    {
+        Id = "assignee-picker", FieldName = "Form.AssigneeIds", SearchUrl = Url.Page("/Tasks/Assignees")!,
+        Selected = Model.SelectedAssignees, Browse = true, MarkInactive = true, EmptyText = "Nobody - unassigned",
+        Placeholder = "Type a name, or click to choose...", Label = "Search for someone to assign",
+        DepartmentSource = "[name='Form.DepartmentId']", ProjectSource = "#Form_ProjectId", DefaultDepartmentId = Model.DefaultDepartmentId
+    };
 }
 
 <div asp-validation-summary="ModelOnly" class="text-danger mb-2"></div>
@@ -49,7 +57,7 @@
     {
         <div class="@firstRowCol">
             <label class="form-label" for="Form_DepartmentId">Department</label>
-            <select class="form-select js-department-select" id="Form_DepartmentId" name="Form.DepartmentId" asp-items="Model.Departments" data-assignee-target="#Form_AssigneeId"></select>
+            <select class="form-select js-department-select" id="Form_DepartmentId" name="Form.DepartmentId" asp-items="Model.Departments"></select>
             <div class="form-text">
                 The department that owns and works this task. Default: the project's department, or your own for a standalone task.
                 A project can hold tasks for several departments; each department sees and works its own.
@@ -80,7 +88,7 @@
     }
 </div>
 
-@* Three stacked pairs: what kind and how urgent, when, and who - the assignee who does it over the requestee it is for (§6.2.2). *@
+@* Three stacked pairs: what kind and how urgent, when, and who - the assignees who do it over the requestee it is for (§6.2.2, §6.2.3). *@
 <div class="row g-3 mt-0">
     <div class="col-md-4">
         <label class="form-label" for="Form_Type">Type</label>
@@ -99,17 +107,15 @@
         </div>
     </div>
     <div class="col-md-4">
-        <label class="form-label" for="Form_AssigneeId">Assignee</label>
-        <select class="form-select" id="Form_AssigneeId" name="Form.AssigneeId">
-            @foreach (var o in Model.Assignees)
+        <label class="form-label" for="assignee-picker-input">Assignees</label>
+        <partial name="/Pages/Assets/_PersonPicker.cshtml" model="assigneePicker" />
+        <div class="form-text">
+            One person, several who share the task, or nobody.
+            @if (Model.CanChooseDepartment)
             {
-                <option value="@o.Value" data-department="@o.DepartmentId" selected="@o.Selected">@o.Text</option>
+                <text>They must belong to the task's department (people whose role sees every department can be assigned anywhere).</text>
             }
-        </select>
-        @if (Model.CanChooseDepartment)
-        {
-            <div class="form-text">Must belong to the task's department (people whose role sees every department can be assigned anywhere).</div>
-        }
+        </div>
         @if (Model.CanChooseRequestee)
         {
             <div class="mt-3">

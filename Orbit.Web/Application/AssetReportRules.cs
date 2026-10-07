@@ -189,7 +189,7 @@ public static class AssetReportRules
         IReadOnlyList<AssetTaskFacts> tasks, Func<Guid?, string> name, DateTime fromUtc, DateTime toUtc, DateOnly today) =>
         tasks.Select(t => (Task: t, Created: t.CreatedAt >= fromUtc && t.CreatedAt < toUtc, Done: IsDoneIn(t, fromUtc, toUtc)))
             .Where(x => !x.Task.Status.IsClosed() || x.Created || x.Done || x.Task.PeriodMinutes > 0)
-            .Select(x => new AssetTaskRow(x.Task.Id, x.Task.Number, x.Task.Title, x.Task.Status, name(x.Task.AssigneeId),
+            .Select(x => new AssetTaskRow(x.Task.Id, x.Task.Number, x.Task.Title, x.Task.Status, TimeReportRules.AssigneeNames(x.Task.AssigneeIds, name),
                 x.Task.DueDate, IsOverdue(x.Task, today), x.Task.CompletedAt, x.Task.PeriodMinutes, x.Created, x.Done))
             .OrderBy(r => r.Status)
             .ThenBy(r => r.DueDate is null)

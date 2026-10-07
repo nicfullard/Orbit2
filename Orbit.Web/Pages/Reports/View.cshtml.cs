@@ -20,7 +20,7 @@ public class ViewModel(ReportingService reporting, ProjectService projects, Depa
     /// <summary>reports.view at Department scope fixes the department to the viewer's own (§6.5): the picker is hidden.</summary>
     public bool CanChooseDepartment { get; private set; }
     public ReportDefinition Definition { get; private set; } = null!;
-    public IReadOnlyList<PersonCountRow>? CountRows { get; private set; }
+    public PersonCountReport? Counts { get; private set; }
     public MeanTimeReport? MeanTime { get; private set; }
     public TimeByPersonReport? TimeByPerson { get; private set; }
     public EstimateAccuracyReport? EstimateAccuracy { get; private set; }
@@ -46,10 +46,11 @@ public class ViewModel(ReportingService reporting, ProjectService projects, Depa
     {
         await RunAsync(ct);
         var tables = new List<ReportPdfBuilder.Table>();
-        if (CountRows is not null)
+        if (Counts is not null)
         {
-            tables.Add(new ReportPdfBuilder.Table(["Person", "Count"],
-                CountRows.Select(r => (IReadOnlyList<string>)[r.Name, r.Count.ToString()]).ToList()));
+            var rows = Counts.Rows.Select(r => (IReadOnlyList<string>)[r.Name, r.Count.ToString()]).ToList();
+            rows.Add(["Total", Counts.Total.ToString()]);
+            tables.Add(new ReportPdfBuilder.Table(["Person", "Count"], rows));
         }
         if (MeanTime is not null)
         {
@@ -293,8 +294,8 @@ public class ViewModel(ReportingService reporting, ProjectService projects, Depa
 
         switch (Kind)
         {
-            case ReportKind.ClosedByPerson: CountRows = await reporting.ClosedByPersonAsync(filter, ct); break;
-            case ReportKind.CreatedByPerson: CountRows = await reporting.CreatedByPersonAsync(filter, ct); break;
+            case ReportKind.ClosedByPerson: Counts = await reporting.ClosedByPersonAsync(filter, ct); break;
+            case ReportKind.CreatedByPerson: Counts = await reporting.CreatedByPersonAsync(filter, ct); break;
             case ReportKind.MeanTimeToRespond: MeanTime = await reporting.MeanTimeToRespondAsync(filter, ct); break;
             case ReportKind.MeanTimeToResolve: MeanTime = await reporting.MeanTimeToResolveAsync(filter, ct); break;
             case ReportKind.TimeByPerson: TimeByPerson = await reporting.TimeByPersonAsync(filter, ct); break;

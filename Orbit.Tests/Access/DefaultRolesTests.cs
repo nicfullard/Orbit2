@@ -18,7 +18,7 @@ public class DefaultRolesTests
     private static readonly Actor SysAdmin = TestActors.SystemAdmin();
 
     private static TaskItem Task(Guid department, Guid? assignee = null, Guid? createdBy = null) =>
-        new() { DepartmentId = department, AssigneeId = assignee, CreatedById = createdBy ?? Guid.NewGuid() };
+        new() { DepartmentId = department, Assignments = Assigned.To(assignee), CreatedById = createdBy ?? Guid.NewGuid() };
 
     private static Project Project(Guid department, Guid? owner = null) => new() { DepartmentId = department, OwnerId = owner ?? Guid.NewGuid() };
 

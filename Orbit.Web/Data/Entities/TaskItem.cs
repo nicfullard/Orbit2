@@ -30,8 +30,13 @@ public class TaskItem
     public TaskType Type { get; set; } = TaskType.Task;
     /// <summary>Estimated effort in minutes (spec §6.10); null = no estimate. Compared with the time logged on the task page.</summary>
     public int? EstimateMinutes { get; set; }
-    public Guid? AssigneeId { get; set; }
-    public ApplicationUser? Assignee { get; set; }
+    /// <summary>
+    /// Who does the task (spec §6.2.3): any number of people, all equal, or nobody. Loaded with every task (an auto-include,
+    /// ApplicationDbContext), since being an assignee is part of what makes a task someone's own (§6.5). Deliberately not
+    /// initialised: read it through <see cref="IsAssignedTo"/> and the members beside it, which refuse a task whose assignees
+    /// were never loaded rather than answer "nobody".
+    /// </summary>
+    public ICollection<TaskAssignment> Assignments { get; set; } = null!;
     public Guid? CreatedById { get; set; }
     public ApplicationUser? CreatedBy { get; set; }
     public TaskSource Source { get; set; } = TaskSource.Manual;
@@ -77,4 +82,29 @@ public class TaskItem
 
     public bool IsOpen => !Status.IsClosed();
     public bool IsOverdue(DateOnly today) => IsOpen && DueDate.HasValue && DueDate.Value < today;
+
+    private ICollection<TaskAssignment> LoadedAssignments =>
+        Assignments ?? throw new InvalidOperationException("The task's assignees weren't loaded.");
+
+    /// <summary>Nobody is assigned: work waiting to be taken (§6.5).</summary>
+    public bool IsUnassigned => LoadedAssignments.Count == 0;
+    public bool IsAssignedTo(Guid userId) => LoadedAssignments.Any(x => x.UserId == userId);
+    public IReadOnlyList<Guid> AssigneeIds => LoadedAssignments.Select(x => x.UserId).ToList();
+    /// <summary>The assignees, by name.</summary>
+    public IReadOnlyList<ApplicationUser> Assignees => LoadedAssignments.Select(x => x.User).OrderBy(u => u.DisplayName).ToList();
+    /// <summary>The assignees' names in order, comma-separated; null when nobody is assigned.</summary>
+    public string? AssigneeNames => IsUnassigned ? null : string.Join(", ", Assignees.Select(u => u.DisplayName));
+}
+
+/// <summary>One person assigned to a task (spec §6.2.3). Earlier assignments are in the task's audit history.</summary>
+public class TaskAssignment
+{
+    public Guid TaskId { get; set; }
+    public TaskItem Task { get; set; } = null!;
+    public Guid UserId { get; set; }
+    public ApplicationUser User { get; set; } = null!;
+    public DateTime AssignedAt { get; set; } = DateTime.UtcNow;
+    /// <summary>Who assigned them; null when a recurring definition did (§6.4).</summary>
+    public Guid? AssignedById { get; set; }
+    public ApplicationUser? AssignedBy { get; set; }
 }

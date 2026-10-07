@@ -16,8 +16,8 @@ public class TimeReportRulesTests
 
     private static int _number;
 
-    private static TaskTimeFacts Task(int? estimate, int total, TaskItemStatus status = TaskItemStatus.InProgress, Guid? assignee = null) =>
-        new(Guid.NewGuid(), $"T-26-{Interlocked.Increment(ref _number):00000}", "Task", status, assignee, estimate, total);
+    private static TaskTimeFacts Task(int? estimate, int total, TaskItemStatus status = TaskItemStatus.InProgress, Guid? assignee = null, Guid[]? assignees = null) =>
+        new(Guid.NewGuid(), $"T-26-{Interlocked.Increment(ref _number):00000}", "Task", status, assignees ?? (assignee is Guid a ? [a] : []), estimate, total);
 
     private static Dictionary<Guid, TaskTimeFacts> Index(params TaskTimeFacts[] tasks) => tasks.ToDictionary(t => t.Id);
 
@@ -100,6 +100,31 @@ public class TimeReportRulesTests
         Assert.Equal(630, report.TotalLoggedMinutes);
         Assert.Equal(2, report.TotalTasks);
         Assert.Equal(new EstimateComparison(2, 660, 630, 1), report.Total); // not 1260 estimated / 1170 actual
+    }
+
+    /// <summary>
+    /// ASGN-008: a completed task with several assignees (§6.2.3) is under each of them with its whole estimate - it is never
+    /// split - and counts once in the report's own totals.
+    /// </summary>
+    [Fact]
+    public void Estimate_accuracy_lists_a_shared_task_under_each_assignee_and_counts_it_once()
+    {
+        var shared = Task(120, 150, TaskItemStatus.Done, assignees: [Alice, Bob]);
+        var report = TimeReportRules.EstimateAccuracy([shared, Task(60, 30, TaskItemStatus.Done, Bob)], Name);
+
+        Assert.Equal(2, report.DoneCount);
+        Assert.Equal(new EstimateComparison(2, 180, 180, 1), report.Overall);
+        Assert.Equal(["Bob", "Alice"], report.Rows.Select(r => r.Name));
+
+        var bob = report.Rows[0];
+        Assert.Equal(2, bob.DoneCount);
+        Assert.Equal(new EstimateComparison(2, 180, 180, 1), bob.Estimate);
+        var alice = report.Rows[1];
+        Assert.Equal(1, alice.DoneCount);
+        Assert.Equal(new EstimateComparison(1, 120, 150, 1), alice.Estimate);
+        Assert.Contains(shared.Id, bob.Tasks.Select(t => t.TaskId));
+        Assert.Contains(shared.Id, alice.Tasks.Select(t => t.TaskId));
+        Assert.Equal(3, report.Rows.Sum(r => r.DoneCount)); // the rows count it twice; the report once
     }
 
     /// <summary>RPT-004: estimate accuracy groups completed tasks by assignee (none = Unassigned) with variance and over-count.</summary>

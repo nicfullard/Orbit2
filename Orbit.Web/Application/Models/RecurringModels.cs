@@ -9,7 +9,8 @@ public sealed class RecurringInput
     public Guid? ProjectId { get; set; }
     public Guid? DepartmentId { get; set; }
     public TaskPriority Priority { get; set; } = TaskPriority.Medium;
-    public Guid? AssigneeId { get; set; }
+    /// <summary>The complete set of assignees each generated task gets (§6.2.3), under a task's rule. Null on update keeps them.</summary>
+    public IReadOnlyList<Guid>? AssigneeIds { get; set; }
     /// <summary>The asset each generated task is about (§6.19); the same rule as a task's asset. Null = none.</summary>
     public Guid? AssetId { get; set; }
     public string RecurrenceRule { get; set; } = string.Empty;

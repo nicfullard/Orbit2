@@ -88,7 +88,11 @@ else
                 <span class="d-flex flex-wrap align-items-center gap-2">
                     <span class="fw-semibold">@g.Name</span>
                     <span class="badge @(overloaded ? "text-bg-danger" : "text-bg-light border") fw-normal"
-                          title="Sum of the estimates of the tasks on this person's plan. More than a working day (@TimeFormat.Minutes(Model.WorkingDayMinutes)) still open is flagged as overloaded.">@load@(overloaded ? " - overloaded" : "")</span>
+                          title="Sum of the estimates of the tasks on this person's plan; a task shared with other assignees counts in full for each of them. More than a working day (@TimeFormat.Minutes(Model.WorkingDayMinutes)) still open is flagged as overloaded.">@load@(overloaded ? " - overloaded" : "")</span>
+                    @if (g.Shared > 0)
+                    {
+                        <span class="text-muted small" title="Tasks other people are assigned to as well - each is counted in full here">@g.Shared shared</span>
+                    }
                     @if (g.OpenUnestimated > 0)
                     {
                         <span class="text-muted small" title="Open tasks with no estimate - not counted in the sum">+ @g.OpenUnestimated without an estimate</span>

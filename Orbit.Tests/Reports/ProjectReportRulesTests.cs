@@ -33,8 +33,9 @@ public class ProjectReportRulesTests
 
     private static ProjectTaskFacts Task(
         ProjectFacts p, TaskItemStatus status = TaskItemStatus.InProgress, Guid? assignee = null, int? estimate = null,
-        int total = 0, int period = 0, DateOnly? due = null, DateTime? created = null, DateTime? completed = null) =>
-        new(new TaskTimeFacts(Guid.NewGuid(), $"T-26-{Interlocked.Increment(ref _number):00000}", "Task", status, assignee, estimate, total),
+        int total = 0, int period = 0, DateOnly? due = null, DateTime? created = null, DateTime? completed = null, Guid[]? assignees = null) =>
+        new(new TaskTimeFacts(Guid.NewGuid(), $"T-26-{Interlocked.Increment(ref _number):00000}", "Task", status,
+                assignees ?? (assignee is Guid a ? [a] : []), estimate, total),
             p.Id, due, created ?? From.AddDays(-50), completed, period);
 
     private static ProjectStatusChange Change(ProjectFacts p, DateTime at, ProjectStatus from, ProjectStatus to) => new(p.Id, at, from, to);
@@ -158,7 +159,10 @@ public class ProjectReportRulesTests
         Assert.False(Build([done], changes: [Change(done, Sep(5), ProjectStatus.Active, ProjectStatus.Completed)]).Rows[0].IsPastTarget);
     }
 
-    /// <summary>RPT-012: a row per person with time or a task, estimates of their live tasks, Unassigned last, adding up to the project.</summary>
+    /// <summary>
+    /// RPT-012: a row per person with time or a task, estimates of their live tasks, Unassigned last, adding up to the project -
+    /// while no task is shared; ASGN-009 below has the case where one is.
+    /// </summary>
     [Fact]
     public void People_add_up_to_the_project()
     {
@@ -189,6 +193,60 @@ public class ProjectReportRulesTests
         Assert.Equal(row.Estimate.EstimatedMinutes, row.People.Sum(x => x.EstimatedMinutes));
         Assert.Equal(row.LoggedInPeriodMinutes, row.People.Sum(x => x.LoggedInPeriodMinutes));
         Assert.Equal(row.LoggedToDateMinutes, row.People.Sum(x => x.LoggedToDateMinutes));
+    }
+
+    /// <summary>
+    /// ASGN-009: a task several people share (§6.2.3) is in each one's row, whole - open, done and estimate - and once in the
+    /// project's own figures, so the rows no longer add up to those; logged time, each person's own, still does.
+    /// </summary>
+    [Fact]
+    public void A_shared_task_is_in_each_assignees_row_and_once_in_the_project()
+    {
+        var p = Project("Build");
+        var report = Build([p],
+            [
+                Task(p, TaskItemStatus.InProgress, estimate: 120, total: 50, period: 50, assignees: [Alice, Bob]),
+                Task(p, TaskItemStatus.Done, estimate: 60, total: 20, period: 20, completed: Sep(8), assignees: [Bob, Alice]),
+                Task(p, TaskItemStatus.Todo, Bob, estimate: 30)
+            ],
+            [
+                new ProjectPersonTime(p.Id, Alice, 40, 40),
+                new ProjectPersonTime(p.Id, Bob, 30, 30)
+            ]);
+
+        var row = Assert.Single(report.Rows);
+        Assert.Equal(["Alice", "Bob"], row.People.Select(x => x.Name));
+        Assert.Equal(new ProjectPersonRow(Alice, "Alice", 1, 1, 2, 180, 40, 40), row.People[0]);
+        Assert.Equal(new ProjectPersonRow(Bob, "Bob", 2, 1, 3, 210, 30, 30), row.People[1]);
+
+        // The project counts each task once...
+        Assert.Equal(2, row.Tasks.Open);
+        Assert.Equal(1, row.Tasks.DoneInPeriod);
+        Assert.Equal(210, row.Estimate.EstimatedMinutes);
+        // ...so a shared one is in the rows' sum once per assignee,
+        Assert.Equal(3, row.People.Sum(x => x.OpenTasks));
+        Assert.Equal(2, row.People.Sum(x => x.DoneInPeriod));
+        Assert.Equal(390, row.People.Sum(x => x.EstimatedMinutes));
+        // while logged time still adds up.
+        Assert.Equal(row.LoggedInPeriodMinutes, row.People.Sum(x => x.LoggedInPeriodMinutes));
+        Assert.Equal(row.LoggedToDateMinutes, row.People.Sum(x => x.LoggedToDateMinutes));
+    }
+
+    /// <summary>ASGN-010: a report's task list names every assignee of a task, by name, and "Unassigned" when there is none.</summary>
+    [Fact]
+    public void Task_lists_name_every_assignee()
+    {
+        var p = Project("Build");
+        var shared = Task(p, TaskItemStatus.Todo, due: new DateOnly(2026, 10, 3), assignees: [Carol, Alice, Bob]);
+        var row = Build([p], [shared, Task(p, TaskItemStatus.InProgress)]).Rows.Single();
+
+        Assert.Equal("Alice, Bob, Carol", row.TaskRows.Single(t => t.TaskId == shared.Task.Id).Assignee);
+        Assert.Equal("Unassigned", row.TaskRows.Single(t => t.TaskId != shared.Task.Id).Assignee);
+
+        // The asset report's task list uses the same rule.
+        Assert.Equal("Alice, Bob", TimeReportRules.AssigneeNames([Bob, Alice, Bob], Name));
+        Assert.Equal("Unassigned", TimeReportRules.AssigneeNames([], Name));
+        Assert.Equal(new Guid?[] { null }, TimeReportRules.AssigneesOrNone([]));
     }
 
     /// <summary>RPT-013: the task list is what's open plus what was worked on in the period, by status, due date and number.</summary>

@@ -1,20 +1,28 @@
 @using Orbit.Pages.Assets
 @model PersonPickerVm
-@* The people picker (spec §6.19): chips for the people chosen, and a type-ahead search. Behaviour in site.js (the type-ahead pickers). *@
+@* The people picker (spec §6.19, §6.2.3): chips for the people chosen, and a type-ahead search. Behaviour in site.js (the type-ahead pickers). *@
+@{
+    // A picker that follows the form's department: each chip carries the department its person belongs to, blank for someone
+    // who can be assigned anywhere, so the form can drop the chips that no longer fit when the department changes.
+    var byDepartment = Model.DepartmentSource is not null;
+}
 <div class="person-picker js-picker" id="@Model.Id" data-search-url="@Model.SearchUrl" data-field-name="@Model.FieldName" data-no-match="No one matches"
-     data-mode="@(Model.SubmitOnPick ? "submit" : "multi")">
+     data-mode="@(Model.SubmitOnPick ? "submit" : "multi")" data-browse="@(Model.Browse ? "1" : null)"
+     data-search-base="@(byDepartment ? Model.SearchUrl : null)" data-department-source="@Model.DepartmentSource"
+     data-project-source="@Model.ProjectSource" data-default-department="@Model.DefaultDepartmentId">
     @if (!Model.SubmitOnPick)
     {
         <div class="d-flex flex-wrap gap-1 mb-1 js-picker-chips">
             @foreach (var u in Model.Selected)
             {
-                <span class="badge rounded-pill text-bg-light border person-chip js-picker-chip" data-id="@u.Id" data-name="@u.DisplayName">
-                    <span class="fw-semibold">@u.DisplayName</span>@if (u.DepartmentName is not null) { <span class="text-muted fw-normal ms-1">@u.DepartmentName</span> }
+                <span class="badge rounded-pill text-bg-light border person-chip js-picker-chip" data-id="@u.Id" data-name="@u.DisplayName"
+                      data-scope="@(byDepartment && !u.CanViewAllTasks ? u.DepartmentId : null)">
+                    <span class="fw-semibold">@u.DisplayName</span>@if (u.DepartmentName is not null) { <span class="text-muted fw-normal ms-1">@u.DepartmentName</span> }@if (Model.MarkInactive && !u.IsActive) { <span class="text-muted fw-normal ms-1">(deactivated)</span> }
                     <input type="hidden" name="@Model.FieldName" value="@u.Id" />
                     <button type="button" class="btn-close ms-1 js-picker-remove" aria-label="Remove @u.DisplayName"></button>
                 </span>
             }
-            <span class="text-muted small js-picker-empty @(Model.Selected.Count == 0 ? "" : "d-none")">Nobody - unassigned</span>
+            <span class="text-muted small js-picker-empty @(Model.Selected.Count == 0 ? "" : "d-none")">@Model.EmptyText</span>
         </div>
     }
     else
@@ -22,7 +30,7 @@
         <input type="hidden" name="@Model.FieldName" value="" />
     }
     <div class="position-relative">
-        <input type="search" class="form-control form-control-sm js-picker-input" autocomplete="off" spellcheck="false"
+        <input type="search" class="form-control form-control-sm js-picker-input" id="@(Model.Id)-input" autocomplete="off" spellcheck="false"
                role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="@(Model.Id)-results"
                aria-label="@Model.Label" placeholder="@Model.Placeholder" />
         <ul class="list-group position-absolute w-100 shadow-sm person-picker-results js-picker-results d-none" id="@(Model.Id)-results" role="listbox"></ul>

@@ -10,22 +10,30 @@ public sealed class ReportingService(ApplicationDbContext db, IActorProvider act
 {
     private const string ClaudeName = "Claude";
 
-    /// <summary>Tasks set to Done in the period, grouped by assignee.</summary>
-    public async Task<IReadOnlyList<PersonCountRow>> ClosedByPersonAsync(ReportFilter f, CancellationToken ct = default)
+    /// <summary>
+    /// Tasks set to Done in the period, grouped by assignee. A task several people share (§6.2.3) counts under each of them, and
+    /// once in the total.
+    /// </summary>
+    public async Task<PersonCountReport> ClosedByPersonAsync(ReportFilter f, CancellationToken ct = default)
     {
         var actor = await RequireReportsAsync(ct);
-        var rows = await Apply(db.Tasks.AsNoTracking(), f, actor)
-            .Where(t => t.Status == TaskItemStatus.Done && t.CompletedAt >= f.FromUtc && t.CompletedAt < f.ToUtc)
-            .GroupBy(t => t.AssigneeId)
-            .Select(g => new { UserId = g.Key, Count = g.Count() })
+        var done = Apply(db.Tasks.AsNoTracking(), f, actor)
+            .Where(t => t.Status == TaskItemStatus.Done && t.CompletedAt >= f.FromUtc && t.CompletedAt < f.ToUtc);
+        var rows = await done.SelectMany(t => t.Assignments)
+            .GroupBy(x => x.UserId)
+            .Select(g => new { UserId = (Guid?)g.Key, Count = g.Count() })
             .ToListAsync(ct);
+        var unassigned = await done.CountAsync(t => !t.Assignments.Any(), ct);
+        if (unassigned > 0) rows.Add(new { UserId = (Guid?)null, Count = unassigned });
         var names = await NamesAsync(rows.Select(r => r.UserId), ct);
-        return rows.Select(r => new PersonCountRow(r.UserId, Name(r.UserId, names, "Unassigned"), r.Count))
-            .OrderByDescending(r => r.Count).ThenBy(r => r.Name).ToList();
+        return new PersonCountReport(
+            rows.Select(r => new PersonCountRow(r.UserId, Name(r.UserId, names, "Unassigned"), r.Count))
+                .OrderByDescending(r => r.Count).ThenBy(r => r.Name).ToList(),
+            await done.CountAsync(ct));
     }
 
     /// <summary>Tasks created in the period, grouped by author. API-created tasks roll up under Claude.</summary>
-    public async Task<IReadOnlyList<PersonCountRow>> CreatedByPersonAsync(ReportFilter f, CancellationToken ct = default)
+    public async Task<PersonCountReport> CreatedByPersonAsync(ReportFilter f, CancellationToken ct = default)
     {
         var actor = await RequireReportsAsync(ct);
         var rows = await Apply(db.Tasks.AsNoTracking(), f, actor)
@@ -34,23 +42,38 @@ public sealed class ReportingService(ApplicationDbContext db, IActorProvider act
             .Select(g => new { UserId = g.Key, Count = g.Count() })
             .ToListAsync(ct);
         var names = await NamesAsync(rows.Select(r => r.UserId), ct);
-        return rows.Select(r => new PersonCountRow(r.UserId, Name(r.UserId, names, "System (recurring)"), r.Count))
-            .OrderByDescending(r => r.Count).ThenBy(r => r.Name).ToList();
+        return new PersonCountReport(
+            rows.Select(r => new PersonCountRow(r.UserId, Name(r.UserId, names, "System (recurring)"), r.Count))
+                .OrderByDescending(r => r.Count).ThenBy(r => r.Name).ToList(),
+            rows.Sum(r => r.Count));
     }
 
-    /// <summary>Average FirstRespondedAt - CreatedAt for tasks created in the period that have responded.</summary>
+    /// <summary>
+    /// Average FirstRespondedAt - CreatedAt for tasks created in the period that have responded. By assignee, a task several
+    /// people share (§6.2.3) is in each one's average; the overall figure counts it once.
+    /// </summary>
     public async Task<MeanTimeReport> MeanTimeToRespondAsync(ReportFilter f, CancellationToken ct = default)
     {
         var actor = await RequireReportsAsync(ct);
         var q = Apply(db.Tasks.AsNoTracking(), f, actor)
             .Where(t => t.FirstRespondedAt != null && t.CreatedAt >= f.FromUtc && t.CreatedAt < f.ToUtc);
-        var rows = await q.GroupBy(t => t.AssigneeId)
+        var rows = await q.SelectMany(t => t.Assignments, (t, x) => new { x.UserId, t.CreatedAt, t.FirstRespondedAt })
+            .GroupBy(x => x.UserId)
             .Select(g => new
             {
-                UserId = g.Key,
+                UserId = (Guid?)g.Key,
                 Count = g.Count(),
-                AvgHours = g.Average(t => (t.FirstRespondedAt!.Value - t.CreatedAt).TotalHours)
+                AvgHours = g.Average(x => (x.FirstRespondedAt!.Value - x.CreatedAt).TotalHours)
             }).ToListAsync(ct);
+        var unassigned = q.Where(t => !t.Assignments.Any());
+        var unassignedCount = await unassigned.CountAsync(ct);
+        if (unassignedCount > 0)
+            rows.Add(new
+            {
+                UserId = (Guid?)null,
+                Count = unassignedCount,
+                AvgHours = await unassigned.AverageAsync(t => (t.FirstRespondedAt!.Value - t.CreatedAt).TotalHours, ct)
+            });
         var overallCount = await q.CountAsync(ct);
         double? overall = overallCount == 0 ? null
             : await q.AverageAsync(t => (t.FirstRespondedAt!.Value - t.CreatedAt).TotalHours, ct);
@@ -61,19 +84,29 @@ public sealed class ReportingService(ApplicationDbContext db, IActorProvider act
             overallCount, overall);
     }
 
-    /// <summary>Average CompletedAt - CreatedAt for tasks completed in the period.</summary>
+    /// <summary>Average CompletedAt - CreatedAt for tasks completed in the period, by assignee as <see cref="MeanTimeToRespondAsync"/> is.</summary>
     public async Task<MeanTimeReport> MeanTimeToResolveAsync(ReportFilter f, CancellationToken ct = default)
     {
         var actor = await RequireReportsAsync(ct);
         var q = Apply(db.Tasks.AsNoTracking(), f, actor)
             .Where(t => t.Status == TaskItemStatus.Done && t.CompletedAt >= f.FromUtc && t.CompletedAt < f.ToUtc);
-        var rows = await q.GroupBy(t => t.AssigneeId)
+        var rows = await q.SelectMany(t => t.Assignments, (t, x) => new { x.UserId, t.CreatedAt, t.CompletedAt })
+            .GroupBy(x => x.UserId)
             .Select(g => new
             {
-                UserId = g.Key,
+                UserId = (Guid?)g.Key,
                 Count = g.Count(),
-                AvgHours = g.Average(t => (t.CompletedAt!.Value - t.CreatedAt).TotalHours)
+                AvgHours = g.Average(x => (x.CompletedAt!.Value - x.CreatedAt).TotalHours)
             }).ToListAsync(ct);
+        var unassigned = q.Where(t => !t.Assignments.Any());
+        var unassignedCount = await unassigned.CountAsync(ct);
+        if (unassignedCount > 0)
+            rows.Add(new
+            {
+                UserId = (Guid?)null,
+                Count = unassignedCount,
+                AvgHours = await unassigned.AverageAsync(t => (t.CompletedAt!.Value - t.CreatedAt).TotalHours, ct)
+            });
         var overallCount = await q.CountAsync(ct);
         double? overall = overallCount == 0 ? null
             : await q.AverageAsync(t => (t.CompletedAt!.Value - t.CreatedAt).TotalHours, ct);
@@ -129,7 +162,7 @@ public sealed class ReportingService(ApplicationDbContext db, IActorProvider act
         var done = await Facts(Apply(db.Tasks.AsNoTracking(), f, actor)
                 .Where(t => t.Status == TaskItemStatus.Done && t.CompletedAt >= f.FromUtc && t.CompletedAt < f.ToUtc))
             .ToListAsync(ct);
-        var names = await NamesAsync(done.Select(t => t.AssigneeId), ct);
+        var names = await NamesAsync(done.SelectMany(t => t.AssigneeIds).Select(id => (Guid?)id), ct);
         return TimeReportRules.EstimateAccuracy(done, id => Name(id, names, "Unassigned"));
     }
 
@@ -186,7 +219,7 @@ public sealed class ReportingService(ApplicationDbContext db, IActorProvider act
         var tasks = await db.Tasks.AsNoTracking()
             .Where(t => includedIds.Contains(t.ProjectId))
             .Select(t => new ProjectTaskFacts(
-                new TaskTimeFacts(t.Id, t.Number, t.Title, t.Status, t.AssigneeId, t.EstimateMinutes,
+                new TaskTimeFacts(t.Id, t.Number, t.Title, t.Status, t.Assignments.Select(x => x.UserId).ToList(), t.EstimateMinutes,
                     t.TimeEntries.Sum(e => (int?)e.DurationMinutes) ?? 0),
                 t.ProjectId!.Value, t.DueDate, t.CreatedAt, t.CompletedAt,
                 t.TimeEntries.Where(e => e.Date >= from && e.Date < to).Sum(e => (int?)e.DurationMinutes) ?? 0))
@@ -199,7 +232,7 @@ public sealed class ReportingService(ApplicationDbContext db, IActorProvider act
             .ToListAsync(ct);
         var schedules = await criticalPath.LatestSummariesAsync(
             included.Where(p => p.Status.IsOpen()).Select(p => p.Id).ToList(), ct);
-        var names = await NamesAsync(tasks.Select(t => t.Task.AssigneeId).Concat(time.Select(t => (Guid?)t.UserId)), ct);
+        var names = await NamesAsync(tasks.SelectMany(t => t.Task.AssigneeIds).Concat(time.Select(t => t.UserId)).Select(id => (Guid?)id), ct);
 
         return ProjectReportRules.Build(included, histories, tasks, time, schedules, id => Name(id, names, "Unassigned"),
             f.FromUtc, f.ToUtc, DateOnly.FromDateTime(DateTime.UtcNow));
@@ -263,16 +296,16 @@ public sealed class ReportingService(ApplicationDbContext db, IActorProvider act
 
         var tasks = await db.Tasks.AsNoTracking()
             .Where(t => includedIds.Contains(t.AssetId))
-            .Select(t => new AssetTaskFacts(t.Id, t.Number, t.Title, t.Status, t.AssigneeId, t.AssetId!.Value, t.DueDate,
+            .Select(t => new AssetTaskFacts(t.Id, t.Number, t.Title, t.Status, t.Assignments.Select(x => x.UserId).ToList(), t.AssetId!.Value, t.DueDate,
                 t.CreatedAt, t.CompletedAt, t.TimeEntries.Where(e => e.Date >= from && e.Date < to).Sum(e => (int?)e.DurationMinutes) ?? 0))
             .ToListAsync(ct);
-        var names = await NamesAsync(tasks.Select(t => t.AssigneeId), ct);
+        var names = await NamesAsync(tasks.SelectMany(t => t.AssigneeIds).Select(id => (Guid?)id), ct);
 
         return AssetReportRules.Build(included, histories, tasks, id => Name(id, names, "Unassigned"), f.FromUtc, f.ToUtc, today);
     }
 
     private static IQueryable<TaskTimeFacts> Facts(IQueryable<TaskItem> q) =>
-        q.Select(t => new TaskTimeFacts(t.Id, t.Number, t.Title, t.Status, t.AssigneeId, t.EstimateMinutes,
+        q.Select(t => new TaskTimeFacts(t.Id, t.Number, t.Title, t.Status, t.Assignments.Select(x => x.UserId).ToList(), t.EstimateMinutes,
             t.TimeEntries.Sum(e => (int?)e.DurationMinutes) ?? 0));
 
     private async Task<Actor> RequireReportsAsync(CancellationToken ct)

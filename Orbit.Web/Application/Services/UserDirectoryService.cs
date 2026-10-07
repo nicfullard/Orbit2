@@ -33,14 +33,54 @@ public sealed class UserDirectoryService(ApplicationDbContext db, IActorProvider
         return await ToSummariesAsync(db, users, ct);
     }
 
+    /// <summary>
+    /// The people a task in the department may be assigned to (§6.2.3), as a query: its active members, plus anyone whose role
+    /// sees tasks everywhere (<paramref name="seesEverywhere"/>, tasks.view at All) - the people <see cref="AssigneeRules.Refusal"/>
+    /// lets through. With no department, only the latter.
+    /// </summary>
+    public static IQueryable<ApplicationUser> Assignable(IQueryable<ApplicationUser> q, Guid? departmentId, IReadOnlyCollection<Guid> seesEverywhere) =>
+        q.Where(u => u.IsActive && !u.IsSystemAccount
+            && ((departmentId != null && u.DepartmentId == departmentId) || seesEverywhere.Contains(u.Id)));
+
     /// <summary>Active users a task in the given department may be assigned to: its members plus anyone whose role sees tasks everywhere.</summary>
     public async Task<IReadOnlyList<UserSummary>> GetAssignableAsync(Guid departmentId, CancellationToken ct = default)
     {
         await actors.GetAsync(ct);
         var everywhere = await RoleResolver.UserIdsWithScopeAllAsync(db, Permission.TasksView, ct);
-        var users = await db.Users.AsNoTracking().Include(u => u.Department)
-            .Where(u => u.IsActive && !u.IsSystemAccount && (u.DepartmentId == departmentId || everywhere.Contains(u.Id)))
+        var users = await Assignable(db.Users.AsNoTracking().Include(u => u.Department), departmentId, everywhere)
             .OrderBy(u => u.DisplayName).ToListAsync(ct);
+        return await ToSummariesAsync(db, users, ct);
+    }
+
+    /// <summary>
+    /// The task forms' Assignees picker (§6.2.3): the people a task in <paramref name="departmentId"/> may be assigned to whose name
+    /// or email contains <paramref name="query"/> - names starting with it first - or the first of them by name when nothing is
+    /// typed. It answers only callers who may create or edit tasks, and names a department's members only to someone whose own
+    /// lookups reach it (their own department, or every department); for any other department it offers just the people who can
+    /// be assigned anywhere. At most <paramref name="limit"/> people.
+    /// </summary>
+    public async Task<IReadOnlyList<UserSummary>> SearchAssignableAsync(Guid? departmentId, string? query, int limit = 20, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        if (!actor.Has(Permission.TasksCreate) && !actor.Has(Permission.TasksEdit)) return [];
+        var department = departmentId ?? actor.DepartmentId;
+        if (department != actor.DepartmentId && !SeesEveryDepartment(actor)) department = null;
+
+        var everywhere = await RoleResolver.UserIdsWithScopeAllAsync(db, Permission.TasksView, ct);
+        var q = Assignable(db.Users.AsNoTracking().Include(u => u.Department), department, everywhere);
+        var text = query?.Trim();
+        if (!string.IsNullOrEmpty(text))
+        {
+            var anywhere = $"%{text}%";
+            var prefix = $"{text}%";
+            q = q.Where(u => EF.Functions.ILike(u.DisplayName, anywhere) || EF.Functions.ILike(u.Email!, anywhere))
+                .OrderBy(u => EF.Functions.ILike(u.DisplayName, prefix) ? 0 : 1).ThenBy(u => u.DisplayName);
+        }
+        else
+        {
+            q = q.OrderBy(u => u.DisplayName);
+        }
+        var users = await q.Take(Math.Clamp(limit, 1, 50)).ToListAsync(ct);
         return await ToSummariesAsync(db, users, ct);
     }
 

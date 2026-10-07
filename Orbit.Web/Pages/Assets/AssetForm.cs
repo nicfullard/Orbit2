@@ -101,6 +101,7 @@ public sealed class AssetForm
 /// The people picker (spec §6.19): the chosen people as chips over a type-ahead search against /Assets/People, so it works with
 /// any number of people. <see cref="SubmitOnPick"/> off: each chip is a hidden <see cref="FieldName"/> input posted with the form.
 /// On: picking someone puts their id in <see cref="FieldName"/> and posts the enclosing form at once (the asset page's "Assign someone").
+/// The task forms' Assignees use it too (§6.2.3), searching /Tasks/Assignees for the people of the task's department.
 /// </summary>
 public sealed class PersonPickerVm
 {
@@ -111,6 +112,21 @@ public sealed class PersonPickerVm
     public bool SubmitOnPick { get; init; }
     public string Placeholder { get; init; } = "Type a name, email or department...";
     public string Label { get; init; } = "Search for a person";
+    /// <summary>Shown while nobody is chosen.</summary>
+    public string EmptyText { get; init; } = "Nobody - unassigned";
+    /// <summary>List the first matches when the empty box is clicked or Down is pressed, so a short list can be picked from without typing.</summary>
+    public bool Browse { get; init; }
+    /// <summary>Mark a chosen person who has since been deactivated.</summary>
+    public bool MarkInactive { get; init; }
+    /// <summary>
+    /// Set when the people offered depend on the form's department (the task forms' Assignees, §6.2.3): the selector of the
+    /// department field. Its value is sent to the search as <c>departmentId</c>, and changing it drops the chips of people who
+    /// belong to another department. While it is blank the project chosen in <see cref="ProjectSource"/> says, and failing that
+    /// <see cref="DefaultDepartmentId"/>.
+    /// </summary>
+    public string? DepartmentSource { get; init; }
+    public string? ProjectSource { get; init; }
+    public Guid? DefaultDepartmentId { get; init; }
 }
 
 /// <summary>

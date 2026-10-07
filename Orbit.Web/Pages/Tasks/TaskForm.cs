@@ -29,8 +29,9 @@ public sealed class TaskForm
     [Display(Name = "Estimate (minutes)"), Range(0, 525600)]
     public int? EstimateMinutes { get; set; }
 
-    [Display(Name = "Assignee")]
-    public Guid? AssigneeId { get; set; }
+    /// <summary>The complete set of assignees (§6.2.3), one posted per chip in the picker; none = unassigned.</summary>
+    [Display(Name = "Assignees")]
+    public List<Guid> AssigneeIds { get; set; } = [];
 
     /// <summary>The requestee (§6.2.2): the person the task is for. Blank = nobody else. Offered with tasks.create_for above Own.</summary>
     [Display(Name = "Requestee")]
@@ -64,7 +65,7 @@ public sealed class TaskForm
         Priority = Priority,
         Type = Type,
         EstimateMinutes = EstimateMinutes,
-        AssigneeId = AssigneeId,
+        AssigneeIds = AssigneeIds,
         RequesteeId = RequesteeId,
         StartDate = StartDate,
         DueDate = DueDate,
@@ -83,7 +84,7 @@ public sealed class TaskForm
         Priority = t.Priority,
         Type = t.Type,
         EstimateMinutes = t.EstimateMinutes,
-        AssigneeId = t.AssigneeId,
+        AssigneeIds = [.. t.AssigneeIds],
         RequesteeId = t.RequesteeId,
         StartDate = t.StartDate,
         DueDate = t.DueDate,

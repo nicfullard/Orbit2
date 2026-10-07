@@ -250,7 +250,7 @@
                                             <a asp-page="/Tasks/Details" asp-route-id="@t.Id" class="text-decoration-none">@t.Title</a>
                                         </td>
                                         <td><span class="badge @Ui.StatusBadge(t.Status)">@t.Status.Label()</span></td>
-                                        <td class="text-nowrap">@(t.Assignee?.DisplayName ?? "-")</td>
+                                        <td>@(t.AssigneeNames ?? "-")</td>
                                         <td class="text-nowrap">@(t.CompletedAt is DateTime done && !t.IsOpen ? Ui.Day(DateOnly.FromDateTime(done)) : Ui.Day(t.DueDate))</td>
                                     </tr>
                                 }

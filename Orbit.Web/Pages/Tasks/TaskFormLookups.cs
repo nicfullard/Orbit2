@@ -19,8 +19,14 @@ public sealed class TaskFormLookups
     public IReadOnlyList<SelectListItem> Departments { get; init; } = [];
     /// <summary>Projects the actor may file the task under (plus the one it is already on). Each carries its department.</summary>
     public IReadOnlyList<DepartmentedOption> Projects { get; init; } = [];
-    /// <summary>Assignable users. DepartmentId is null for users whose role sees every department, who can be assigned anywhere.</summary>
-    public IReadOnlyList<DepartmentedOption> Assignees { get; init; } = [];
+    /// <summary>
+    /// The people chosen in the Assignees picker (§6.2.3), for its chips: the saved assignees, or the ones just posted. Anyone
+    /// assigned is among them whether or not they could still be picked, so a save never drops a colleague who has since been
+    /// deactivated or changed department. The picker searches for the rest (/Tasks/Assignees).
+    /// </summary>
+    public IReadOnlyList<UserSummary> SelectedAssignees { get; init; } = [];
+    /// <summary>The department a task belongs to while the form names neither one nor a project: the caller's own.</summary>
+    public Guid? DefaultDepartmentId { get; init; }
     public IReadOnlyList<SelectListItem> Sprints { get; init; } = [];
     /// <summary>Parent task options (§6.15), each carrying its project and department so the form can filter them client-side.</summary>
     public IReadOnlyList<ParentCandidate> Parents { get; init; } = [];
@@ -99,15 +105,7 @@ public sealed class TaskFormLookups
                 seesEverywhere ? $"{p.Department.Name} / {p.Name}" : p.Name,
                 p.DepartmentId, p.Id == form.ProjectId)));
 
-        var assigneeItems = new List<DepartmentedOption> { new(string.Empty, "(unassigned)", null, form.AssigneeId is null) };
-        var candidates = seesEverywhere
-            ? await users.ListAsync(null, null, false, ct)
-            : actor.DepartmentId is Guid ownDept ? await users.GetAssignableAsync(ownDept, ct) : [];
-        assigneeItems.AddRange(candidates.Select(u => new DepartmentedOption(
-            u.Id.ToString(),
-            seesEverywhere ? $"{u.DisplayName} ({u.DepartmentName ?? u.Role.Name})" : u.DisplayName,
-            u.CanViewAllTasks ? null : u.DepartmentId,
-            u.Id == form.AssigneeId)));
+        var selectedAssignees = await users.FindManyAsync(form.AssigneeIds, ct);
 
         var sprintItems = new List<SelectListItem> { new("(backlog)", string.Empty) };
         sprintItems.AddRange((await sprints.ListOpenAsync(ct))
@@ -150,7 +148,8 @@ public sealed class TaskFormLookups
             CanChooseDepartment = canChooseDepartment,
             Departments = deptItems,
             Projects = projectItems,
-            Assignees = assigneeItems,
+            SelectedAssignees = selectedAssignees,
+            DefaultDepartmentId = actor.DepartmentId,
             Sprints = sprintItems,
             Parents = parents,
             CanPickAsset = actor.Has(Permission.AssetsView),

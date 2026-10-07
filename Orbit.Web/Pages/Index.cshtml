@@ -242,9 +242,9 @@ else
                     <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
                         <div class="text-truncate">
                             <a asp-page="/Tasks/Details" asp-route-id="@t.Id" class="text-decoration-none @(overdue ? "task-title-overdue" : "")">@t.Title</a>
-                            @if (d.ShowsOthersWork && t.Assignee is not null)
+                            @if (d.ShowsOthersWork && !t.IsUnassigned)
                             {
-                                <div class="small text-muted">@t.Assignee.DisplayName</div>
+                                <div class="small text-muted">@t.AssigneeNames</div>
                             }
                         </div>
                         <span class="badge @(overdue ? "text-bg-danger" : "text-bg-light border") text-nowrap">@Ui.Day(t.DueDate)</span>
