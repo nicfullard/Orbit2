@@ -298,8 +298,8 @@ tile (*Report a problem*, *Products*...), then a flow. A **flow** is a sequence 
 - **Approval** - ordered stages of approvers (a person, or everyone with a role in a department or in the requester's
   own), any one or all of them; a decline ends it, and each decision may carry a comment.
 - **Task** - creates an Orbit task in a department, with its type, priority (fixed, or from an urgency answer), title
-  and description filled from earlier answers, assignees set in advance or none, and the forms' files copied to it;
-  done when the task is.
+  and description filled from earlier answers, due date (none, the day the task is created, or a date answer),
+  assignees set in advance or none, and the forms' files copied to it; done when the task is.
 - **Action** - runs a script from the action library with the request's values.
 - **Web page** - opens a page in a new tab; done when you open it.
 

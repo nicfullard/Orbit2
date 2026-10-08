@@ -38,9 +38,19 @@ public class StepModel(RequestCatalogueService catalogue) : OrbitPageModel
 
     /// <summary>Fields of predecessor forms of one type, for the task step's selects.</summary>
     public IEnumerable<SelectListItem> FieldChoices(RequestFieldType type, Guid? selected) =>
-        new[] { new SelectListItem("None", string.Empty, selected is null) }.Concat(
-            Predecessors.Where(s => s.Kind == RequestStepKind.Form).SelectMany(s => s.Fields.Where(f => f.FieldType == type)
-                .Select(f => new SelectListItem($"{s.Title}: {f.Prompt}", f.Id.ToString(), f.Id == selected))));
+        new[] { new SelectListItem("None", string.Empty, selected is null) }.Concat(FieldItems(type, selected?.ToString()));
+
+    /// <summary>The task step's due date: none, the day the task is created, or a Date field of a predecessor form.</summary>
+    public IEnumerable<SelectListItem> DueDateChoices() =>
+        new[]
+        {
+            new SelectListItem("None", "none", Form.DueDate == "none"),
+            new SelectListItem("The day the task is created", "created", Form.DueDate == "created")
+        }.Concat(FieldItems(RequestFieldType.Date, Form.DueDate));
+
+    private IEnumerable<SelectListItem> FieldItems(RequestFieldType type, string? selected) =>
+        Predecessors.Where(s => s.Kind == RequestStepKind.Form).SelectMany(s => s.Fields.Where(f => f.FieldType == type)
+            .Select(f => new SelectListItem($"{s.Title}: {f.Prompt}", f.Id.ToString(), f.Id.ToString() == selected)));
 
     public async Task OnGetAsync(Guid id, CancellationToken ct)
     {

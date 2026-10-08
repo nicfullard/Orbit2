@@ -160,8 +160,8 @@
                                 <select class="form-select" asp-for="Form.PriorityFieldId" asp-items="Model.FieldChoices(RequestFieldType.Urgency, Model.Form.PriorityFieldId)"></select>
                             </div>
                             <div class="col-sm-3">
-                                <label class="form-label" asp-for="Form.DueDateFieldId">Due date from</label>
-                                <select class="form-select" asp-for="Form.DueDateFieldId" asp-items="Model.FieldChoices(RequestFieldType.Date, Model.Form.DueDateFieldId)"></select>
+                                <label class="form-label" asp-for="Form.DueDate">Due date from</label>
+                                <select class="form-select" asp-for="Form.DueDate" asp-items="Model.DueDateChoices()"></select>
                             </div>
                             <div class="col-sm-3">
                                 <label class="form-label" asp-for="Form.AssetFieldId">Asset from</label>
@@ -171,7 +171,7 @@
                                 <label class="form-label" asp-for="Form.ProjectFieldId">Project from</label>
                                 <select class="form-select" asp-for="Form.ProjectFieldId" asp-items="Model.FieldChoices(RequestFieldType.Project, Model.Form.ProjectFieldId)"></select>
                             </div>
-                            <div class="col-12 form-text">Each takes its value from a question of a form this step waits for. The priority above applies when no Urgency question is chosen, or it wasn't answered.</div>
+                            <div class="col-12 form-text">Each takes its value from a question of a form this step waits for. The priority above applies when no Urgency question is chosen, or it wasn't answered. The due date can instead be the day the task is created.</div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label" asp-for="Form.CopyAttachments">Files to attach to the task</label>

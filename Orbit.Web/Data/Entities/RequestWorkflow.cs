@@ -50,6 +50,8 @@ public class RequestFlowStep
     public TaskPriority TaskPriority { get; set; } = TaskPriority.Medium;
     public string? TitleTemplate { get; set; }
     public string? DescriptionTemplate { get; set; }
+    /// <summary>The task is due the day it is created; <see cref="DueDateFieldId"/> is then null.</summary>
+    public bool DueOnCreation { get; set; }
     /// <summary>A Date field of an earlier form whose answer is the task's due date.</summary>
     public Guid? DueDateFieldId { get; set; }
     public RequestFormField? DueDateField { get; set; }

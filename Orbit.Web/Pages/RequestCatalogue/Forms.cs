@@ -64,7 +64,8 @@ public sealed class StepForm
     public TaskPriority TaskPriority { get; set; } = TaskPriority.Medium;
     public string? TitleTemplate { get; set; }
     public string? DescriptionTemplate { get; set; }
-    public Guid? DueDateFieldId { get; set; }
+    /// <summary>"none", "created" (the day the task is created), or the id of the Date field the due date comes from.</summary>
+    public string? DueDate { get; set; } = "none";
     public Guid? AssetFieldId { get; set; }
     public Guid? ProjectFieldId { get; set; }
     public Guid? PriorityFieldId { get; set; }
@@ -91,7 +92,8 @@ public sealed class StepForm
         TaskPriority = TaskPriority,
         TitleTemplate = TitleTemplate,
         DescriptionTemplate = DescriptionTemplate,
-        DueDateFieldId = DueDateFieldId,
+        DueOnCreation = DueDate == "created",
+        DueDateFieldId = Guid.TryParse(DueDate, out var dueField) ? dueField : null,
         AssetFieldId = AssetFieldId,
         ProjectFieldId = ProjectFieldId,
         PriorityFieldId = PriorityFieldId,
@@ -117,7 +119,7 @@ public sealed class StepForm
         TaskPriority = s.TaskPriority,
         TitleTemplate = s.TitleTemplate,
         DescriptionTemplate = s.DescriptionTemplate,
-        DueDateFieldId = s.DueDateFieldId,
+        DueDate = s.DueOnCreation ? "created" : s.DueDateFieldId?.ToString() ?? "none",
         AssetFieldId = s.AssetFieldId,
         ProjectFieldId = s.ProjectFieldId,
         PriorityFieldId = s.PriorityFieldId,

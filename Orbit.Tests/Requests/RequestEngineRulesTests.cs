@@ -212,4 +212,26 @@ public class RequestEngineRulesTests
         Assert.Equal("No rush", RequestEngineRules.UrgencyMeaning(TaskPriority.Low));
         Assert.Equal("Work has stopped for me or for several people", RequestEngineRules.UrgencyMeaning(TaskPriority.Critical));
     }
+
+    /// <summary>REQ-021: a task step's due date - none, the day the task is created, or the answer to the Date field the step names.</summary>
+    [Fact]
+    public void A_task_step_sets_its_tasks_due_date()
+    {
+        var created = new DateOnly(2026, 10, 8);
+
+        var none = new RequestFlowStep { Kind = RequestStepKind.Task };
+        Assert.Null(RequestEngineRules.TaskDueDateFor(none, created, null));
+        Assert.Null(RequestEngineRules.TaskDueDateFor(none, created, "2026-11-30"));
+
+        var onCreation = new RequestFlowStep { Kind = RequestStepKind.Task, DueOnCreation = true };
+        Assert.Equal(created, RequestEngineRules.TaskDueDateFor(onCreation, created, null));
+        Assert.Equal(created, RequestEngineRules.TaskDueDateFor(onCreation, created, "2026-11-30"));
+        onCreation.DueDateFieldId = Guid.NewGuid();
+        Assert.Equal(created, RequestEngineRules.TaskDueDateFor(onCreation, created, "2026-11-30"));
+
+        var fromField = new RequestFlowStep { Kind = RequestStepKind.Task, DueDateFieldId = Guid.NewGuid() };
+        Assert.Equal(new DateOnly(2026, 11, 30), RequestEngineRules.TaskDueDateFor(fromField, created, "2026-11-30"));
+        Assert.Null(RequestEngineRules.TaskDueDateFor(fromField, created, null));
+        Assert.Null(RequestEngineRules.TaskDueDateFor(fromField, created, "30/11/2026"));
+    }
 }

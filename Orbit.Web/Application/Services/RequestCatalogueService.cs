@@ -383,7 +383,7 @@ public sealed class RequestCatalogueService(ApplicationDbContext db, IActorProvi
                 var descriptionTemplate = RequestFlowRules.Clean(input.DescriptionTemplate, RequestFlowRules.MaxTemplateLength, "The task description");
                 RequestTokenRules.Validate(titleTemplate, tokens, "The task title");
                 RequestTokenRules.Validate(descriptionTemplate, tokens, "The task description");
-                var dueField = FieldRef(input.DueDateFieldId, predecessorFields, RequestFieldType.Date, "the due date");
+                var dueField = input.DueOnCreation ? null : FieldRef(input.DueDateFieldId, predecessorFields, RequestFieldType.Date, "the due date");
                 var assetField = FieldRef(input.AssetFieldId, predecessorFields, RequestFieldType.Asset, "the asset");
                 var projectField = FieldRef(input.ProjectFieldId, predecessorFields, RequestFieldType.Project, "the project");
                 var priorityField = FieldRef(input.PriorityFieldId, predecessorFields, RequestFieldType.Urgency, "the priority");
@@ -405,6 +405,7 @@ public sealed class RequestCatalogueService(ApplicationDbContext db, IActorProvi
                     .Track("taskPriority", step.TaskPriority, input.TaskPriority)
                     .TrackText("titleTemplate", step.TitleTemplate, titleTemplate)
                     .TrackText("descriptionTemplate", step.DescriptionTemplate, descriptionTemplate)
+                    .Track("dueOnCreation", step.DueOnCreation, input.DueOnCreation)
                     .Track("dueDateFieldId", step.DueDateFieldId, dueField)
                     .Track("assetFieldId", step.AssetFieldId, assetField)
                     .Track("projectFieldId", step.ProjectFieldId, projectField)
@@ -419,6 +420,7 @@ public sealed class RequestCatalogueService(ApplicationDbContext db, IActorProvi
                 step.TaskPriority = input.TaskPriority;
                 step.TitleTemplate = titleTemplate;
                 step.DescriptionTemplate = descriptionTemplate;
+                step.DueOnCreation = input.DueOnCreation;
                 step.DueDateFieldId = dueField;
                 step.AssetFieldId = assetField;
                 step.ProjectFieldId = projectField;

@@ -53,6 +53,8 @@ public sealed class RequestStepInput
     public TaskPriority TaskPriority { get; set; } = TaskPriority.Medium;
     public string? TitleTemplate { get; set; }
     public string? DescriptionTemplate { get; set; }
+    /// <summary>The task is due the day it is created; <see cref="DueDateFieldId"/> is then ignored.</summary>
+    public bool DueOnCreation { get; set; }
     public Guid? DueDateFieldId { get; set; }
     public Guid? AssetFieldId { get; set; }
     public Guid? ProjectFieldId { get; set; }

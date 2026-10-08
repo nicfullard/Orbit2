@@ -454,8 +454,7 @@ public sealed class RequestEngine(
         var answers = request.Steps.SelectMany(s => s.Answers).ToList();
         RequestFormAnswer? Answer(Guid? fieldId) => fieldId is Guid id ? answers.FirstOrDefault(a => a.FieldId == id) : null;
 
-        DateOnly? due = Answer(flowStep.DueDateFieldId)?.Value is string dv
-            && DateOnly.TryParseExact(dv, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d) ? d : null;
+        var due = RequestEngineRules.TaskDueDateFor(flowStep, DateOnly.FromDateTime(now), Answer(flowStep.DueDateFieldId)?.Value);
         // A disposed asset, an archived project or an inactive person is dropped quietly, as the recurring generator does (§6.19).
         var assetId = Answer(flowStep.AssetFieldId)?.AssetId;
         if (assetId is Guid aid && !await db.Assets.AnyAsync(a => a.Id == aid && a.Status != AssetStatus.Disposed, ct)) assetId = null;

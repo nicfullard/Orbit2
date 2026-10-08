@@ -273,6 +273,15 @@ public static class RequestEngineRules
         step.PriorityFieldId is null ? step.TaskPriority : ParseUrgency(urgencyAnswer) ?? step.TaskPriority;
 
     /// <summary>
+    /// REQ-021: the task's due date - the day it is created when the step is <see cref="RequestFlowStep.DueOnCreation"/>; else the
+    /// Date answer the step's <see cref="RequestFlowStep.DueDateFieldId"/> names, when the step has one and it was answered; else none.
+    /// </summary>
+    public static DateOnly? TaskDueDateFor(RequestFlowStep step, DateOnly createdOn, string? dateAnswer) =>
+        step.DueOnCreation ? createdOn
+        : step.DueDateFieldId is not null && DateOnly.TryParseExact(dateAnswer, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date) ? date
+        : null;
+
+    /// <summary>
     /// The request's title (§6.20): the flow's title and the first line of the first Text answer of the start form ("Product code:
     /// Blue widget"), or "{flow} for {requester}" without one.
     /// </summary>
