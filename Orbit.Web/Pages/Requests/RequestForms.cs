@@ -26,6 +26,10 @@ public sealed class RequestFormFieldsVm
     /// <summary>The assets each Asset field lists as buttons, by field; a field that isn't here offers too many to list, and searches.</summary>
     public required IReadOnlyDictionary<Guid, IReadOnlyList<RequestLookupItem>> AssetChoices { get; init; }
     public required string LookupUrl { get; init; }
+    /// <summary>The request step being filled in, which the pickers' searches name; null while the request is being logged.</summary>
+    public Guid? RequestStepId { get; init; }
+    /// <summary>Said in place of a field scoped to the requester's department when the requester has none; null when they have one.</summary>
+    public string? NoDepartmentNote { get; init; }
     public required AttachmentOptions Limits { get; init; }
     public bool FilesDropped { get; init; }
 

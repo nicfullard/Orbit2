@@ -64,6 +64,7 @@ else if (Model.Errors.Count > 0)
                     AssetTypes = Model.AssetTypes,
                     AssetChoices = Model.AssetChoices,
                     LookupUrl = Url.Page("/Requests/Lookup")!,
+                    NoDepartmentNote = Model.HasDepartment ? null : "You aren't in a department, so nothing is offered here.",
                     Limits = Model.AttachmentLimits,
                     FilesDropped = Model.FilesDropped
                 })" />

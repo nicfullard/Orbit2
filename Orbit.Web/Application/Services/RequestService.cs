@@ -89,7 +89,7 @@ public sealed class RequestService(
         var startForm = RequestFlowRules.StartForm(flow);
         var (clean, labels) = startForm is null
             ? ([], new Dictionary<Guid, Pick>())
-            : await CleanFormAsync(flow, startForm, answers, files, ct);
+            : await CleanFormAsync(flow, startForm, answers, files, actor.DepartmentId, ct);
         attachments.CheckUploads(files.Values.SelectMany(f => f).ToList());
 
         var requester = await db.Users.AsNoTracking().FirstAsync(u => u.Id == me, ct);
@@ -159,12 +159,12 @@ public sealed class RequestService(
         var step = await db.RequestSteps
             .Include(s => s.FlowStep).ThenInclude(fs => fs.Fields)
             .Include(s => s.FlowStep).ThenInclude(fs => fs.Flow).ThenInclude(f => f.Category)
-            .Include(s => s.Request)
+            .Include(s => s.Request).ThenInclude(r => r.Requester)
             .FirstOrDefaultAsync(s => s.Id == stepId, ct) ?? throw new NotFoundException("Request step not found.");
         AccessPolicy.Require(AccessPolicy.CanActOnStep(actor, step.Request, step), "This step isn't addressed to you.");
         if (step.FlowStep.Kind != RequestStepKind.Form) throw new ValidationException("This step isn't a form.");
         if (step.Status != RequestStepStatus.Ready) throw new ValidationException("This form isn't open.");
-        var (clean, labels) = await CleanFormAsync(step.FlowStep.Flow, step.FlowStep, answers, files, ct);
+        var (clean, labels) = await CleanFormAsync(step.FlowStep.Flow, step.FlowStep, answers, files, step.Request.Requester.DepartmentId, ct);
         attachments.CheckUploads(files.Values.SelectMany(f => f).ToList());
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -346,39 +346,51 @@ public sealed class RequestService(
         return hit is null ? null : (hit.Id, hit.Number);
     }
 
-    /// <summary>The label of a picked asset, project or person, for a form shown again after a refused post; null when it isn't in the field's scope.</summary>
-    public async Task<string?> PickLabelAsync(Guid fieldId, Guid id, CancellationToken ct = default)
+    /// <summary>
+    /// The label of a picked asset, project or person, for a form shown again after a refused post; null when it isn't in the field's
+    /// scope. <paramref name="stepId"/> is the request step being filled in, null while the request is being logged.
+    /// </summary>
+    public async Task<string?> PickLabelAsync(Guid fieldId, Guid id, Guid? stepId, CancellationToken ct = default)
     {
         var actor = await actors.GetAsync(ct);
         RequireSubmit(actor);
         var field = await db.RequestFormFields.AsNoTracking().Include(f => f.Step).ThenInclude(s => s.Flow).ThenInclude(fl => fl.Category)
             .FirstOrDefaultAsync(f => f.Id == fieldId, ct);
         if (field is null) return null;
-        return (await ResolvePickAsync(field.Step.Flow, field, id, actor.UserId!.Value, ct))?.Label;
+        var requesterDepartment = await RequesterDepartmentAsync(actor, [field], stepId, ct);
+        return (await ResolvePickAsync(field.Step.Flow, field, id, actor.UserId!.Value, requesterDepartment, ct))?.Label;
     }
 
     /// <summary>
     /// The asset types a form's Asset type fields offer (§6.20), by field: the active types within each field's scope, each with the
-    /// group the list shows it under - its category for the flow's department's own, department and category for the whole company's.
+    /// group the list shows it under - its category for one department's own (the flow's, or the requester's), department and
+    /// category for the whole company's. <paramref name="stepId"/> is the request step being filled in, null while logging.
     /// </summary>
-    public async Task<IReadOnlyDictionary<Guid, IReadOnlyList<RequestAssetTypeChoice>>> AssetTypeChoicesAsync(RequestFlow flow, RequestFlowStep form, CancellationToken ct = default)
+    public async Task<IReadOnlyDictionary<Guid, IReadOnlyList<RequestAssetTypeChoice>>> AssetTypeChoicesAsync(
+        RequestFlow flow, RequestFlowStep form, Guid? stepId, CancellationToken ct = default)
     {
-        RequireSubmit(await actors.GetAsync(ct));
+        var actor = await actors.GetAsync(ct);
+        RequireSubmit(actor);
         var fields = form.Fields.Where(f => f.FieldType == RequestFieldType.AssetType).ToList();
         var result = new Dictionary<Guid, IReadOnlyList<RequestAssetTypeChoice>>();
         if (fields.Count == 0) return result;
-        var department = flow.Category.DepartmentId;
+        var requesterDepartment = await RequesterDepartmentAsync(actor, fields, stepId, ct);
+        var bounds = fields.ToDictionary(f => f.Id, f => RequestEngineRules.ScopeDepartment(f.PickerScope, flow.Category.DepartmentId, requesterDepartment));
         var query = db.AssetTypes.AsNoTracking().Where(t => !t.IsArchived);
-        if (fields.All(f => f.PickerScope == RequestPickerScope.Department)) query = query.Where(t => t.DepartmentId == department);
+        if (bounds.Values.All(b => b.Kept))
+        {
+            var departments = bounds.Values.Select(b => b.DepartmentId).OfType<Guid>().Distinct().ToList();
+            query = query.Where(t => departments.Contains(t.DepartmentId));
+        }
         var types = await query
             .OrderBy(t => t.Department.Name).ThenBy(t => t.Category).ThenBy(t => t.Name)
             .Select(t => new { t.Id, t.Name, t.Category, t.DepartmentId, Department = t.Department.Name })
             .ToListAsync(ct);
         foreach (var field in fields)
         {
-            var own = field.PickerScope == RequestPickerScope.Department;
-            result[field.Id] = types.Where(t => !own || t.DepartmentId == department)
-                .Select(t => new RequestAssetTypeChoice(t.Id, t.Name, own
+            var bound = bounds[field.Id];
+            result[field.Id] = types.Where(t => bound.Offers(t.DepartmentId))
+                .Select(t => new RequestAssetTypeChoice(t.Id, t.Name, bound.Kept
                     ? t.Category ?? string.Empty
                     : string.Join(" · ", new[] { t.Department, t.Category }.Where(s => !string.IsNullOrEmpty(s)))))
                 .ToList();
@@ -389,16 +401,20 @@ public sealed class RequestService(
     /// <summary>
     /// The assets a form's Asset fields list as buttons (§6.20), by field: every asset the field's scope offers the caller, by name, when
     /// there are at most <see cref="RequestFlowRules.AssetButtonsUpTo"/> - none at all is such a list. A field whose scope offers more
-    /// isn't here: its picker searches instead.
+    /// isn't here: its picker searches instead. <paramref name="stepId"/> is the request step being filled in, null while logging.
     /// </summary>
-    public async Task<IReadOnlyDictionary<Guid, IReadOnlyList<RequestLookupItem>>> AssetChoicesAsync(RequestFlow flow, RequestFlowStep form, CancellationToken ct = default)
+    public async Task<IReadOnlyDictionary<Guid, IReadOnlyList<RequestLookupItem>>> AssetChoicesAsync(
+        RequestFlow flow, RequestFlowStep form, Guid? stepId, CancellationToken ct = default)
     {
         var actor = await actors.GetAsync(ct);
         RequireSubmit(actor);
         var result = new Dictionary<Guid, IReadOnlyList<RequestLookupItem>>();
-        foreach (var fields in form.Fields.Where(f => f.FieldType == RequestFieldType.Asset).GroupBy(f => f.PickerScope))
+        var assetFields = form.Fields.Where(f => f.FieldType == RequestFieldType.Asset).ToList();
+        var requesterDepartment = await RequesterDepartmentAsync(actor, assetFields, stepId, ct);
+        foreach (var fields in assetFields.GroupBy(f => f.PickerScope))
         {
-            var offered = await AssetItemsAsync(OfferedAssets(fields.Key, flow.Category.DepartmentId, actor.UserId!.Value)
+            var bound = RequestEngineRules.ScopeDepartment(fields.Key, flow.Category.DepartmentId, requesterDepartment);
+            var offered = await AssetItemsAsync(OfferedAssets(fields.Key, bound, actor.UserId!.Value)
                 .OrderBy(a => a.Name).ThenBy(a => a.AssetNumber).ThenBy(a => a.Id)
                 .Take(RequestFlowRules.AssetButtonsUpTo + 1), ct);
             if (offered.Count > RequestFlowRules.AssetButtonsUpTo) continue;
@@ -422,8 +438,9 @@ public sealed class RequestService(
     /// <summary>
     /// The pickers' search for an Asset, Project or Person field (§6.20): up to <paramref name="take"/> matches within the field's scope,
     /// under the flow's authority - the configurer chose what the field offers - never disposed assets, archived projects or inactive people.
+    /// <paramref name="stepId"/> is the request step being filled in, null while the request is being logged.
     /// </summary>
-    public async Task<IReadOnlyList<RequestLookupItem>> LookupAsync(Guid fieldId, string? query, int take = 20, CancellationToken ct = default)
+    public async Task<IReadOnlyList<RequestLookupItem>> LookupAsync(Guid fieldId, string? query, Guid? stepId, int take = 20, CancellationToken ct = default)
     {
         var actor = await actors.GetAsync(ct);
         RequireSubmit(actor);
@@ -432,26 +449,29 @@ public sealed class RequestService(
         var t = query?.Trim();
         if (string.IsNullOrEmpty(t)) return [];
         var pattern = $"%{t}%";
-        var department = field.Step.Flow.Category.DepartmentId;
         var me = actor.UserId!.Value;
         var n = Math.Clamp(take, 1, 50);
+        var requesterDepartment = await RequesterDepartmentAsync(actor, [field], stepId, ct);
+        var bound = RequestEngineRules.ScopeDepartment(field.PickerScope, field.Step.Flow.Category.DepartmentId, requesterDepartment);
+        // A requester with no department: nothing to search, and the filters below would leave everything in.
+        if (bound.OffersNothing) return [];
         switch (field.FieldType)
         {
             case RequestFieldType.Asset:
-                return await AssetItemsAsync(OfferedAssets(field.PickerScope, department, me)
+                return await AssetItemsAsync(OfferedAssets(field.PickerScope, bound, me)
                     .Where(a => EF.Functions.ILike(a.Name, pattern) || (a.AssetNumber != null && EF.Functions.ILike(a.AssetNumber, pattern))
                         || (a.SerialNumber != null && EF.Functions.ILike(a.SerialNumber, pattern)))
                     .OrderBy(a => a.Name).Take(n), ct);
             case RequestFieldType.Project:
                 var projects = db.Projects.AsNoTracking().Where(p => p.Status == ProjectStatus.Active || p.Status == ProjectStatus.OnHold);
-                if (field.PickerScope == RequestPickerScope.Department) projects = projects.Where(p => p.DepartmentId == department);
+                if (bound.DepartmentId is Guid projectsOf) projects = projects.Where(p => p.DepartmentId == projectsOf);
                 return await projects.Where(p => EF.Functions.ILike(p.Name, pattern) || EF.Functions.ILike(p.Number, pattern))
                     .OrderBy(p => p.Name).Take(n)
                     .Select(p => new RequestLookupItem(p.Id, p.Number + " " + p.Name, p.Department.Name, p.Status == ProjectStatus.OnHold ? "On hold" : null))
                     .ToListAsync(ct);
             case RequestFieldType.User:
                 var people = db.Users.AsNoTracking().Where(u => u.IsActive && !u.IsSystemAccount);
-                if (field.PickerScope == RequestPickerScope.Department) people = people.Where(u => u.DepartmentId == department);
+                if (bound.DepartmentId is Guid peopleOf) people = people.Where(u => u.DepartmentId == peopleOf);
                 return await people.Where(u => EF.Functions.ILike(u.DisplayName, pattern) || (u.Email != null && EF.Functions.ILike(u.Email, pattern)))
                     .OrderBy(u => u.DisplayName).Take(n)
                     .Select(u => new RequestLookupItem(u.Id, u.DisplayName, u.Department != null ? u.Department.Name : null, u.Email))
@@ -476,16 +496,36 @@ public sealed class RequestService(
         .Include(f => f.Steps).ThenInclude(s => s.ActionInputs)
         .AsSplitQuery();
 
-    /// <summary>The assets an Asset field's scope offers a person (§6.20): the flow's department's, everyone's, or the ones they hold - never disposed ones.</summary>
-    private IQueryable<Asset> OfferedAssets(RequestPickerScope? scope, Guid department, Guid me)
+    /// <summary>
+    /// The assets an Asset field's scope offers a person (§6.20): the ones they hold, the ones of the department the scope keeps to
+    /// (the flow's, or the requester's - none for a requester with no department), or everyone's - never disposed ones.
+    /// </summary>
+    private IQueryable<Asset> OfferedAssets(RequestPickerScope? scope, PickerDepartment bound, Guid me)
     {
         var assets = db.Assets.AsNoTracking().Where(a => a.Status != AssetStatus.Disposed);
         return scope switch
         {
             RequestPickerScope.Held => assets.Where(a => a.Assignments.Any(x => x.UserId == me)),
-            RequestPickerScope.Department => assets.Where(a => a.DepartmentId == department),
+            _ when bound.OffersNothing => assets.Where(a => false),
+            _ when bound.DepartmentId is Guid own => assets.Where(a => a.DepartmentId == own),
             _ => assets
         };
+    }
+
+    /// <summary>
+    /// The department of whoever logged the request a form belongs to, for the fields scoped to it (§6.20) - looked up only when one
+    /// of <paramref name="fields"/> is. While the request is being logged there is no step yet and the caller is the requester; on a
+    /// later form step it is the request's requester, whoever fills the form in, and the caller must be allowed to act on that step.
+    /// </summary>
+    private async Task<Guid?> RequesterDepartmentAsync(Actor actor, IEnumerable<RequestFormField> fields, Guid? stepId, CancellationToken ct)
+    {
+        var scoped = fields.FirstOrDefault(f => f.PickerScope == RequestPickerScope.RequestersDepartment);
+        if (scoped is null) return null;
+        if (stepId is null) return actor.DepartmentId;
+        var step = await db.RequestSteps.AsNoTracking().Include(s => s.Request).ThenInclude(r => r.Requester)
+            .FirstOrDefaultAsync(s => s.Id == stepId && s.FlowStepId == scoped.StepId, ct) ?? throw new NotFoundException("Request step not found.");
+        AccessPolicy.Require(AccessPolicy.CanActOnStep(actor, step.Request, step), "This step isn't addressed to you.");
+        return step.Request.Requester.DepartmentId;
     }
 
     /// <summary>Assets as a form shows them, searched or listed: the label, the type, and the location with the status when it isn't Active.</summary>
@@ -504,10 +544,10 @@ public sealed class RequestService(
         foreach (var s in flow.Steps) s.Fields = s.Fields.OrderBy(f => f.DisplayOrder).ThenBy(f => f.Prompt).ToList();
     }
 
-    /// <summary>The form's answers cleaned and its picks resolved; refused ones reported per field.</summary>
+    /// <summary>The form's answers cleaned and its picks resolved; refused ones reported per field. The department is the request's requester's.</summary>
     private async Task<(IReadOnlyList<RequestAnswer> Answers, Dictionary<Guid, Pick> Picks)> CleanFormAsync(
         RequestFlow flow, RequestFlowStep form, IReadOnlyDictionary<Guid, RequestAnswerInput> answers,
-        IReadOnlyDictionary<Guid, IReadOnlyList<AttachmentUpload>> files, CancellationToken ct)
+        IReadOnlyDictionary<Guid, IReadOnlyList<AttachmentUpload>> files, Guid? requesterDepartment, CancellationToken ct)
     {
         var actor = await actors.GetAsync(ct);
         var given = new Dictionary<Guid, RequestAnswerInput>(answers);
@@ -518,7 +558,7 @@ public sealed class RequestService(
         var errs = new Dictionary<Guid, string>(errors);
         foreach (var answer in clean.Where(a => a.Id is not null))
         {
-            var pick = await ResolvePickAsync(flow, answer.Field, answer.Id!.Value, actor.UserId!.Value, ct);
+            var pick = await ResolvePickAsync(flow, answer.Field, answer.Id!.Value, actor.UserId!.Value, requesterDepartment, ct);
             if (pick is null) errs[answer.Field.Id] = answer.Field.FieldType switch
             {
                 RequestFieldType.Asset => "Choose one of the assets offered.",
@@ -532,32 +572,27 @@ public sealed class RequestService(
         return (clean, picks);
     }
 
-    private async Task<Pick?> ResolvePickAsync(RequestFlow flow, RequestFormField field, Guid id, Guid me, CancellationToken ct)
+    private async Task<Pick?> ResolvePickAsync(RequestFlow flow, RequestFormField field, Guid id, Guid me, Guid? requesterDepartment, CancellationToken ct)
     {
-        var department = flow.Category.DepartmentId;
+        var bound = RequestEngineRules.ScopeDepartment(field.PickerScope, flow.Category.DepartmentId, requesterDepartment);
         switch (field.FieldType)
         {
             case RequestFieldType.Asset:
                 var asset = await db.Assets.AsNoTracking().Include(a => a.Assignments).FirstOrDefaultAsync(a => a.Id == id && a.Status != AssetStatus.Disposed, ct);
                 if (asset is null) return null;
-                var inScope = field.PickerScope switch
-                {
-                    RequestPickerScope.Held => asset.Assignments.Any(x => x.UserId == me),
-                    RequestPickerScope.Department => asset.DepartmentId == department,
-                    _ => true
-                };
+                var inScope = field.PickerScope == RequestPickerScope.Held ? asset.Assignments.Any(x => x.UserId == me) : bound.Offers(asset.DepartmentId);
                 return inScope ? new Pick(AssetRules.Label(asset.AssetNumber, asset.Name), asset.Id, null, null) : null;
             case RequestFieldType.Project:
                 var project = await db.Projects.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id && p.Status != ProjectStatus.Archived, ct);
-                if (project is null || (field.PickerScope == RequestPickerScope.Department && project.DepartmentId != department)) return null;
+                if (project is null || !bound.Offers(project.DepartmentId)) return null;
                 return new Pick($"{project.Number} {project.Name}", null, project.Id, null);
             case RequestFieldType.User:
                 var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == id && u.IsActive && !u.IsSystemAccount, ct);
-                if (user is null || (field.PickerScope == RequestPickerScope.Department && user.DepartmentId != department)) return null;
+                if (user is null || !bound.Offers(user.DepartmentId)) return null;
                 return new Pick(user.DisplayName, null, null, user.Id);
             case RequestFieldType.AssetType:
                 var type = await db.AssetTypes.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id && !t.IsArchived, ct);
-                if (type is null || (field.PickerScope == RequestPickerScope.Department && type.DepartmentId != department)) return null;
+                if (type is null || !bound.Offers(type.DepartmentId)) return null;
                 return new Pick(type.Name, null, null, null, type.Id);
             default:
                 return null;

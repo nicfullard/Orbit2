@@ -16,7 +16,9 @@
     var error = Model.Errors.GetValueOrDefault(f.Id);
     var describedBy = string.Join(' ', new[] { f.HelpText is null ? null : $"help-{key}", $"error-{key}" }.OfType<string>());
     var listed = f.FieldType == RequestFieldType.Asset ? Model.AssetChoices.GetValueOrDefault(f.Id) : null;
-    var picker = listed is null && f.FieldType is RequestFieldType.Asset or RequestFieldType.Project or RequestFieldType.User;
+    // Scoped to the requester's department when the requester has none: nothing can be offered, so the field says so.
+    var nothing = f.PickerScope == RequestPickerScope.RequestersDepartment ? Model.NoDepartmentNote : null;
+    var picker = listed is null && nothing is null && f.FieldType is RequestFieldType.Asset or RequestFieldType.Project or RequestFieldType.User;
     <fieldset class="request-question js-step" id="step-@key" data-has-error="@(error is null ? null : "true")"
               data-files="@(f.FieldType == RequestFieldType.Attachment ? "true" : null)"
               data-files-required="@(f.FieldType == RequestFieldType.Attachment && f.IsRequired ? "true" : null)"
@@ -31,6 +33,9 @@
         }
         @switch (f.FieldType)
         {
+            case var _ when nothing is not null:
+                <div class="form-text text-danger">@nothing</div>
+                break;
             case RequestFieldType.Number:
                 <input type="number" step="any" inputmode="decimal" class="form-control" style="max-width: 14rem" id="q-@key" name="@name"
                        value="@answer.Value" required="@f.IsRequired" aria-describedby="@describedBy" aria-label="@f.Prompt" />
@@ -143,7 +148,7 @@
                 {
                     Id = $"pick-{key}",
                     FieldName = $"Answers[{f.Id}].Id",
-                    SearchUrl = $"{Model.LookupUrl}?fieldId={f.Id}",
+                    SearchUrl = $"{Model.LookupUrl}?fieldId={f.Id}{(Model.RequestStepId is Guid stepId ? $"&stepId={stepId}" : "")}",
                     SelectedId = answer.Id,
                     SelectedLabel = Model.Labels.GetValueOrDefault(f.Id),
                     Placeholder = f.FieldType switch

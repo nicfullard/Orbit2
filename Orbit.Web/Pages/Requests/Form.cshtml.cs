@@ -55,7 +55,7 @@ public class FormModel(RequestService requests, IOptions<AttachmentOptions> atta
         FilesDropped = files.Values.Any(f => f.Count > 0);
         var labels = new Dictionary<Guid, string>();
         foreach (var (fieldId, answer) in Answers)
-            if (answer.Id is Guid picked && await requests.PickLabelAsync(fieldId, picked, ct) is { } label) labels[fieldId] = label;
+            if (answer.Id is Guid picked && await requests.PickLabelAsync(fieldId, picked, id, ct) is { } label) labels[fieldId] = label;
         Labels = labels;
         return Page();
     }
@@ -63,7 +63,7 @@ public class FormModel(RequestService requests, IOptions<AttachmentOptions> atta
     private async Task LoadAsync(Guid id, CancellationToken ct)
     {
         Step = await requests.FormStepAsync(id, ct);
-        AssetTypes = await requests.AssetTypeChoicesAsync(Step.FlowStep.Flow, Step.FlowStep, ct);
-        AssetChoices = await requests.AssetChoicesAsync(Step.FlowStep.Flow, Step.FlowStep, ct);
+        AssetTypes = await requests.AssetTypeChoicesAsync(Step.FlowStep.Flow, Step.FlowStep, id, ct);
+        AssetChoices = await requests.AssetChoicesAsync(Step.FlowStep.Flow, Step.FlowStep, id, ct);
     }
 }

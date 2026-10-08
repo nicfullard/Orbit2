@@ -14,10 +14,12 @@ namespace Orbit.Pages.Requests;
 /// Logging a request through a flow (spec §6.20): the start form's fields one at a time (requests.js), a review, then the request is
 /// logged and its page opens. Refused answers come back beside their fields, the answers kept. A flow with no start form just confirms.
 /// </summary>
-public class StartModel(RequestService requests, IOptions<AttachmentOptions> attachmentOptions) : OrbitPageModel
+public class StartModel(RequestService requests, IActorProvider actors, IOptions<AttachmentOptions> attachmentOptions) : OrbitPageModel
 {
     public RequestFlow Flow { get; private set; } = null!;
     public RequestFlowStep? StartForm { get; private set; }
+    /// <summary>Whether the person logging the request has a department, for the fields scoped to the requester's.</summary>
+    public bool HasDepartment { get; private set; }
     public AttachmentOptions AttachmentLimits => attachmentOptions.Value;
 
     [BindProperty] public Dictionary<Guid, AnswerForm> Answers { get; set; } = new();
@@ -73,8 +75,9 @@ public class StartModel(RequestService requests, IOptions<AttachmentOptions> att
         Flow = await requests.FlowAsync(id, ct);
         StartForm = RequestFlowRules.StartForm(Flow);
         if (StartForm is null) return;
-        AssetTypes = await requests.AssetTypeChoicesAsync(Flow, StartForm, ct);
-        AssetChoices = await requests.AssetChoicesAsync(Flow, StartForm, ct);
+        HasDepartment = (await actors.GetAsync(ct)).DepartmentId is not null;
+        AssetTypes = await requests.AssetTypeChoicesAsync(Flow, StartForm, null, ct);
+        AssetChoices = await requests.AssetChoicesAsync(Flow, StartForm, null, ct);
     }
 
     /// <summary>After a refused post the pickers only have ids; their labels are looked up again so the chips show.</summary>
@@ -82,7 +85,7 @@ public class StartModel(RequestService requests, IOptions<AttachmentOptions> att
     {
         var labels = new Dictionary<Guid, string>();
         foreach (var (fieldId, answer) in Answers)
-            if (answer.Id is Guid picked && await requests.PickLabelAsync(fieldId, picked, ct) is { } label) labels[fieldId] = label;
+            if (answer.Id is Guid picked && await requests.PickLabelAsync(fieldId, picked, null, ct) is { } label) labels[fieldId] = label;
         return labels;
     }
 }

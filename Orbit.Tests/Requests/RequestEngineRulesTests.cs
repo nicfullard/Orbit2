@@ -181,6 +181,48 @@ public class RequestEngineRulesTests
         Assert.Single(RequestEngineRules.CleanAnswers([text], new Dictionary<Guid, RequestAnswerInput> { [text.Id] = new(new string('x', 4001)) }).Errors);
     }
 
+    /// <summary>
+    /// REQ-023: the department a picker field's scope keeps to - the flow's, the requester's, or none for the whole company's and for
+    /// Held - and what it then offers: a requester with no department is offered nothing, not even what has no department either.
+    /// </summary>
+    [Fact]
+    public void A_scope_keeps_to_a_department()
+    {
+        var it = Guid.NewGuid();
+        var finance = Guid.NewGuid();
+
+        var flows = RequestEngineRules.ScopeDepartment(RequestPickerScope.Department, it, finance);
+        Assert.Equal(new PickerDepartment(true, it), flows);
+        Assert.True(flows.Offers(it));
+        Assert.False(flows.Offers(finance));
+        Assert.False(flows.Offers(null));
+        Assert.False(flows.OffersNothing);
+
+        var requesters = RequestEngineRules.ScopeDepartment(RequestPickerScope.RequestersDepartment, it, finance);
+        Assert.Equal(new PickerDepartment(true, finance), requesters);
+        Assert.True(requesters.Offers(finance));
+        Assert.False(requesters.Offers(it));
+        Assert.False(requesters.Offers(null));
+        Assert.False(requesters.OffersNothing);
+
+        var nobodys = RequestEngineRules.ScopeDepartment(RequestPickerScope.RequestersDepartment, it, null);
+        Assert.True(nobodys.OffersNothing);
+        Assert.False(nobodys.Offers(null));
+        Assert.False(nobodys.Offers(it));
+        // A requester in no department doesn't narrow the flow's own scope.
+        Assert.True(RequestEngineRules.ScopeDepartment(RequestPickerScope.Department, it, null).Offers(it));
+
+        foreach (var scope in new RequestPickerScope?[] { RequestPickerScope.Company, RequestPickerScope.Held, null })
+        {
+            var everything = RequestEngineRules.ScopeDepartment(scope, it, null);
+            Assert.False(everything.Kept);
+            Assert.False(everything.OffersNothing);
+            Assert.True(everything.Offers(it));
+            Assert.True(everything.Offers(finance));
+            Assert.True(everything.Offers(null));
+        }
+    }
+
     /// <summary>REQ-021: a task step's title and description rendered from the request's values, the title falling back when it renders blank; the request's own title; the task's priority from an Urgency answer, falling back to the step's.</summary>
     [Fact]
     public void A_task_step_composes_its_task()

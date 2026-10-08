@@ -292,9 +292,9 @@ tile (*Report a problem*, *Products*...), then a flow. A **flow** is a sequence 
 
 - **Form** - questions, one at a time: text, number, date, a choice, how urgent it is (Low to Critical, each with
   what it means), files, an asset type, or an asset, project or person picked from a list the builder scoped (the
-  department's, the whole company's, or the assets you hold). An asset question that offers ten or fewer shows them
-  all as buttons, each with its type and location, so you don't need to know what yours is called; with more, you
-  search by name, number or serial.
+  department's, your own department's, the whole company's, or the assets you hold). An asset question that offers
+  ten or fewer shows them all as buttons, each with its type and location, so you don't need to know what yours is
+  called; with more, you search by name, number or serial.
 - **Approval** - ordered stages of approvers (a person, or everyone with a role in a department or in the requester's
   own), any one or all of them; a decline ends it, and each decision may carry a comment.
 - **Task** - creates an Orbit task in a department, with its type, priority (fixed, or from an urgency answer), title

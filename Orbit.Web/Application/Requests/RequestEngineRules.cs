@@ -32,6 +32,19 @@ public sealed record RequestAnswerInput(string? Value, Guid? Id = null, int File
 /// <summary>A cleaned answer: <see cref="Value"/> in its canonical form, <see cref="Id"/> the asset, asset type, project or person picked.</summary>
 public sealed record RequestAnswer(RequestFormField Field, string? Value, Guid? Id = null);
 
+/// <summary>
+/// What a picker field's scope keeps to by department (§6.20): nothing in particular (<see cref="Kept"/> false), or one department -
+/// and no department at all for a requester who has none, which offers nothing.
+/// </summary>
+public readonly record struct PickerDepartment(bool Kept, Guid? DepartmentId)
+{
+    /// <summary>Whether the scope offers something of that department. Two missing departments don't match: nothing is nobody's.</summary>
+    public bool Offers(Guid? itsDepartmentId) => !Kept || (DepartmentId is Guid d && itsDepartmentId == d);
+
+    /// <summary>Kept to a department the requester doesn't have: there is nothing to offer, and no query to run.</summary>
+    public bool OffersNothing => Kept && DepartmentId is null;
+}
+
 /// <summary>What a task step creates: the rendered title and description.</summary>
 public sealed record ComposedTask(string Title, string? Description);
 
@@ -228,6 +241,17 @@ public static class RequestEngineRules
                 return new RequestAnswer(field, text);
         }
     }
+
+    /// <summary>
+    /// REQ-023: the department a picker field's scope keeps what it offers to - the flow's, or the requester's (none when they have
+    /// none, so nothing is offered) - and no department for the whole company's and for Held, which goes by holder.
+    /// </summary>
+    public static PickerDepartment ScopeDepartment(RequestPickerScope? scope, Guid flowDepartmentId, Guid? requesterDepartmentId) => scope switch
+    {
+        RequestPickerScope.Department => new(true, flowDepartmentId),
+        RequestPickerScope.RequestersDepartment => new(true, requesterDepartmentId),
+        _ => new(false, null)
+    };
 
     // ---------------------------------------------------------------- tasks
 

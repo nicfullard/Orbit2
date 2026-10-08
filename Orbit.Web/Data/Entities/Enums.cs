@@ -121,14 +121,15 @@ public enum RequestFieldType
 }
 
 /// <summary>
-/// What an Asset, Asset type, Project or User field offers (§6.20): the flow's department's own, the whole company's, or - assets
-/// only - the ones the person asking holds.
+/// What an Asset, Asset type, Project or User field offers (§6.20): the flow's department's own, the whole company's, - assets
+/// only - the ones the person asking holds, or those of the department of whoever logged the request.
 /// </summary>
 public enum RequestPickerScope
 {
     Department,
     Company,
-    Held
+    Held,
+    RequestersDepartment
 }
 
 /// <summary>How an approval step ended, and what a dependency on one may require before the dependent step starts.</summary>
@@ -380,6 +381,7 @@ public static class TaskStatusExtensions
         RequestPickerScope.Department => "The flow's department's",
         RequestPickerScope.Company => "The whole company's",
         RequestPickerScope.Held => "The ones the person asking holds",
+        RequestPickerScope.RequestersDepartment => "The requester's department's",
         _ => scope.ToString()
     };
 

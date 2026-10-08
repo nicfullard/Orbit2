@@ -119,7 +119,10 @@ public class RequestFlowRulesTests
         Assert.Empty(RequestFlowRules.TransitivePredecessors(a.Id, deps));
     }
 
-    /// <summary>REQ-013: a field's definition - prompt, choices only for a Choice (two to 50, distinct), a scope only for the pickers and asset types, Held only for assets; an urgency has neither.</summary>
+    /// <summary>
+    /// REQ-013: a field's definition - prompt, choices only for a Choice (two to 50, distinct), a scope only for the pickers and asset
+    /// types, the requester's department's for any of them, Held only for assets; an urgency has neither.
+    /// </summary>
     [Fact]
     public void Fields_are_checked_by_type()
     {
@@ -148,6 +151,14 @@ public class RequestFlowRulesTests
         Assert.Throws<ValidationException>(() => RequestFlowRules.ValidateField(new RequestFieldInput { Prompt = "What kind?", FieldType = RequestFieldType.AssetType, PickerScope = RequestPickerScope.Held }));
         var assetType = RequestFlowRules.ValidateField(new RequestFieldInput { Prompt = "What kind?", FieldType = RequestFieldType.AssetType, PickerScope = RequestPickerScope.Department });
         Assert.Equal(RequestPickerScope.Department, assetType.Scope);
+
+        foreach (var type in new[] { RequestFieldType.Asset, RequestFieldType.AssetType, RequestFieldType.Project, RequestFieldType.User })
+        {
+            var own = RequestFlowRules.ValidateField(new RequestFieldInput { Prompt = "Which of yours?", FieldType = type, PickerScope = RequestPickerScope.RequestersDepartment });
+            Assert.Equal(RequestPickerScope.RequestersDepartment, own.Scope);
+        }
+        var date = RequestFlowRules.ValidateField(new RequestFieldInput { Prompt = "When?", FieldType = RequestFieldType.Date, PickerScope = RequestPickerScope.RequestersDepartment });
+        Assert.Null(date.Scope);
     }
 
     /// <summary>REQ-019: the start form is the first form with nothing to wait for, performed by the requester; a flow is live when offered and every step is ready.</summary>

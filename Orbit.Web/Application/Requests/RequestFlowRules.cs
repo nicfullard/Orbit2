@@ -181,8 +181,9 @@ public static class RequestFlowRules
 
     /// <summary>
     /// REQ-013: a field's definition - prompt and help text within their lengths; a Choice with two to 50 distinct answers (one per
-    /// line) and no other type with any; a scope only for an Asset, Asset type, Project or User field, Held only for an Asset. An
-    /// Urgency has neither: its answers are the four priorities.
+    /// line) and no other type with any; a scope only for an Asset, Asset type, Project or User field - any of them may offer the
+    /// flow's department's, the requester's department's or the whole company's, Held only an Asset. An Urgency has neither: its
+    /// answers are the four priorities.
     /// </summary>
     public static RequestFieldDefinition ValidateField(RequestFieldInput input, string? key = null)
     {
@@ -208,7 +209,7 @@ public static class RequestFlowRules
         RequestPickerScope? scope = null;
         if (input.FieldType is RequestFieldType.Asset or RequestFieldType.AssetType or RequestFieldType.Project or RequestFieldType.User)
         {
-            scope = input.PickerScope ?? throw new ValidationException("Choose what the field offers: the department's, or the whole company's.");
+            scope = input.PickerScope ?? throw new ValidationException("Choose what the field offers: the flow's department's, the requester's department's, or the whole company's.");
             if (!Enum.IsDefined(scope.Value)) throw new ValidationException("Choose one of the scopes offered.");
             if (scope == RequestPickerScope.Held && input.FieldType != RequestFieldType.Asset)
                 throw new ValidationException("Only an Asset field can offer the ones the person asking holds.");
