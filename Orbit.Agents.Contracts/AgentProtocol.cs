@@ -20,6 +20,8 @@ public static class AgentMethods
     public const string TestDirectory = "TestDirectory";
     /// <summary>Orbit -> agent, returns <see cref="LdapListUsersResult"/>. Used by the directory import (agent 1.1 and later).</summary>
     public const string ListDirectoryUsers = "ListDirectoryUsers";
+    /// <summary>Orbit -> agent, returns <see cref="ScriptRunResult"/>. Runs a request action's script inside the network (agent 1.2 and later).</summary>
+    public const string RunScript = "RunScript";
     /// <summary>Agent -> Orbit, sent after every (re)connect.</summary>
     public const string Hello = "Hello";
 }
@@ -33,4 +35,6 @@ public static class AgentCapabilities
     public const string LdapAuthenticate = "ldap.authenticate";
     public const string LdapTest = "ldap.test";
     public const string LdapListUsers = "ldap.list-users";
+    /// <summary>Runs request action scripts (<see cref="AgentMethods.RunScript"/>); announced by agent 1.2 and later.</summary>
+    public const string ScriptRun = "script.run";
 }

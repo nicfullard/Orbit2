@@ -37,8 +37,20 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<AssetTypeProperty> AssetTypeProperties => Set<AssetTypeProperty>();
     public DbSet<AssetPropertyValue> AssetPropertyValues => Set<AssetPropertyValue>();
     public DbSet<RequestCategory> RequestCategories => Set<RequestCategory>();
-    public DbSet<RequestOption> RequestOptions => Set<RequestOption>();
-    public DbSet<RequestQuestion> RequestQuestions => Set<RequestQuestion>();
+    public DbSet<RequestFlow> RequestFlows => Set<RequestFlow>();
+    public DbSet<RequestFlowStep> RequestFlowSteps => Set<RequestFlowStep>();
+    public DbSet<RequestFlowStepDependency> RequestFlowStepDependencies => Set<RequestFlowStepDependency>();
+    public DbSet<RequestFormField> RequestFormFields => Set<RequestFormField>();
+    public DbSet<RequestFlowApprovalStage> RequestFlowApprovalStages => Set<RequestFlowApprovalStage>();
+    public DbSet<RequestFlowApprover> RequestFlowApprovers => Set<RequestFlowApprover>();
+    public DbSet<RequestFlowStepAssignee> RequestFlowStepAssignees => Set<RequestFlowStepAssignee>();
+    public DbSet<RequestFlowStepActionInput> RequestFlowStepActionInputs => Set<RequestFlowStepActionInput>();
+    public DbSet<RequestAction> RequestActions => Set<RequestAction>();
+    public DbSet<RequestActionParameter> RequestActionParameters => Set<RequestActionParameter>();
+    public DbSet<Request> Requests => Set<Request>();
+    public DbSet<RequestStep> RequestSteps => Set<RequestStep>();
+    public DbSet<RequestFormAnswer> RequestFormAnswers => Set<RequestFormAnswer>();
+    public DbSet<RequestApproval> RequestApprovals => Set<RequestApproval>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -317,7 +329,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 
         builder.Entity<Attachment>(b =>
         {
-            // Attached to exactly one task, project or asset (§6.18, §6.19); the row dies with it, the uploader is only recorded.
+            // Attached to exactly one task, project, asset or request (§6.18, §6.19, §6.20); the row dies with it, the uploader is only recorded.
             b.Property(a => a.FileName).HasMaxLength(255).IsRequired();
             b.Property(a => a.ContentType).HasMaxLength(200).IsRequired();
             b.HasOne(a => a.Task).WithMany(t => t.Attachments)
@@ -326,12 +338,15 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
                 .HasForeignKey(a => a.ProjectId).OnDelete(DeleteBehavior.Cascade);
             b.HasOne(a => a.Asset).WithMany(x => x.Attachments)
                 .HasForeignKey(a => a.AssetId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(a => a.Request).WithMany(r => r.Attachments)
+                .HasForeignKey(a => a.RequestId).OnDelete(DeleteBehavior.Cascade);
             b.HasOne(a => a.UploadedBy).WithMany()
                 .HasForeignKey(a => a.UploadedById).OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(a => a.TaskId);
             b.HasIndex(a => a.ProjectId);
             b.HasIndex(a => a.AssetId);
-            b.ToTable(t => t.HasCheckConstraint("CK_Attachments_OneParent", "num_nonnulls(\"TaskId\", \"ProjectId\", \"AssetId\") = 1"));
+            b.HasIndex(a => a.RequestId);
+            b.ToTable(t => t.HasCheckConstraint("CK_Attachments_OneParent", "num_nonnulls(\"TaskId\", \"ProjectId\", \"AssetId\", \"RequestId\") = 1"));
         });
 
         builder.Entity<AttachmentContent>(b =>
@@ -444,9 +459,10 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             b.HasIndex(v => v.AssetTypePropertyId);
         });
 
-        // --- Requests (§6.20). A category belongs to a department; options and questions die with their parent. Titles are unique
-        // ignoring case - a category's within its department, an option's within its category - through lower() expression indexes
-        // created in SQL by the AddRequests migration; the service checks the same rule first.
+        // --- Request flows (§6.20). A category belongs to a department; a flow, its steps and everything under them die with their
+        // parent. Titles are unique ignoring case - a category's within its department, a flow's within its category, an action's
+        // everywhere - through lower() expression indexes created in SQL by the migrations; the services check the same rule first.
+        // A request references its flow and each flow step (Restrict), so the services refuse to delete what requests still use.
         builder.Entity<RequestCategory>(b =>
         {
             b.Property(c => c.Title).HasMaxLength(100).IsRequired();
@@ -457,23 +473,190 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             b.HasIndex(c => c.DepartmentId);
         });
 
-        builder.Entity<RequestOption>(b =>
+        builder.Entity<RequestFlow>(b =>
         {
-            b.Property(o => o.Title).HasMaxLength(150).IsRequired();
-            b.Property(o => o.Description).HasMaxLength(500);
-            b.Property(o => o.Url).HasMaxLength(2000);
-            b.HasOne(o => o.Category).WithMany(c => c.Options)
-                .HasForeignKey(o => o.CategoryId).OnDelete(DeleteBehavior.Cascade);
-            b.HasIndex(o => o.CategoryId);
+            b.Property(f => f.Title).HasMaxLength(150).IsRequired();
+            b.Property(f => f.Description).HasMaxLength(500);
+            b.HasOne(f => f.Category).WithMany(c => c.Flows)
+                .HasForeignKey(f => f.CategoryId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(f => f.CategoryId);
         });
 
-        builder.Entity<RequestQuestion>(b =>
+        builder.Entity<RequestFlowStep>(b =>
         {
-            b.Property(q => q.Prompt).HasMaxLength(300).IsRequired();
-            b.Property(q => q.HelpText).HasMaxLength(500);
-            b.HasOne(q => q.Option).WithMany(o => o.Questions)
-                .HasForeignKey(q => q.OptionId).OnDelete(DeleteBehavior.Cascade);
-            b.HasIndex(q => q.OptionId);
+            b.Property(s => s.Key).HasMaxLength(40).IsRequired();
+            b.Property(s => s.Title).HasMaxLength(150).IsRequired();
+            b.Property(s => s.Url).HasMaxLength(2000);
+            b.Property(s => s.TitleTemplate).HasMaxLength(500);
+            b.Property(s => s.DescriptionTemplate).HasMaxLength(4000);
+            b.HasOne(s => s.Flow).WithMany(f => f.Steps)
+                .HasForeignKey(s => s.FlowId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(s => s.PerformedBy).WithMany()
+                .HasForeignKey(s => s.PerformedById).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(s => s.TaskDepartment).WithMany()
+                .HasForeignKey(s => s.TaskDepartmentId).OnDelete(DeleteBehavior.Restrict);
+            // A task step's field references point at fields of earlier form steps; a deleted field just unsets them.
+            b.HasOne(s => s.DueDateField).WithMany()
+                .HasForeignKey(s => s.DueDateFieldId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(s => s.AssetField).WithMany()
+                .HasForeignKey(s => s.AssetFieldId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(s => s.ProjectField).WithMany()
+                .HasForeignKey(s => s.ProjectFieldId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(s => s.PriorityField).WithMany()
+                .HasForeignKey(s => s.PriorityFieldId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(s => s.RequesteeField).WithMany()
+                .HasForeignKey(s => s.RequesteeFieldId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(s => s.CopyAttachmentsFromStep).WithMany()
+                .HasForeignKey(s => s.CopyAttachmentsFromStepId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(s => s.Action).WithMany(a => a.Steps)
+                .HasForeignKey(s => s.ActionId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(s => new { s.FlowId, s.Key }).IsUnique();
+        });
+
+        builder.Entity<RequestFlowStepDependency>(b =>
+        {
+            b.HasKey(d => new { d.StepId, d.DependsOnStepId });
+            b.HasOne(d => d.Step).WithMany(s => s.Dependencies)
+                .HasForeignKey(d => d.StepId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(d => d.DependsOnStep).WithMany()
+                .HasForeignKey(d => d.DependsOnStepId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(d => d.DependsOnStepId);
+        });
+
+        builder.Entity<RequestFormField>(b =>
+        {
+            b.Property(f => f.Key).HasMaxLength(40).IsRequired();
+            b.Property(f => f.Prompt).HasMaxLength(300).IsRequired();
+            b.Property(f => f.HelpText).HasMaxLength(500);
+            b.HasOne(f => f.Step).WithMany(s => s.Fields)
+                .HasForeignKey(f => f.StepId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(f => new { f.StepId, f.Key }).IsUnique();
+        });
+
+        builder.Entity<RequestFlowApprovalStage>(b =>
+        {
+            b.HasOne(s => s.Step).WithMany(x => x.Stages)
+                .HasForeignKey(s => s.StepId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(s => s.StepId);
+        });
+
+        builder.Entity<RequestFlowApprover>(b =>
+        {
+            b.HasOne(a => a.Stage).WithMany(s => s.Approvers)
+                .HasForeignKey(a => a.StageId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(a => a.User).WithMany()
+                .HasForeignKey(a => a.UserId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(a => a.Department).WithMany()
+                .HasForeignKey(a => a.DepartmentId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(a => a.Role).WithMany()
+                .HasForeignKey(a => a.RoleId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(a => a.StageId);
+        });
+
+        builder.Entity<RequestFlowStepAssignee>(b =>
+        {
+            b.HasKey(a => new { a.StepId, a.UserId });
+            b.HasOne(a => a.Step).WithMany(s => s.Assignees)
+                .HasForeignKey(a => a.StepId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(a => a.User).WithMany()
+                .HasForeignKey(a => a.UserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<RequestFlowStepActionInput>(b =>
+        {
+            b.HasKey(i => new { i.StepId, i.ParameterKey });
+            b.Property(i => i.ParameterKey).HasMaxLength(40);
+            b.Property(i => i.ValueTemplate).HasMaxLength(4000);
+            b.HasOne(i => i.Step).WithMany(s => s.ActionInputs)
+                .HasForeignKey(i => i.StepId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<RequestAction>(b =>
+        {
+            b.Property(a => a.Name).HasMaxLength(100).IsRequired();
+            b.Property(a => a.Description).HasMaxLength(500);
+            b.Property(a => a.Script).IsRequired();
+            // An agent that is deleted leaves the action to any agent that can run scripts.
+            b.HasOne(a => a.Agent).WithMany()
+                .HasForeignKey(a => a.AgentId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<RequestActionParameter>(b =>
+        {
+            b.Property(p => p.Key).HasMaxLength(40).IsRequired();
+            b.Property(p => p.Label).HasMaxLength(150).IsRequired();
+            b.HasOne(p => p.Action).WithMany(a => a.Parameters)
+                .HasForeignKey(p => p.ActionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(p => new { p.ActionId, p.Key }).IsUnique();
+        });
+
+        // --- Requests (§6.20): the instances. A request's steps, answers and approvals die with it; what they point at stays.
+        builder.Entity<Request>(b =>
+        {
+            b.Property(r => r.Number).HasMaxLength(16).IsRequired();
+            b.HasIndex(r => r.Number).IsUnique();
+            b.Property(r => r.Title).HasMaxLength(300).IsRequired();
+            b.Property(r => r.IdempotencyKey).HasMaxLength(200);
+            b.HasIndex(r => r.IdempotencyKey).IsUnique().HasFilter("\"IdempotencyKey\" IS NOT NULL");
+            b.HasOne(r => r.Flow).WithMany()
+                .HasForeignKey(r => r.FlowId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(r => r.Department).WithMany()
+                .HasForeignKey(r => r.DepartmentId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(r => r.Requester).WithMany()
+                .HasForeignKey(r => r.RequesterId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(r => r.RequesterId);
+            b.HasIndex(r => r.FlowId);
+            b.HasIndex(r => new { r.DepartmentId, r.Status });
+        });
+
+        builder.Entity<RequestStep>(b =>
+        {
+            b.Property(s => s.Error).HasMaxLength(4000);
+            b.HasOne(s => s.Request).WithMany(r => r.Steps)
+                .HasForeignKey(s => s.RequestId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(s => s.FlowStep).WithMany()
+                .HasForeignKey(s => s.FlowStepId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(s => s.AssignedTo).WithMany()
+                .HasForeignKey(s => s.AssignedToId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(s => s.Task).WithMany()
+                .HasForeignKey(s => s.TaskId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(s => s.CompletedBy).WithMany()
+                .HasForeignKey(s => s.CompletedById).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(s => new { s.RequestId, s.FlowStepId }).IsUnique();
+            b.HasIndex(s => s.Status);
+            b.HasIndex(s => s.TaskId);
+            b.HasIndex(s => s.AssignedToId);
+        });
+
+        builder.Entity<RequestFormAnswer>(b =>
+        {
+            b.Property(a => a.Value).HasMaxLength(4000);
+            b.HasOne(a => a.Step).WithMany(s => s.Answers)
+                .HasForeignKey(a => a.StepId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(a => a.Field).WithMany()
+                .HasForeignKey(a => a.FieldId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(a => a.Asset).WithMany()
+                .HasForeignKey(a => a.AssetId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(a => a.AssetType).WithMany()
+                .HasForeignKey(a => a.AssetTypeId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(a => a.Project).WithMany()
+                .HasForeignKey(a => a.ProjectId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(a => a.User).WithMany()
+                .HasForeignKey(a => a.UserId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(a => a.Attachment).WithMany()
+                .HasForeignKey(a => a.AttachmentId).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(a => new { a.StepId, a.FieldId });
+        });
+
+        builder.Entity<RequestApproval>(b =>
+        {
+            b.Property(a => a.Comment).HasMaxLength(2000);
+            b.HasOne(a => a.Step).WithMany(s => s.Approvals)
+                .HasForeignKey(a => a.StepId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(a => a.Approver).WithMany()
+                .HasForeignKey(a => a.ApproverId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(a => new { a.StepId, a.StageOrder, a.ApproverId }).IsUnique();
+            b.HasIndex(a => new { a.ApproverId, a.Decision });
         });
 
         // Store every enum as its name so the database is readable and filterable in SQL.

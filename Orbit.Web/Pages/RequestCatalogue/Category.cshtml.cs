@@ -7,22 +7,22 @@ using ValidationException = Orbit.Application.ValidationException;
 
 namespace Orbit.Pages.RequestCatalogue;
 
-/// <summary>One request category's fields and its options (spec §6.20).</summary>
+/// <summary>One request category's fields and its flows (spec §6.20).</summary>
 public class CategoryModel(RequestCatalogueService catalogue, IActorProvider actors) : OrbitPageModel
 {
     public RequestCategory Category { get; private set; } = null!;
     /// <summary>Whether the link to the category on the Requests page (requests.submit) would open.</summary>
     public bool CanSubmit { get; private set; }
+    public CategoryForm Form { get; private set; } = new();
+    public string? SaveError { get; private set; }
+    public FlowForm NewFlow { get; private set; } = new();
+    public string? AddError { get; private set; }
 
     public override async Task OnPageHandlerExecutionAsync(PageHandlerExecutingContext context, PageHandlerExecutionDelegate next)
     {
         CanSubmit = AccessPolicy.CanSubmitRequests(await actors.GetAsync(HttpContext.RequestAborted));
         await next();
     }
-    public CategoryForm Form { get; private set; } = new();
-    public string? SaveError { get; private set; }
-    public OptionForm NewOption { get; private set; } = OptionForm.New();
-    public string? AddError { get; private set; }
 
     public async Task OnGetAsync(Guid id, CancellationToken ct)
     {
@@ -47,48 +47,51 @@ public class CategoryModel(RequestCatalogueService catalogue, IActorProvider act
     public async Task<IActionResult> OnPostArchiveAsync(Guid id, bool archived, CancellationToken ct)
     {
         await catalogue.SetCategoryArchivedAsync(id, archived, ct);
-        Success(archived ? "Category archived: it and its options are no longer offered. Nothing is deleted." : "Category restored.");
+        Success(archived ? "Category archived: it and its flows are no longer offered. Nothing is deleted." : "Category restored.");
         return RedirectToPage(new { id });
     }
 
     public async Task<IActionResult> OnPostDeleteAsync(Guid id, CancellationToken ct)
     {
         var category = await catalogue.GetCategoryAsync(id, ct);
-        var options = await catalogue.DeleteCategoryAsync(id, ct);
-        Success(options == 0 ? $"Category \"{category.Title}\" deleted." : $"Category \"{category.Title}\" deleted, with its {options} {(options == 1 ? "option" : "options")}.");
-        return RedirectToPage("/RequestCatalogue/Index");
+        try
+        {
+            var flows = await catalogue.DeleteCategoryAsync(id, ct);
+            Success(flows == 0 ? $"Category \"{category.Title}\" deleted." : $"Category \"{category.Title}\" deleted, with its {flows} {(flows == 1 ? "flow" : "flows")}.");
+            return RedirectToPage("/RequestCatalogue/Index");
+        }
+        catch (ValidationException ex)
+        {
+            Error(ex.Message);
+            return RedirectToPage(new { id });
+        }
     }
 
-    public async Task<IActionResult> OnPostAddOptionAsync(Guid id, OptionForm option, CancellationToken ct)
+    public async Task<IActionResult> OnPostAddFlowAsync(Guid id, FlowForm flow, CancellationToken ct)
     {
         try
         {
-            var added = await catalogue.AddOptionAsync(id, option.ToInput(), ct);
-            if (added.Kind == RequestOptionKind.Flow)
-            {
-                Success($"Option \"{added.Title}\" added. Add its questions: it is offered once it has one.");
-                return RedirectToPage("/RequestCatalogue/Option", new { id = added.Id });
-            }
-            Success($"Link \"{added.Title}\" added.");
-            return RedirectToPage(new { id });
+            var added = await catalogue.AddFlowAsync(id, flow.ToInput(), ct);
+            Success($"Flow \"{added.Title}\" added. Now add its steps: it is offered once every step is set up.");
+            return RedirectToPage("/RequestCatalogue/Flow", new { id = added.Id });
         }
         catch (ValidationException ex) { AddError = ex.Message; }
         Category = await catalogue.GetCategoryAsync(id, ct);
         Form = CategoryForm.From(Category);
-        NewOption = option;
+        NewFlow = flow;
         return Page();
     }
 
-    public async Task<IActionResult> OnPostMoveOptionAsync(Guid id, Guid optionId, int direction, CancellationToken ct)
+    public async Task<IActionResult> OnPostMoveFlowAsync(Guid id, Guid flowId, int direction, CancellationToken ct)
     {
-        await catalogue.MoveOptionAsync(optionId, direction, ct);
+        await catalogue.MoveFlowAsync(flowId, direction, ct);
         return RedirectToPage(new { id });
     }
 
-    public async Task<IActionResult> OnPostArchiveOptionAsync(Guid id, Guid optionId, bool archived, CancellationToken ct)
+    public async Task<IActionResult> OnPostArchiveFlowAsync(Guid id, Guid flowId, bool archived, CancellationToken ct)
     {
-        await catalogue.SetOptionArchivedAsync(optionId, archived, ct);
-        Success(archived ? "Option archived: no longer offered." : "Option restored.");
+        await catalogue.SetFlowArchivedAsync(flowId, archived, ct);
+        Success(archived ? "Flow archived: no longer offered. Requests in progress carry on." : "Flow restored.");
         return RedirectToPage(new { id });
     }
 }

@@ -22,11 +22,11 @@
 }
 <div class="mb-3">
     <label class="form-label" for="@(p)_Title">Title</label>
-    <input class="form-control" id="@(p)_Title" name="@(p).Title" value="@f.Title" maxlength="@RequestRules.MaxCategoryTitleLength" required placeholder="e.g. Report a problem" />
+    <input class="form-control" id="@(p)_Title" name="@(p).Title" value="@f.Title" maxlength="@RequestFlowRules.MaxCategoryTitleLength" required placeholder="e.g. Report a problem" />
 </div>
 <div class="mb-3">
     <label class="form-label" for="@(p)_Description">Description</label>
-    <textarea class="form-control" id="@(p)_Description" name="@(p).Description" rows="2" maxlength="@RequestRules.MaxDescriptionLength" placeholder="e.g. Something is broken, not working or has gone wrong.">@f.Description</textarea>
+    <textarea class="form-control" id="@(p)_Description" name="@(p).Description" rows="2" maxlength="@RequestFlowRules.MaxDescriptionLength" placeholder="e.g. Something is broken, not working or has gone wrong.">@f.Description</textarea>
 </div>
 <fieldset class="mb-3">
     <legend class="form-label fs-6 mb-1">Icon</legend>

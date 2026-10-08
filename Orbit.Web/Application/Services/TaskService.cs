@@ -16,7 +16,8 @@ public sealed class TaskService(
     AuditService audit,
     NotificationService notifications,
     TaskStructureService structure,
-    AssetService assets)
+    AssetService assets,
+    RequestEngine requests)
 {
     private static IQueryable<TaskItem> WithIncludes(IQueryable<TaskItem> q) => q
         .Include(t => t.Department)
@@ -163,60 +164,6 @@ public sealed class TaskService(
         return await GetAsync(task.Id, ct);
     }
 
-    /// <summary>
-    /// File the task a request flow composed (§6.20) in the flow's department. The right to do so is requests.submit, not tasks.create
-    /// there: the flow decides what is filed, so anyone may ask another department for help. The requester is the creator; there is
-    /// no assignee, project or sprint, so the task waits in the department's unassigned work. A retry with the same idempotency key
-    /// returns the task already filed. Returns the saved task without re-reading it through <see cref="GetAsync"/>, which the
-    /// requester's own tasks.view may not allow.
-    /// </summary>
-    public async Task<TaskItem> CreateRequestAsync(RequestTaskInput input, CancellationToken ct = default)
-    {
-        var actor = await actors.GetAsync(ct);
-        AccessPolicy.Require(AccessPolicy.CanSubmitRequests(actor), "You don't have permission to log requests.");
-        var title = RequireTitle(input.Title);
-
-        var key = Clean(input.IdempotencyKey);
-        if (key is not null)
-        {
-            var existing = await db.Tasks.Include(t => t.Department).FirstOrDefaultAsync(t => t.IdempotencyKey == key, ct);
-            if (existing is not null)
-            {
-                AccessPolicy.Require(existing.CreatedById == actor.UserId && existing.Source == TaskSource.Request, "That request key is already in use.");
-                return existing;
-            }
-        }
-        await RequireOpenDepartmentAsync(input.DepartmentId, ct);
-        await assets.CheckLinkAsync(input.AssetId, null, ct);
-        DependencyRules.RequireDatesInOrder(null, input.DueDate);
-        if (input.RequesteeId is Guid forId)
-        {
-            var person = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == forId, ct)
-                ?? throw new ValidationException("The person the request is for doesn't exist.");
-            if (!person.IsActive || person.IsSystemAccount) throw new ValidationException("A request can only be for an active person.");
-            AccessPolicy.Require(AccessPolicy.CanRequestFor(actor, person.Id, person.DepartmentId),
-                "You can only log requests for yourself or for people in your department.");
-        }
-
-        var task = new TaskItem
-        {
-            Title = title,
-            Description = Clean(input.Description),
-            DepartmentId = input.DepartmentId,
-            AssetId = input.AssetId,
-            Priority = input.Priority,
-            Type = input.Type,
-            DueDate = input.DueDate,
-            Source = TaskSource.Request,
-            Assignments = [],
-            RequesteeId = input.RequesteeId,
-            IdempotencyKey = key
-        };
-        await InsertAsync(actor, task, TaskItemStatus.Todo, input.RequestDetails, ct);
-        await db.Entry(task).Reference(t => t.Department).LoadAsync(ct);
-        return task;
-    }
-
     /// <summary>Number, stamp and save a new task with its Created audit entry - the part every way of creating a task shares.</summary>
     private async Task InsertAsync(Actor actor, TaskItem task, TaskItemStatus status, object? request, CancellationToken ct)
     {
@@ -343,6 +290,8 @@ public sealed class TaskService(
             audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.ParentChanged, departmentId, task.Title,
                 new { parent = new { from = previousParentId, to = parent?.Id }, parentTitle = parent?.Title });
         await db.SaveChangesAsync(ct);
+        // A task a request step created completes (or cancels) the step when it closes (§6.20).
+        if (changes.Contains("status") && newStatus.IsClosed()) await requests.OnTaskClosedAsync(task, actor, ct);
 
         var told = await NotifyAssignedAsync(task, assignees.Added, actor, ct);
         if (newRequestee is not null && newRequestee.Id != actor.UserId && !told.Contains(newRequestee.Id))
@@ -370,6 +319,7 @@ public sealed class TaskService(
             status == TaskItemStatus.Done ? AuditAction.Completed : AuditAction.StatusChanged,
             task.DepartmentId, task.Title, new { status = new { from = previous, to = status } });
         await db.SaveChangesAsync(ct);
+        if (status.IsClosed()) await requests.OnTaskClosedAsync(task, actor, ct);
         return task;
     }
 

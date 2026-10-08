@@ -55,6 +55,26 @@ public static class Ui
         _ => "Manual"
     };
 
+    public static string RequestStatusBadge(RequestStatus s) => s switch
+    {
+        RequestStatus.InProgress => "text-bg-primary",
+        RequestStatus.Completed => "text-bg-success",
+        RequestStatus.Declined => "text-bg-danger",
+        RequestStatus.Cancelled => "text-bg-secondary",
+        _ => "text-bg-light border"
+    };
+
+    public static string RequestStepBadge(RequestStepStatus s) => s switch
+    {
+        RequestStepStatus.Ready => "text-bg-primary",
+        RequestStepStatus.Completed => "text-bg-success",
+        RequestStepStatus.Declined => "text-bg-danger",
+        RequestStepStatus.Failed => "text-bg-danger",
+        RequestStepStatus.Skipped => "text-bg-secondary",
+        RequestStepStatus.Cancelled => "text-bg-secondary",
+        _ => "text-bg-light border"
+    };
+
     public static string ProjectStatusBadge(ProjectStatus s) => s switch
     {
         ProjectStatus.Active => "text-bg-success",
@@ -190,6 +210,11 @@ public static class Ui
         "AssetUnassigned" => "unassigned",
         "CheckRecorded" => "recorded a check on",
         "CheckRemoved" => "removed a check from",
+        "Approved" => "approved a step of",
+        "Declined" => "declined",
+        "Retried" => "retried a step of",
+        "Skipped" => "skipped a step of",
+        "Cancelled" => "cancelled",
         _ => action.ToLowerInvariant()
     };
 

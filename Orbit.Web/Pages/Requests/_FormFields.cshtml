@@ -1,0 +1,136 @@
+@using Orbit.Application.Requests
+@using Orbit.Pages.Assets
+@using Orbit.Pages.Requests
+@model RequestFormFieldsVm
+@* A form step's fields (spec §6.20), one fieldset each - the wizard in requests.js shows them one at a time. Each posts under
+   Answers[fieldId].Value (text, number, date, choice, urgency) or Answers[fieldId].Id (a picker, or the asset type list), and an
+   Attachment field's files under files-{fieldId}. *@
+@{
+    var limits = Model.Limits;
+}
+@foreach (var f in Model.Fields)
+{
+    var key = f.Id.ToString("N");
+    var name = $"Answers[{f.Id}].Value";
+    var answer = Model.AnswerFor(f.Id);
+    var error = Model.Errors.GetValueOrDefault(f.Id);
+    var describedBy = string.Join(' ', new[] { f.HelpText is null ? null : $"help-{key}", $"error-{key}" }.OfType<string>());
+    var picker = f.FieldType is RequestFieldType.Asset or RequestFieldType.Project or RequestFieldType.User;
+    <fieldset class="request-question js-step" id="step-@key" data-has-error="@(error is null ? null : "true")"
+              data-files="@(f.FieldType == RequestFieldType.Attachment ? "true" : null)"
+              data-files-required="@(f.FieldType == RequestFieldType.Attachment && f.IsRequired ? "true" : null)"
+              data-picker-required="@(picker && f.IsRequired ? "true" : null)">
+        <legend tabindex="-1">
+            @f.Prompt
+            @if (!f.IsRequired) { <span class="text-muted fw-normal fs-6">(optional)</span> }
+        </legend>
+        @if (f.HelpText is not null)
+        {
+            <p class="text-muted mb-3" id="help-@key">@f.HelpText</p>
+        }
+        @switch (f.FieldType)
+        {
+            case RequestFieldType.Number:
+                <input type="number" step="any" inputmode="decimal" class="form-control" style="max-width: 14rem" id="q-@key" name="@name"
+                       value="@answer.Value" required="@f.IsRequired" aria-describedby="@describedBy" aria-label="@f.Prompt" />
+                break;
+            case RequestFieldType.Date:
+                <input type="date" class="form-control" style="max-width: 14rem" id="q-@key" name="@name" value="@answer.Value"
+                       required="@f.IsRequired" aria-describedby="@describedBy" aria-label="@f.Prompt" />
+                break;
+            case RequestFieldType.Choice when f.Choices.Count <= RequestFlowRules.ChoiceButtonsUpTo:
+                <div class="request-choices @(f.Choices.Count > 2 ? "request-choices-2" : "")">
+                    @for (var i = 0; i < f.Choices.Count; i++)
+                    {
+                        var rid = $"q-{key}-{i}";
+                        <input type="radio" class="btn-check" name="@name" id="@rid" value="@f.Choices[i]" autocomplete="off"
+                               checked="@(string.Equals(answer.Value, f.Choices[i], StringComparison.OrdinalIgnoreCase))" required="@f.IsRequired" aria-describedby="@describedBy" />
+                        <label class="btn btn-outline-secondary" for="@rid"><span class="js-choice-label">@f.Choices[i]</span></label>
+                    }
+                </div>
+                break;
+            case RequestFieldType.Choice:
+                <select class="form-select" style="max-width: 28rem" id="q-@key" name="@name" required="@f.IsRequired" aria-describedby="@describedBy" aria-label="@f.Prompt">
+                    <option value="">Choose...</option>
+                    @foreach (var choice in f.Choices)
+                    {
+                        <option value="@choice" selected="@(string.Equals(answer.Value, choice, StringComparison.OrdinalIgnoreCase))">@choice</option>
+                    }
+                </select>
+                break;
+            case RequestFieldType.Urgency:
+                <div class="request-choices">
+                    @foreach (var p in Enum.GetValues<TaskPriority>())
+                    {
+                        var rid = $"q-{key}-{p.ToString().ToLowerInvariant()}";
+                        <input type="radio" class="btn-check" name="@name" id="@rid" value="@p" autocomplete="off"
+                               checked="@(string.Equals(answer.Value, p.ToString(), StringComparison.OrdinalIgnoreCase))" required="@f.IsRequired" aria-describedby="@describedBy" />
+                        <label class="btn btn-outline-secondary request-urgency-@p.ToString().ToLowerInvariant()" for="@rid">
+                            <span class="fw-semibold js-choice-label">@p</span>
+                            <span class="small js-choice-detail">@RequestEngineRules.UrgencyMeaning(p)</span>
+                        </label>
+                    }
+                </div>
+                break;
+            case RequestFieldType.AssetType:
+                var types = Model.AssetTypes.GetValueOrDefault(f.Id) ?? [];
+                @if (types.Count == 0)
+                {
+                    <div class="form-text text-danger">No asset types are offered here yet.</div>
+                }
+                else
+                {
+                    <select class="form-select" style="max-width: 28rem" id="q-@key" name="Answers[@f.Id].Id" required="@f.IsRequired" aria-describedby="@describedBy" aria-label="@f.Prompt">
+                        <option value="">Choose...</option>
+                        @foreach (var g in types.GroupBy(t => t.Group))
+                        {
+                            if (g.Key.Length > 0)
+                            {
+                                <optgroup label="@g.Key">
+                                    @foreach (var t in g) { <option value="@t.Id" selected="@(t.Id == answer.Id)">@t.Name</option> }
+                                </optgroup>
+                            }
+                            else
+                            {
+                                foreach (var t in g) { <option value="@t.Id" selected="@(t.Id == answer.Id)">@t.Name</option> }
+                            }
+                        }
+                    </select>
+                }
+                break;
+            case RequestFieldType.Attachment:
+                @if (Model.FilesDropped)
+                {
+                    <div class="alert alert-warning py-2 small">Choose your files again: they can't be kept while the answers are checked.</div>
+                }
+                <input type="file" class="form-control js-files" id="q-@key" name="files-@f.Id" multiple aria-describedby="@describedBy" aria-label="@f.Prompt" />
+                <div class="form-text">Up to @limits.MaxFilesPerUpload files, @limits.MaxFileSizeMb MB each.</div>
+                break;
+            case RequestFieldType.Asset:
+            case RequestFieldType.Project:
+            case RequestFieldType.User:
+                var what = f.FieldType switch { RequestFieldType.Asset => "asset", RequestFieldType.Project => "project", _ => "person" };
+                <partial name="/Pages/Assets/_AssetPicker.cshtml" model="@(new AssetPickerVm
+                {
+                    Id = $"pick-{key}",
+                    FieldName = $"Answers[{f.Id}].Id",
+                    SearchUrl = $"{Model.LookupUrl}?fieldId={f.Id}",
+                    SelectedId = answer.Id,
+                    SelectedLabel = Model.Labels.GetValueOrDefault(f.Id),
+                    Placeholder = f.FieldType switch
+                    {
+                        RequestFieldType.Asset => "Search by name, number or serial...",
+                        RequestFieldType.Project => "Search by name or number...",
+                        _ => "Search by name or email..."
+                    },
+                    Label = $"Search for a {what}"
+                })" />
+                break;
+            default:
+                <textarea class="form-control" id="q-@key" name="@name" rows="4" maxlength="@RequestFlowRules.MaxTextAnswerLength"
+                          required="@f.IsRequired" aria-describedby="@describedBy" aria-label="@f.Prompt">@answer.Value</textarea>
+                break;
+        }
+        <div class="text-danger small mt-2 js-step-error" id="error-@key">@error</div>
+    </fieldset>
+}

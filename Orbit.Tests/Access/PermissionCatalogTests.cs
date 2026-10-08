@@ -17,7 +17,7 @@ public class PermissionCatalogTests
     {
         var keys = PermissionCatalog.All.Select(p => p.Key).ToList();
         Assert.Equal(Constants.OrderBy(k => k), keys.OrderBy(k => k));
-        Assert.Equal(27, keys.Count);
+        Assert.Equal(29, keys.Count);
     }
 
     [Fact]
@@ -83,20 +83,27 @@ public class PermissionCatalogTests
         Assert.DoesNotContain(PermissionCatalog.AdminPermissions, k => k.StartsWith("assets."));
     }
 
-    /// <summary>REQ-007: logging requests is for yourself or your department; configuring flows is a department's, or every department's.</summary>
+    /// <summary>
+    /// REQ-007, REQ-020: logging requests is for yourself or your department; configuring flows and managing requests are a department's, or every
+    /// department's; writing actions is company-wide only, and not reserved to the built-in role.
+    /// </summary>
     [Fact]
     public void Request_permissions_allow_the_scopes_the_spec_gives_them()
     {
         Assert.Equal(new[] { PermissionScope.Own, PermissionScope.Department }, PermissionCatalog.ByKey[Permission.RequestsSubmit].AllowedScopes);
         Assert.Equal(new[] { PermissionScope.Department, PermissionScope.All }, PermissionCatalog.ByKey[Permission.RequestsConfigure].AllowedScopes);
-        Assert.All(PermissionCatalog.All.Where(p => p.Key.StartsWith("requests.")), p =>
+        Assert.Equal(new[] { PermissionScope.Department, PermissionScope.All }, PermissionCatalog.ByKey[Permission.RequestsManage].AllowedScopes);
+        Assert.True(PermissionCatalog.ByKey[Permission.ActionsCreate].AllOnly);
+        Assert.All(PermissionCatalog.All.Where(p => p.Key.StartsWith("requests.") || p.Key == Permission.ActionsCreate), p =>
         {
             Assert.Equal(PermissionCatalog.RequestsGroup, p.Group);
             Assert.False(p.SystemAdministratorOnly, p.Key);
         });
-        // Configuring request flows is in the Admin menu; logging requests isn't.
+        // Configuring request flows and the action library are in the Admin menu; logging and managing requests aren't.
         Assert.Contains(Permission.RequestsConfigure, PermissionCatalog.AdminPermissions);
+        Assert.Contains(Permission.ActionsCreate, PermissionCatalog.AdminPermissions);
         Assert.DoesNotContain(Permission.RequestsSubmit, PermissionCatalog.AdminPermissions);
+        Assert.DoesNotContain(Permission.RequestsManage, PermissionCatalog.AdminPermissions);
     }
 
     [Fact]

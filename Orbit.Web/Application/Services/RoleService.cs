@@ -118,6 +118,10 @@ public sealed class RoleService(ApplicationDbContext db, RoleManager<Application
         var keys = await CountKeysAsync(id, ct);
         if (users > 0 || keys > 0)
             throw new ValidationException($"\"{role.Name}\" is still in use by {Count(users, "user")} and {Count(keys, "API key")}. Move them to another role first.");
+        // Request flows name roles as approvers (§6.20); the stage would be left with nobody.
+        var approvers = await db.RequestFlowApprovers.CountAsync(a => a.RoleId == id, ct);
+        if (approvers > 0)
+            throw new ValidationException($"\"{role.Name}\" is named as an approver in {Count(approvers, "request flow stage")}. Change those flows first.");
 
         Throw(await roleManager.DeleteAsync(role));
         audit.Add(actor, AuditEntity.Role, role.Id, AuditAction.Deleted, null, role.Name);

@@ -6,10 +6,37 @@
     var byDepartment = Model.Sections.Count > 1;
 }
 
-<div class="mb-3">
-    <h1 class="h3 mb-1">Log a request</h1>
-    <div class="text-muted">Choose what you need. A few questions follow, and your request goes to the team that handles it.</div>
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div>
+        <h1 class="h3 mb-1">Log a request</h1>
+        <div class="text-muted">Choose what you need. A few questions follow, and your request goes to the team that handles it.</div>
+    </div>
+    @if (Model.CanManage)
+    {
+        <a class="btn btn-outline-secondary btn-sm" asp-page="/Requests/Department">Department requests</a>
+    }
 </div>
+
+@if (Model.Waiting.Count > 0)
+{
+    <div class="card mb-4 border-primary">
+        <div class="card-header fw-semibold">Needs your action <span class="badge text-bg-primary ms-1">@Model.Waiting.Count</span></div>
+        <ul class="list-group list-group-flush">
+            @foreach (var w in Model.Waiting)
+            {
+                <li class="list-group-item d-flex flex-wrap align-items-center gap-2">
+                    <div class="flex-grow-1">
+                        <a asp-page="/Requests/Request" asp-route-id="@w.Request.Id" class="fw-semibold text-decoration-none">@w.What</a>
+                        <div class="small text-muted">
+                            <span class="font-monospace">@w.Request.Number</span> @w.Request.Title · logged by @(w.Request.RequesterId == Model.MeId ? "you" : w.Request.Requester.DisplayName)
+                        </div>
+                    </div>
+                    <span class="small text-muted text-nowrap" title="@Ui.When(w.Since)">waiting @Ui.Ago(w.Since)</span>
+                </li>
+            }
+        </ul>
+    </div>
+}
 
 <partial name="_Steps" model="1" />
 
@@ -20,8 +47,8 @@
             <div class="text-muted mb-2">@RequestIcons.Svg("chat", 32)</div>
             <p class="mb-1 fw-semibold">Nothing to request yet.</p>
             <p class="text-muted mb-0">
-                No department has set up its requests.
-                @if (Model.CanConfigure) { <text>Set up your department's under Admin &gt; <a asp-page="/RequestCatalogue/Index">Request flows</a>, or start from the example there.</text> }
+                No department has set up its request flows.
+                @if (Model.CanConfigure) { <text>Set up your department's under Admin &gt; <a asp-page="/RequestCatalogue/Index">Request flows</a>.</text> }
             </p>
         </div>
     </div>
@@ -72,31 +99,19 @@
                 <tbody>
                     @foreach (var r in Model.Mine)
                     {
-                        var t = r.Task;
                         <tr>
                             <td>
-                                <span class="font-monospace text-muted small me-1">@t.Number</span>
-                                @if (r.CanOpen)
+                                <span class="font-monospace text-muted small me-1">@r.Number</span>
+                                <a asp-page="/Requests/Request" asp-route-id="@r.Id" class="text-decoration-none">@r.Title</a>
+                                @if (r.RequesterId != Model.MeId)
                                 {
-                                    <a asp-page="/Tasks/Details" asp-route-id="@t.Id" class="text-decoration-none">@t.Title</a>
+                                    <div class="small text-muted">Logged by @r.Requester.DisplayName</div>
                                 }
-                                else
-                                {
-                                    @t.Title
-                                }
-                                @if (t.CreatedById != Model.MeId && t.CreatedBy is not null)
-                                {
-                                    <div class="small text-muted">Logged for you by @t.CreatedBy.DisplayName</div>
-                                }
-                                else if (t.Requestee is not null && t.RequesteeId != Model.MeId)
-                                {
-                                    <div class="small text-muted">For @t.Requestee.DisplayName</div>
-                                }
-                                <div class="small text-muted d-md-none">@t.Department.Name</div>
+                                <div class="small text-muted d-md-none">@r.Department.Name</div>
                             </td>
-                            <td class="d-none d-md-table-cell">@t.Department.Name</td>
-                            <td><span class="badge @Ui.StatusBadge(t.Status)">@t.Status.Label()</span></td>
-                            <td class="d-none d-sm-table-cell text-nowrap small" title="@Ui.When(t.CreatedAt)">@Ui.Ago(t.CreatedAt)</td>
+                            <td class="d-none d-md-table-cell">@r.Department.Name</td>
+                            <td><span class="badge @Ui.RequestStatusBadge(r.Status)">@r.Status.Label()</span></td>
+                            <td class="d-none d-sm-table-cell text-nowrap small" title="@Ui.When(r.CreatedAt)">@Ui.Ago(r.CreatedAt)</td>
                         </tr>
                     }
                 </tbody>

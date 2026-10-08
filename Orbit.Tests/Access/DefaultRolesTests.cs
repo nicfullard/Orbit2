@@ -122,9 +122,12 @@ public class DefaultRolesTests
         Assert.True(AccessPolicy.CanAttachToProject(SysAdmin, Project(Marketing)));
     }
 
-    /// <summary>REQ-007: both shipped roles log requests with any department; a Department Admin also runs the department's request flows.</summary>
+    /// <summary>
+    /// REQ-007, REQ-020: both shipped roles log requests with any department; a Department Admin also runs the department's request flows and
+    /// manages the requests filed with it; neither writes actions.
+    /// </summary>
     [Fact]
-    public void Requests_logged_by_everyone_configured_by_department_admins()
+    public void Requests_logged_by_everyone_configured_and_managed_by_department_admins()
     {
         Assert.True(AccessPolicy.CanSubmitRequests(Member));
         Assert.True(AccessPolicy.CanSubmitRequests(DeptAdmin));
@@ -132,6 +135,13 @@ public class DefaultRolesTests
         Assert.True(AccessPolicy.CanConfigureRequestsIn(DeptAdmin, It));
         Assert.False(AccessPolicy.CanConfigureRequestsIn(DeptAdmin, Marketing));
         Assert.True(AccessPolicy.CanConfigureRequestsIn(SysAdmin, Marketing));
+        Assert.False(AccessPolicy.CanManageRequestsIn(Member, It));
+        Assert.True(AccessPolicy.CanManageRequestsIn(DeptAdmin, It));
+        Assert.False(AccessPolicy.CanManageRequestsIn(DeptAdmin, Marketing));
+        Assert.True(AccessPolicy.CanManageRequestsIn(SysAdmin, Marketing));
+        Assert.False(AccessPolicy.CanCreateActions(Member));
+        Assert.False(AccessPolicy.CanCreateActions(DeptAdmin));
+        Assert.True(AccessPolicy.CanCreateActions(SysAdmin));
     }
 
     [Fact]

@@ -18,9 +18,11 @@ public static class AuditEntity
     public const string Asset = "Asset";
     public const string AssetType = "AssetType";
     public const string AssetLocation = "AssetLocation";
-    /// <summary>Request flows (spec §6.20): a category, and an option with its questions.</summary>
+    /// <summary>Request flows (spec §6.20): a category, a flow with its steps, an action in the library, and a logged request.</summary>
     public const string RequestCategory = "RequestCategory";
-    public const string RequestOption = "RequestOption";
+    public const string RequestFlow = "RequestFlow";
+    public const string RequestAction = "RequestAction";
+    public const string Request = "Request";
 }
 
 public static class AuditAction
@@ -72,6 +74,12 @@ public static class AuditAction
     /// <summary>A check recorded on, or removed from, an asset (§6.19).</summary>
     public const string CheckRecorded = "CheckRecorded";
     public const string CheckRemoved = "CheckRemoved";
+    /// <summary>A request's steps (§6.20): an approver's decision, a failed step retried or skipped, the request cancelled.</summary>
+    public const string Approved = "Approved";
+    public const string Declined = "Declined";
+    public const string Retried = "Retried";
+    public const string Skipped = "Skipped";
+    public const string Cancelled = "Cancelled";
 }
 
 public sealed class AuditFilter

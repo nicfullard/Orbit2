@@ -7,11 +7,11 @@ using Orbit.Data.Entities;
 namespace Orbit.Application.Services;
 
 /// <summary>
-/// Files attached to tasks and projects (spec §6.18). The metadata is an <see cref="Attachment"/> row; the bytes are its
+/// Files attached to tasks, projects, assets and requests (spec §6.18). The metadata is an <see cref="Attachment"/> row; the bytes are its
 /// <see cref="AttachmentContent"/> row, written on upload and read only for a download. Attaching to a task follows the
 /// commenting rule (anyone who can see it); attaching to a project is narrower than commenting on it (the project's own
-/// department, and not once it is archived). Removing takes the uploader or someone who may edit the parent. Every upload
-/// and removal is audited on the parent.
+/// department, and not once it is archived); a request's files arrive through its forms (§6.20). Removing takes the uploader or
+/// someone who may edit the parent. Every upload and removal is audited on the parent.
 /// </summary>
 public sealed class AttachmentService(
     ApplicationDbContext db,
@@ -54,18 +54,13 @@ public sealed class AttachmentService(
     }
 
     /// <summary>
-    /// A file a requester attached while logging a request (§6.20), added to the task the request has just filed. Authorised by
-    /// requests.submit, which <c>RequestService</c> checked, rather than by viewing the task: the requester created it a moment ago in
-    /// the same transaction, and their tasks.view may not reach it. Only the task's own creator, for a request task.
+    /// A file answered into a request's form (§6.20). <c>RequestService</c> has checked that the actor may fill in the form, so this takes
+    /// the actor rather than asking for it; the file is audited on the request. A task step may later copy it to its task.
     /// </summary>
-    public async Task<Attachment> AddToLoggedRequestAsync(TaskItem task, AttachmentUpload upload, CancellationToken ct = default)
+    public async Task<Attachment> AddToRequestAsync(Actor actor, Request request, AttachmentUpload upload, CancellationToken ct = default)
     {
-        var actor = await actors.GetAsync(ct);
-        AccessPolicy.Require(AccessPolicy.CanSubmitRequests(actor) && task.Source == TaskSource.Request && task.CreatedById == actor.UserId,
-            "Files can only be attached to a request by the person logging it.");
-        var attachment = await StoreAsync(actor, upload, a => a.TaskId = task.Id, ct);
-        task.UpdatedAt = attachment.UploadedAt;
-        audit.Add(actor, AuditEntity.Task, task.Id, AuditAction.AttachmentAdded, task.DepartmentId, task.Title, Details(attachment));
+        var attachment = await StoreAsync(actor, upload, a => a.RequestId = request.Id, ct);
+        audit.Add(actor, AuditEntity.Request, request.Id, AuditAction.AttachmentAdded, request.DepartmentId, request.Title, Details(attachment));
         await CommitAsync(attachment, ct);
         return attachment;
     }
@@ -152,6 +147,7 @@ public sealed class AttachmentService(
             ?? throw new NotFoundException("Attachment not found.");
         var allowed = attachment.Task is not null ? AccessPolicy.CanDeleteAttachment(actor, attachment, attachment.Task)
             : attachment.Asset is not null ? AccessPolicy.CanDeleteAttachment(actor, attachment, attachment.Asset)
+            : attachment.Request is not null ? AccessPolicy.CanDeleteAttachment(actor, attachment, attachment.Request)
             : AccessPolicy.CanDeleteAttachment(actor, attachment, attachment.Project!);
         AccessPolicy.Require(allowed, "Only the uploader, or someone who may edit what it is attached to, can delete an attachment.");
 
@@ -164,6 +160,11 @@ public sealed class AttachmentService(
         {
             asset.UpdatedAt = DateTime.UtcNow;
             audit.Add(actor, AuditEntity.Asset, asset.Id, AuditAction.AttachmentRemoved, asset.DepartmentId, AssetService.Summary(asset), Details(attachment));
+        }
+        else if (attachment.Request is Request request)
+        {
+            request.UpdatedAt = DateTime.UtcNow;
+            audit.Add(actor, AuditEntity.Request, request.Id, AuditAction.AttachmentRemoved, request.DepartmentId, request.Title, Details(attachment));
         }
         else
         {
@@ -247,6 +248,7 @@ public sealed class AttachmentService(
         .Include(a => a.UploadedBy)
         .Include(a => a.Task)
         .Include(a => a.Project)
+        .Include(a => a.Request)
         .Include(a => a.Asset).ThenInclude(x => x!.Assignments);
 
     private static IOrderedQueryable<Attachment> Ordered(IQueryable<Attachment> q) =>
@@ -258,8 +260,20 @@ public sealed class AttachmentService(
             AccessPolicy.Require(AccessPolicy.CanViewTask(actor, task), "This task belongs to another department.");
         else if (attachment.Asset is Asset asset)
             RequireCanViewAsset(actor, asset);
+        else if (attachment.Request is Request request)
+            await RequireCanViewRequestAsync(actor, request, ct);
         else
             await RequireCanViewProjectAsync(actor, attachment.Project!, ct);
+    }
+
+    /// <summary>A request's files follow the request (§6.20): its requester, anyone a step or approval was addressed to, or a manager of its department.</summary>
+    private async Task RequireCanViewRequestAsync(Actor actor, Request request, CancellationToken ct)
+    {
+        var me = actor.UserId;
+        var participant = me is not null
+            && (await db.RequestSteps.AnyAsync(s => s.RequestId == request.Id && s.AssignedToId == me, ct)
+                || await db.RequestApprovals.AnyAsync(a => a.Step.RequestId == request.Id && a.ApproverId == me, ct));
+        AccessPolicy.Require(AccessPolicy.CanViewRequest(actor, request, participant), "You don't have permission to see this request.");
     }
 
     private static void RequireCanViewAsset(Actor actor, Asset asset) =>

@@ -1,0 +1,408 @@
+@page "{id:guid}"
+@model Orbit.Pages.RequestCatalogue.StepModel
+@using Orbit.Application.Requests
+@using Orbit.Application.Services
+@using Orbit.Pages.RequestCatalogue
+@{
+    var s = Model.Step;
+    var f = Model.Flow;
+    ViewData["Title"] = $"Set up {s.Title}";
+    var problems = RequestFlowRules.Problems(s);
+    var frozen = Model.InProgress > 0;
+    var tokenOptions = Model.Tokens;
+    var dependsOn = Model.Form.DependsOn.ToHashSet();
+    string RuleLabel(ApprovalRule r) => r.Label() + " must approve";
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/RequestCatalogue/Index">Request flows</a></li>
+        <li class="breadcrumb-item"><a asp-page="/RequestCatalogue/Category" asp-route-id="@f.Category.Id">@f.Category.Title</a></li>
+        <li class="breadcrumb-item"><a asp-page="/RequestCatalogue/Flow" asp-route-id="@f.Id">@f.Title</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@s.Title</li>
+    </ol>
+</nav>
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div>
+        <h1 class="h3 mb-0">
+            @s.Title <span class="badge text-bg-light border fs-6 align-middle">@s.Kind.Label()</span>
+            @if (problems.Count > 0) { <span class="badge text-bg-warning fs-6 align-middle">Not set up: @string.Join("; ", problems)</span> }
+        </h1>
+        <div class="text-muted small">Step <code>@s.Key</code> of <strong>@f.Title</strong>.</div>
+    </div>
+    <form method="post" asp-page-handler="Delete" asp-route-id="@s.Id" data-confirm="@($"Delete the step \"{s.Title}\"? Steps that depend on it stop doing so.")">
+        <button class="btn btn-outline-danger btn-sm" type="submit">Delete step</button>
+    </form>
+</div>
+
+@if (frozen)
+{
+    <div class="alert alert-info py-2 small">
+        @Model.InProgress @(Model.InProgress == 1 ? "request is" : "requests are") in progress through this flow, so the key, the dependencies and (for a form) the
+        fields can't change until they finish. Everything else can.
+    </div>
+}
+
+<div class="row g-3">
+    <div class="col-lg-6">
+        <form method="post" asp-route-id="@s.Id" class="card mb-3">
+            <div class="card-header fw-semibold">Settings</div>
+            <div class="card-body">
+                @if (Model.SaveError is not null) { <div class="alert alert-danger py-2">@Model.SaveError</div> }
+
+                <div class="mb-3">
+                    <label class="form-label" asp-for="Form.Title">Title</label>
+                    <input class="form-control" asp-for="Form.Title" maxlength="@RequestFlowRules.MaxStepTitleLength" required />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" asp-for="Form.Key">Key</label>
+                    <input class="form-control font-monospace" asp-for="Form.Key" maxlength="@RequestFlowRules.MaxKeyLength" readonly="@frozen" />
+                    <div class="form-text">Later steps refer to this step's values as <code>{{@(s.Key).something}}</code>.</div>
+                </div>
+
+                <fieldset class="mb-3">
+                    <legend class="fs-6 fw-semibold">Waits for</legend>
+                    @if (Model.Others.Count == 0)
+                    {
+                        <div class="text-muted small">No other steps yet.</div>
+                    }
+                    else
+                    {
+                        <div class="form-text mb-1">Tick the steps this one can't start before. Save, and their values appear in the lists below.</div>
+                        @foreach (var o in Model.Others)
+                        {
+                            var cid = $"dep-{o.Id:N}";
+                            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                                <div class="form-check mb-0">
+                                    <input class="form-check-input" type="checkbox" id="@cid" name="Form.DependsOn" value="@o.Id" checked="@dependsOn.Contains(o.Id)" disabled="@frozen" />
+                                    <label class="form-check-label" for="@cid">@o.Title <span class="text-muted small">(@o.Kind.Label())</span></label>
+                                    @* A disabled box doesn't post, and the service reads a missing dependency as a change: while frozen, the stored ones are repeated. *@
+                                    @if (frozen && dependsOn.Contains(o.Id)) { <input type="hidden" name="Form.DependsOn" value="@o.Id" /> }
+                                </div>
+                                @if (o.Kind == RequestStepKind.Approval)
+                                {
+                                    var chosen = Model.Form.Outcome.GetValueOrDefault(o.Id);
+                                    <select class="form-select form-select-sm w-auto" name="Form.Outcome[@o.Id]" aria-label="When @o.Title is" disabled="@frozen">
+                                        <option value="" selected="@string.IsNullOrEmpty(chosen)">when it finishes, either way</option>
+                                        <option value="Accepted" selected="@(chosen == "Accepted")">only when it is accepted</option>
+                                        <option value="Declined" selected="@(chosen == "Declined")">only when it is declined</option>
+                                    </select>
+                                    @if (frozen) { <input type="hidden" name="Form.Outcome[@o.Id]" value="@chosen" /> }
+                                }
+                            </div>
+                        }
+                    }
+                </fieldset>
+
+                @switch (s.Kind)
+                {
+                    case RequestStepKind.Form:
+                    case RequestStepKind.Url:
+                        <div class="mb-3">
+                            <label class="form-label" for="performer">Performed by</label>
+                            <partial name="/Pages/Assets/_PersonPicker.cshtml" model="@Model.PersonPicker("performer", "Form.PerformedById", s.PerformedBy is null ? [] : [s.PerformedBy], true, "The person who logged the request")" />
+                            <div class="form-text">Leave empty for the person who logged the request; or name who @(s.Kind == RequestStepKind.Form ? "fills in this form" : "opens this page").</div>
+                        </div>
+                        if (s.Kind == RequestStepKind.Url)
+                        {
+                            <div class="mb-3">
+                                <label class="form-label" asp-for="Form.Url">Web address</label>
+                                <input class="form-control" asp-for="Form.Url" maxlength="@RequestFlowRules.MaxUrlLength" placeholder="https://..." />
+                                <partial name="_TokenPicker" model="@((tokenOptions, "Form_Url"))" />
+                            </div>
+                        }
+                        break;
+
+                    case RequestStepKind.Task:
+                        <div class="row g-2 mb-3">
+                            <div class="col-sm-6">
+                                <label class="form-label" asp-for="Form.TaskDepartmentId">Filed in department</label>
+                                <select class="form-select" asp-for="Form.TaskDepartmentId">
+                                    @foreach (var d in Model.Departments) { <option value="@d.Id" selected="@(d.Id == Model.Form.TaskDepartmentId)">@d.Name</option> }
+                                </select>
+                            </div>
+                            <div class="col-sm-3">
+                                <label class="form-label" asp-for="Form.TaskType">Type</label>
+                                <select class="form-select" asp-for="Form.TaskType" asp-items="Ui.EnumItems<TaskType>(Model.Form.TaskType)"></select>
+                            </div>
+                            <div class="col-sm-3">
+                                <label class="form-label" asp-for="Form.TaskPriority">Priority</label>
+                                <select class="form-select" asp-for="Form.TaskPriority" asp-items="Ui.EnumItems<TaskPriority>(Model.Form.TaskPriority)"></select>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" asp-for="Form.TitleTemplate">Task title</label>
+                            <input class="form-control" asp-for="Form.TitleTemplate" maxlength="@RequestFlowRules.MaxTitleTemplateLength" placeholder="e.g. Product code for {{details.description}}" />
+                            <partial name="_TokenPicker" model="@((tokenOptions, "Form_TitleTemplate"))" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" asp-for="Form.DescriptionTemplate">Task description <span class="text-muted fw-normal">(optional)</span></label>
+                            <textarea class="form-control" asp-for="Form.DescriptionTemplate" rows="5" maxlength="@RequestFlowRules.MaxTemplateLength"></textarea>
+                            <partial name="_TokenPicker" model="@((tokenOptions, "Form_DescriptionTemplate"))" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="assignees">Assigned to</label>
+                            <partial name="/Pages/Assets/_PersonPicker.cshtml" model="@Model.PersonPicker("assignees", "Form.AssigneeIds", s.Assignees.Select(a => a.User), false, "Nobody - the task waits for someone in the department to take it")" />
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-sm-6">
+                                <label class="form-label" asp-for="Form.RequesteeSource">The task is for</label>
+                                <select class="form-select js-sync" data-syncs="source" asp-for="Form.RequesteeSource" asp-items="Ui.EnumItems<RequesteeSource>(Model.Form.RequesteeSource, label: v => v.Label())"></select>
+                            </div>
+                            <div class="col-sm-6" data-for-source="Field">
+                                <label class="form-label" asp-for="Form.RequesteeFieldId">Named by the field</label>
+                                <select class="form-select" asp-for="Form.RequesteeFieldId" asp-items="Model.FieldChoices(RequestFieldType.User, Model.Form.RequesteeFieldId)"></select>
+                            </div>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-sm-3">
+                                <label class="form-label" asp-for="Form.PriorityFieldId">Urgency from</label>
+                                <select class="form-select" asp-for="Form.PriorityFieldId" asp-items="Model.FieldChoices(RequestFieldType.Urgency, Model.Form.PriorityFieldId)"></select>
+                            </div>
+                            <div class="col-sm-3">
+                                <label class="form-label" asp-for="Form.DueDateFieldId">Due date from</label>
+                                <select class="form-select" asp-for="Form.DueDateFieldId" asp-items="Model.FieldChoices(RequestFieldType.Date, Model.Form.DueDateFieldId)"></select>
+                            </div>
+                            <div class="col-sm-3">
+                                <label class="form-label" asp-for="Form.AssetFieldId">Asset from</label>
+                                <select class="form-select" asp-for="Form.AssetFieldId" asp-items="Model.FieldChoices(RequestFieldType.Asset, Model.Form.AssetFieldId)"></select>
+                            </div>
+                            <div class="col-sm-3">
+                                <label class="form-label" asp-for="Form.ProjectFieldId">Project from</label>
+                                <select class="form-select" asp-for="Form.ProjectFieldId" asp-items="Model.FieldChoices(RequestFieldType.Project, Model.Form.ProjectFieldId)"></select>
+                            </div>
+                            <div class="col-12 form-text">Each takes its value from a question of a form this step waits for. The priority above applies when no Urgency question is chosen, or it wasn't answered.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" asp-for="Form.CopyAttachments">Files to attach to the task</label>
+                            <select class="form-select" asp-for="Form.CopyAttachments">
+                                <option value="none" selected="@(Model.Form.CopyAttachments == "none")">None</option>
+                                <option value="all" selected="@(Model.Form.CopyAttachments == "all")">Every file from the forms this step waits for</option>
+                                @foreach (var p in Model.Predecessors.Where(p => p.Kind == RequestStepKind.Form && p.Fields.Any(x => x.FieldType == RequestFieldType.Attachment)))
+                                {
+                                    <option value="@p.Id" selected="@(Model.Form.CopyAttachments == p.Id.ToString())">The files of "@p.Title"</option>
+                                }
+                            </select>
+                        </div>
+                        break;
+
+                    case RequestStepKind.Action:
+                        <div class="mb-3">
+                            <label class="form-label" asp-for="Form.ActionId">Action</label>
+                            <select class="form-select js-sync" data-syncs="action" asp-for="Form.ActionId">
+                                <option value="">Choose an action...</option>
+                                @foreach (var a in Model.Actions) { <option value="@a.Id" selected="@(a.Id == Model.Form.ActionId)">@a.Name (@a.RunsOn.Label().ToLowerInvariant())</option> }
+                            </select>
+                            @if (Model.Actions.Count == 0) { <div class="form-text">The action library is empty: someone with the Create actions permission writes them under Admin &gt; Actions.</div> }
+                        </div>
+                        foreach (var a in Model.Actions)
+                        {
+                            <div data-for-action="@a.Id" hidden="@(a.Id != Model.Form.ActionId)">
+                                @if (!string.IsNullOrWhiteSpace(a.Description)) { <p class="small text-muted">@a.Description</p> }
+                                @if (a.Parameters.Count == 0)
+                                {
+                                    <p class="small text-muted">This action takes no parameters.</p>
+                                }
+                                @foreach (var p in a.Parameters.OrderBy(p => p.DisplayOrder))
+                                {
+                                    var inputId = $"input-{a.Id:N}-{p.Key}";
+                                    <div class="mb-3">
+                                        <label class="form-label" for="@inputId">@p.Label <code class="small text-muted">@p.Key</code></label>
+                                        <input class="form-control" id="@inputId" name="Form.ActionInputs[@p.Key]" value="@(a.Id == Model.Form.ActionId ? Model.Form.ActionInputs.GetValueOrDefault(p.Key) : null)"
+                                               maxlength="@RequestFlowRules.MaxTemplateLength" disabled="@(a.Id != Model.Form.ActionId)" />
+                                        <partial name="_TokenPicker" model="@((tokenOptions, inputId))" />
+                                    </div>
+                                }
+                            </div>
+                        }
+                        break;
+                }
+
+                <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="col-lg-6">
+        @switch (s.Kind)
+        {
+            case RequestStepKind.Form:
+                var fields = s.Fields.ToList();
+                <div class="card mb-3">
+                    <div class="card-header fw-semibold">Fields <span class="text-muted fw-normal">(@fields.Count)</span></div>
+                    @if (fields.Count == 0)
+                    {
+                        <div class="card-body text-muted fst-italic">No fields yet: a form needs at least one.</div>
+                    }
+                    else
+                    {
+                        <ul class="list-group list-group-flush">
+                            @for (var i = 0; i < fields.Count; i++)
+                            {
+                                var fld = fields[i];
+                                <li class="list-group-item" id="field-@fld.Id.ToString("N")">
+                                    <details>
+                                        <summary class="d-flex flex-wrap align-items-center gap-2">
+                                            <span class="badge rounded-pill text-bg-light border">@(i + 1)</span>
+                                            <span class="fw-semibold flex-grow-1">@fld.Prompt</span>
+                                            <span class="badge text-bg-light border">@fld.FieldType.Label()</span>
+                                            <code class="small text-muted">{{@s.Key.@fld.Key}}</code>
+                                            @if (!fld.IsRequired) { <span class="text-muted small">optional</span> }
+                                        </summary>
+                                        <div class="mt-3">
+                                            <form method="post" asp-page-handler="UpdateField" asp-route-id="@s.Id" asp-route-fieldId="@fld.Id">
+                                                <partial name="_FieldFields" model="@((FieldForm.From(fld), $"f{i}", frozen))" />
+                                                <button type="submit" class="btn btn-sm btn-primary">Save field</button>
+                                            </form>
+                                            <div class="d-flex gap-1 mt-2">
+                                                <form method="post" asp-page-handler="MoveField" asp-route-id="@s.Id" asp-route-fieldId="@fld.Id" asp-route-direction="-1">
+                                                    <button class="btn btn-sm btn-outline-secondary py-0" type="submit" disabled="@(i == 0)" title="Move up">&uarr;</button>
+                                                </form>
+                                                <form method="post" asp-page-handler="MoveField" asp-route-id="@s.Id" asp-route-fieldId="@fld.Id" asp-route-direction="1">
+                                                    <button class="btn btn-sm btn-outline-secondary py-0" type="submit" disabled="@(i == fields.Count - 1)" title="Move down">&darr;</button>
+                                                </form>
+                                                <form method="post" asp-page-handler="DeleteField" asp-route-id="@s.Id" asp-route-fieldId="@fld.Id" data-confirm="@($"Delete the field \"{fld.Prompt}\"?")">
+                                                    <button class="btn btn-sm btn-outline-danger py-0" type="submit" disabled="@frozen">Delete</button>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </details>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+                <div class="card mb-3">
+                    <div class="card-header fw-semibold">Add a field</div>
+                    <div class="card-body">
+                        <form method="post" asp-page-handler="AddField" asp-route-id="@s.Id">
+                            @if (Model.FieldError is not null) { <div class="text-danger mb-2">@Model.FieldError</div> }
+                            <partial name="_FieldFields" model="@((Model.NewField, "field", frozen))" />
+                            <button type="submit" class="btn btn-primary" disabled="@frozen">Add field</button>
+                        </form>
+                    </div>
+                </div>
+                break;
+
+            case RequestStepKind.Approval:
+                var stages = s.Stages.ToList();
+                <div class="card mb-3">
+                    <div class="card-header fw-semibold">Stages <span class="text-muted fw-normal">(@stages.Count, in order)</span></div>
+                    @if (stages.Count == 0)
+                    {
+                        <div class="card-body text-muted fst-italic">No stages yet: an approval needs at least one, each with an approver.</div>
+                    }
+                    else
+                    {
+                        <ul class="list-group list-group-flush">
+                            @for (var i = 0; i < stages.Count; i++)
+                            {
+                                var st = stages[i];
+                                <li class="list-group-item" id="stage-@st.Id.ToString("N")">
+                                    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                                        <span class="badge rounded-pill text-bg-light border">Stage @st.StageOrder</span>
+                                        <form method="post" asp-page-handler="UpdateStage" asp-route-id="@s.Id" asp-route-stageId="@st.Id" class="d-flex gap-1 align-items-center">
+                                            <select class="form-select form-select-sm w-auto" name="rule" aria-label="Rule" asp-items="Ui.EnumItems<ApprovalRule>(st.Rule, label: RuleLabel)"></select>
+                                            <button type="submit" class="btn btn-sm btn-outline-primary py-0">Save</button>
+                                        </form>
+                                        <div class="d-flex gap-1 ms-auto">
+                                            <form method="post" asp-page-handler="MoveStage" asp-route-id="@s.Id" asp-route-stageId="@st.Id" asp-route-direction="-1">
+                                                <button class="btn btn-sm btn-outline-secondary py-0" type="submit" disabled="@(i == 0)" title="Move up">&uarr;</button>
+                                            </form>
+                                            <form method="post" asp-page-handler="MoveStage" asp-route-id="@s.Id" asp-route-stageId="@st.Id" asp-route-direction="1">
+                                                <button class="btn btn-sm btn-outline-secondary py-0" type="submit" disabled="@(i == stages.Count - 1)" title="Move down">&darr;</button>
+                                            </form>
+                                            <form method="post" asp-page-handler="DeleteStage" asp-route-id="@s.Id" asp-route-stageId="@st.Id" data-confirm="Delete stage @st.StageOrder with its approvers?">
+                                                <button class="btn btn-sm btn-outline-danger py-0" type="submit">Delete</button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                    @if (st.Approvers.Count == 0)
+                                    {
+                                        <div class="text-warning small mb-2">No approver yet.</div>
+                                    }
+                                    else
+                                    {
+                                        <ul class="list-unstyled small mb-2">
+                                            @foreach (var a in st.Approvers)
+                                            {
+                                                <li class="d-flex align-items-center gap-2 mb-1">
+                                                    <span>@RequestCatalogueService.ApproverLabel(a)</span>
+                                                    <form method="post" asp-page-handler="RemoveApprover" asp-route-id="@s.Id" asp-route-approverId="@a.Id">
+                                                        <button type="submit" class="btn btn-link btn-sm p-0 text-danger">remove</button>
+                                                    </form>
+                                                </li>
+                                            }
+                                        </ul>
+                                    }
+                                    <details open="@(Model.ApproverStageId == st.Id)">
+                                        <summary class="small">Add an approver</summary>
+                                        <form method="post" asp-page-handler="AddApprover" asp-route-id="@s.Id" asp-route-stageId="@st.Id" class="mt-2">
+                                            @if (Model.ApproverStageId == st.Id && Model.ApproverError is not null) { <div class="text-danger small mb-2">@Model.ApproverError</div> }
+                                            @{
+                                                var ap = Model.ApproverStageId == st.Id ? Model.NewApprover : new ApproverForm();
+                                                var pid = $"approver-{st.Id:N}";
+                                            }
+                                            <div class="mb-2">
+                                                <select class="form-select form-select-sm js-sync" data-syncs="kind" name="approver.Kind" aria-label="Approver kind" asp-items="Ui.EnumItems<ApproverKind>(ap.Kind, label: k => k.Label())"></select>
+                                            </div>
+                                            <div class="mb-2" data-for-kind="Person">
+                                                <partial name="/Pages/Assets/_PersonPicker.cshtml" model="@Model.PersonPicker(pid, "approver.UserId", [], true, "Nobody chosen yet")" />
+                                            </div>
+                                            <div class="mb-2" data-for-kind="RoleInDepartment RoleInRequestersDepartment">
+                                                <select class="form-select form-select-sm" name="approver.RoleId" aria-label="Role">
+                                                    <option value="">Role...</option>
+                                                    @foreach (var r in Model.Roles) { <option value="@r.Id" selected="@(r.Id == ap.RoleId)">@r.Name</option> }
+                                                </select>
+                                            </div>
+                                            <div class="mb-2" data-for-kind="RoleInDepartment">
+                                                <select class="form-select form-select-sm" name="approver.DepartmentId" aria-label="Department">
+                                                    <option value="">Department...</option>
+                                                    @foreach (var d in Model.Departments) { <option value="@d.Id" selected="@(d.Id == ap.DepartmentId)">@d.Name</option> }
+                                                </select>
+                                            </div>
+                                            <button type="submit" class="btn btn-sm btn-outline-primary">Add approver</button>
+                                        </form>
+                                    </details>
+                                </li>
+                            }
+                        </ul>
+                    }
+                    <div class="card-footer">
+                        <form method="post" asp-page-handler="AddStage" asp-route-id="@s.Id" class="d-flex gap-2 align-items-center">
+                            <select class="form-select form-select-sm w-auto" name="rule" aria-label="Rule for the new stage" asp-items="Ui.EnumItems<ApprovalRule>(ApprovalRule.Any, label: RuleLabel)"></select>
+                            <button type="submit" class="btn btn-sm btn-primary">Add a stage</button>
+                        </form>
+                    </div>
+                </div>
+                break;
+
+            default:
+                <div class="card mb-3">
+                    <div class="card-header fw-semibold">Values this step can use</div>
+                    <div class="card-body small">
+                        @if (tokenOptions.Count == 0)
+                        {
+                            <span class="text-muted">None yet.</span>
+                        }
+                        else
+                        {
+                            <dl class="row mb-0">
+                                @foreach (var t in tokenOptions)
+                                {
+                                    <dt class="col-sm-5 font-monospace fw-normal">@t.Text</dt>
+                                    <dd class="col-sm-7 text-muted">@t.Label</dd>
+                                }
+                            </dl>
+                        }
+                        <div class="text-muted mt-2">The request's own values are always there; a step's values come once this step waits for it (save the dependencies first).</div>
+                    </div>
+                </div>
+                break;
+        }
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/requests.js" asp-append-version="true"></script>
+}

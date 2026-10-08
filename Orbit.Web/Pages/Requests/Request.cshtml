@@ -1,0 +1,211 @@
+@page "{id:guid}"
+@model Orbit.Pages.Requests.RequestModel
+@using Orbit.Application.Requests
+@{
+    var r = Model.Item;
+    ViewData["Title"] = $"{r.Number} {r.Title}";
+    var steps = r.Steps.ToList();
+    var me = Model.Actor.UserId;
+    string Who(ApplicationUser? u) => u is null ? "" : u.Id == me ? "you" : u.DisplayName;
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Requests/Index">Requests</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@r.Number</li>
+    </ol>
+</nav>
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div>
+        <h1 class="h3 mb-1"><span class="font-monospace text-muted fs-5 me-2" title="Request number">@r.Number</span>@r.Title</h1>
+        <div class="d-flex flex-wrap gap-1 align-items-center">
+            <span class="badge @Ui.RequestStatusBadge(r.Status)">@r.Status.Label()</span>
+            <span class="badge text-bg-light border">@r.Flow.Category.Title › @r.Flow.Title</span>
+            <span class="badge text-bg-light border">@r.Department.Name</span>
+            <span class="small text-muted ms-1">Logged by @(r.RequesterId == me ? "you" : r.Requester.DisplayName) <span title="@Ui.When(r.CreatedAt)">@Ui.Ago(r.CreatedAt)</span>@if (r.CompletedAt is DateTime done) { <text> · @r.Status.Label().ToLowerInvariant() <span title="@Ui.When(done)">@Ui.Ago(done)</span></text> }</span>
+        </div>
+    </div>
+    @if (Model.CanCancel)
+    {
+        <form method="post" asp-page-handler="Cancel" asp-route-id="@r.Id" data-confirm="Cancel this request? Steps still open stop, and any task they created is cancelled too.">
+            <button type="submit" class="btn btn-outline-danger btn-sm">Cancel request</button>
+        </form>
+    }
+</div>
+
+<ol class="request-timeline list-unstyled">
+    @for (var i = 0; i < steps.Count; i++)
+    {
+        var s = steps[i];
+        var fs = s.FlowStep;
+        var mine = Model.MyApproval(s);
+        var canAct = Model.CanAct(s);
+        <li class="request-timeline-item is-@s.Status.ToString().ToLowerInvariant()" id="step-@s.Id.ToString("N")">
+            <div class="request-timeline-marker" aria-hidden="true">@(s.Status == RequestStepStatus.Completed ? "✓" : (i + 1).ToString())</div>
+            <div class="request-timeline-body card">
+                <div class="card-body py-2 px-3">
+                    <div class="d-flex flex-wrap align-items-center gap-2">
+                        <span class="fw-semibold">@fs.Title</span>
+                        <span class="badge text-bg-light border">@fs.Kind.Label()</span>
+                        <span class="badge @Ui.RequestStepBadge(s.Status)">@s.Status.Label()</span>
+                        <span class="small text-muted ms-auto">
+                            @switch (s.Status)
+                            {
+                                case RequestStepStatus.Pending:
+                                    var waits = fs.Dependencies.Select(d => steps.FirstOrDefault(x => x.FlowStepId == d.DependsOnStepId)?.FlowStep.Title).OfType<string>().ToList();
+                                    if (waits.Count > 0) { <text>after @string.Join(" and ", waits)</text> }
+                                    break;
+                                case RequestStepStatus.Ready when fs.Kind is RequestStepKind.Form or RequestStepKind.Url:
+                                    <text>waiting for @Who(s.AssignedTo)</text>
+                                    break;
+                                case RequestStepStatus.Ready when fs.Kind == RequestStepKind.Action:
+                                    <text>@(s.StartedAt is null ? "queued" : "running")</text>
+                                    break;
+                                case RequestStepStatus.Completed or RequestStepStatus.Declined when s.CompletedAt is DateTime at:
+                                    <text>@(s.CompletedBy is null ? "" : $"by {Who(s.CompletedBy)} ")<span title="@Ui.When(at)">@Ui.Ago(at)</span></text>
+                                    break;
+                            }
+                        </span>
+                    </div>
+
+                    @switch (fs.Kind)
+                    {
+                        case RequestStepKind.Form:
+                            if (s.Answers.Count > 0)
+                            {
+                                <dl class="request-review mt-2 mb-0">
+                                    @foreach (var field in fs.Fields)
+                                    {
+                                        var answers = s.Answers.Where(a => a.FieldId == field.Id).ToList();
+                                        if (answers.Count == 0) { continue; }
+                                        <dt>@field.Prompt</dt>
+                                        <dd>
+                                            @if (field.FieldType == RequestFieldType.Attachment)
+                                            {
+                                                @foreach (var a in answers)
+                                                {
+                                                    @if (a.AttachmentId is Guid att) { <a asp-page="/Attachments/Download" asp-route-id="@att">@a.Value</a><br /> }
+                                                    else { @a.Value<br /> }
+                                                }
+                                            }
+                                            else if (answers[0].AssetId is Guid assetId)
+                                            {
+                                                <a asp-page="/Assets/Details" asp-route-id="@assetId">@answers[0].Value</a>
+                                            }
+                                            else if (answers[0].ProjectId is Guid projectId)
+                                            {
+                                                <a asp-page="/Projects/Details" asp-route-id="@projectId">@answers[0].Value</a>
+                                            }
+                                            else if (field.FieldType == RequestFieldType.Urgency && RequestEngineRules.ParseUrgency(answers[0].Value) is TaskPriority urgency)
+                                            {
+                                                <text>@urgency - @RequestEngineRules.UrgencyMeaning(urgency)</text>
+                                            }
+                                            else
+                                            {
+                                                @answers[0].Value
+                                            }
+                                        </dd>
+                                    }
+                                </dl>
+                            }
+                            if (canAct)
+                            {
+                                <a class="btn btn-primary btn-sm mt-2" asp-page="/Requests/Form" asp-route-id="@s.Id">Fill in this form</a>
+                            }
+                            break;
+
+                        case RequestStepKind.Approval:
+                            var stages = s.Approvals.GroupBy(a => a.StageOrder).OrderBy(g => g.Key).ToList();
+                            @foreach (var stage in stages)
+                            {
+                                var rule = fs.Stages.FirstOrDefault(x => x.StageOrder == stage.Key)?.Rule;
+                                <div class="mt-2 small">
+                                    <div class="text-muted">Stage @stage.Key@(rule is null ? "" : $" · {rule.Value.Label().ToLowerInvariant()} must approve")</div>
+                                    <ul class="list-unstyled mb-0">
+                                        @foreach (var a in stage.OrderBy(a => a.Approver.DisplayName))
+                                        {
+                                            <li class="d-flex flex-wrap gap-2 align-items-baseline">
+                                                <span>@Who(a.Approver)</span>
+                                                <span class="badge @(a.Decision == ApprovalDecision.Approved ? "text-bg-success" : a.Decision == ApprovalDecision.Declined ? "text-bg-danger" : "text-bg-light border")">@a.Decision.Label()</span>
+                                                @if (!string.IsNullOrWhiteSpace(a.Comment)) { <span class="text-muted fst-italic">"@a.Comment"</span> }
+                                                @if (a.DecidedAt is DateTime d) { <span class="text-muted" title="@Ui.When(d)">@Ui.Ago(d)</span> }
+                                            </li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
+                            if (mine is not null)
+                            {
+                                <form method="post" asp-page-handler="Decide" asp-route-id="@r.Id" class="mt-2 border-top pt-2">
+                                    <input type="hidden" name="approvalId" value="@mine.Id" />
+                                    <label class="form-label small mb-1" for="comment-@mine.Id.ToString("N")">Your comment <span class="text-muted">(optional)</span></label>
+                                    <textarea class="form-control form-control-sm mb-2" id="comment-@mine.Id.ToString("N")" name="comment" rows="2" maxlength="@RequestFlowRules.MaxCommentLength"></textarea>
+                                    <button type="submit" name="approve" value="true" class="btn btn-success btn-sm">Approve</button>
+                                    <button type="submit" name="approve" value="false" class="btn btn-outline-danger btn-sm" data-confirm="Decline this request? Steps that need it accepted won't run.">Decline</button>
+                                </form>
+                            }
+                            break;
+
+                        case RequestStepKind.Task:
+                            if (s.Task is { } task)
+                            {
+                                <div class="mt-2">
+                                    <a asp-page="/Tasks/Details" asp-route-id="@task.Id" class="text-decoration-none"><span class="font-monospace text-muted small">@task.Number</span> @task.Title</a>
+                                    <span class="badge @Ui.StatusBadge(task.Status) ms-1">@task.Status.Label()</span>
+                                    <span class="small text-muted ms-1">@(task.Assignments.Count == 0 ? "unassigned" : string.Join(", ", task.Assignments.Select(a => a.User.DisplayName)))</span>
+                                </div>
+                            }
+                            break;
+
+                        case RequestStepKind.Action:
+                            if (!string.IsNullOrWhiteSpace(s.Output))
+                            {
+                                <pre class="small bg-body-tertiary border rounded p-2 mt-2 mb-0" style="max-height: 14rem; overflow: auto">@s.Output</pre>
+                            }
+                            break;
+
+                        case RequestStepKind.Url:
+                            if (canAct)
+                            {
+                                <div class="d-flex flex-wrap gap-2 align-items-center mt-2">
+                                    <a class="btn btn-primary btn-sm js-url-open" href="@Model.UrlFor(s)" target="_blank" rel="noopener noreferrer">Open the page <span class="visually-hidden">(opens in a new tab)</span></a>
+                                    <form method="post" asp-page-handler="UrlDone" asp-route-id="@r.Id" asp-route-stepId="@s.Id" class="js-url-done">
+                                        <button type="submit" class="btn btn-outline-secondary btn-sm">Mark as done</button>
+                                    </form>
+                                    <span class="small text-muted">Opening the page marks the step done.</span>
+                                </div>
+                            }
+                            else if (!string.IsNullOrWhiteSpace(fs.Url))
+                            {
+                                <div class="small mt-2 text-break"><a href="@Model.UrlFor(s)" target="_blank" rel="noopener noreferrer">@Model.UrlFor(s)</a></div>
+                            }
+                            break;
+                    }
+
+                    @if (s.Status == RequestStepStatus.Failed)
+                    {
+                        <div class="alert alert-danger py-2 small mt-2 mb-0">
+                            <div>@s.Error</div>
+                            @if (Model.CanManage && r.Status == RequestStatus.InProgress)
+                            {
+                                <div class="d-flex gap-2 mt-2">
+                                    <form method="post" asp-page-handler="Retry" asp-route-id="@r.Id" asp-route-stepId="@s.Id">
+                                        <button type="submit" class="btn btn-sm btn-outline-primary">Retry</button>
+                                    </form>
+                                    <form method="post" asp-page-handler="Skip" asp-route-id="@r.Id" asp-route-stepId="@s.Id" data-confirm="Skip this step? The steps that wait for it will never run.">
+                                        <button type="submit" class="btn btn-sm btn-outline-secondary">Skip</button>
+                                    </form>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </li>
+    }
+</ol>
+
+@section Scripts {
+    <script src="~/js/requests.js" asp-append-version="true"></script>
+}

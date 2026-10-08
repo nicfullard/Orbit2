@@ -122,6 +122,19 @@ The agent has **no settings of its own** apart from where Orbit is and the crede
 servers, the service account, search base and filter are all set in Orbit under *Admin > Directory* and travel with
 each request - change them in Orbit and the next sign-in uses them.
 
+The one optional file is for **request actions** (spec §6.20): an action set to run on an agent is a C# script Orbit
+sends down the same connection, and the databases it may open come from `actions.json` in the agent's folder:
+
+```json
+{ "connections": { "erp": { "provider": "sqlserver", "connectionString": "Server=erp-db;Database=ERP;Integrated Security=true;" } } }
+```
+
+`provider` is `postgres` or `sqlserver`; the script opens one with `Connections.Open("erp")`. The file is read each time
+a script runs and is not encrypted, so keep it readable by the service account only (the folder's ACL on Windows, mode
+`600` on Linux). Scripts run as that account with whatever it can reach, so the account is the boundary - and so is
+Orbit's **Create actions** permission, which decides who may write them. Needs agent 1.2 or later; the publish is a
+little larger than before, as it carries the C# compiler.
+
 ### Publish the agent
 
 It is a separate project (`Orbit.Agent`) and is *not* part of the web app's publish output. Self-contained, so

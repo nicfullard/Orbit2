@@ -7,7 +7,7 @@
     var byDepartment = Model.DepartmentSource is not null;
 }
 <div class="person-picker js-picker" id="@Model.Id" data-search-url="@Model.SearchUrl" data-field-name="@Model.FieldName" data-no-match="No one matches"
-     data-mode="@(Model.SubmitOnPick ? "submit" : "multi")" data-browse="@(Model.Browse ? "1" : null)"
+     data-mode="@(Model.SubmitOnPick ? "submit" : Model.Single ? "single" : "multi")" data-browse="@(Model.Browse ? "1" : null)"
      data-search-base="@(byDepartment ? Model.SearchUrl : null)" data-department-source="@Model.DepartmentSource"
      data-project-source="@Model.ProjectSource" data-default-department="@Model.DefaultDepartmentId">
     @if (!Model.SubmitOnPick)

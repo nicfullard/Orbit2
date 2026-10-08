@@ -96,11 +96,17 @@ public static class PermissionCatalog
             "Manage the department's asset types (with their properties and check intervals) and asset locations; every department's at All departments.",
             AssetsGroup, DeptAll),
         new(Permission.RequestsSubmit, "Log requests",
-            "Log requests through any department's request flows (the Requests page), whatever your Create tasks reach, and see the requests logged by you or for you, with their status. Own = for yourself: a flow's \"who is it for\" question is answered as you. Department = also for anyone in your department. Opening a request's task follows View tasks, which covers tasks you created or are the requestee of from Own up.",
+            "Log requests through any department's request flows (the Requests page), whatever your Create tasks reach; follow the ones you logged or were addressed in; and act on the steps addressed to you - a form to fill in, a web page to open, an approval to give. Own = your own requests. Department = also the ones anyone in your department logged, under Your requests.",
             RequestsGroup, OwnDept),
         new(Permission.RequestsConfigure, "Configure request flows",
-            "Manage the department's request categories, their options (question flows and links) and each flow's questions; every department's at All departments.",
+            "Manage the department's request categories and flows: each flow's steps (forms, approvals, tasks, actions, web pages), their fields, approvers and dependencies; every department's at All departments.",
             RequestsGroup, DeptAll),
+        new(Permission.RequestsManage, "Manage requests",
+            "See every request filed with the department, act on any of its steps, cancel it, and retry or skip a step that failed; every department's at All departments.",
+            RequestsGroup, DeptAll),
+        new(Permission.ActionsCreate, "Create actions",
+            "Admin > Actions: write, change and delete the scripts in the action library that request flows run, and choose where each runs. Scripts are C# that runs as the Orbit server or an Orbit Agent, so this is granted sparingly.",
+            RequestsGroup, AllOnlyScopes),
         new(Permission.UsersManage, "Manage users",
             "Create users, change their role, department and sign-in method, deactivate, unlock and reset passwords.",
             AdministrationGroup, AllOnlyScopes, SystemAdministratorOnly: true),
@@ -135,7 +141,7 @@ public static class PermissionCatalog
     public static readonly IReadOnlyList<string> AdminPermissions =
     [
         Permission.UsersManage, Permission.RolesManage, Permission.DepartmentsManage, Permission.ApiKeysManage,
-        Permission.DirectoryManage, Permission.AgentsManage, Permission.CalendarManage, Permission.RequestsConfigure, Permission.AuditView
+        Permission.DirectoryManage, Permission.AgentsManage, Permission.CalendarManage, Permission.RequestsConfigure, Permission.ActionsCreate, Permission.AuditView
     ];
 
     public static PermissionDefinition? Find(string key) => ByKey.GetValueOrDefault(key);

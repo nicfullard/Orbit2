@@ -13,6 +13,18 @@ public sealed class JobOptions
     public RecurringTaskJobOptions RecurringTasks { get; set; } = new();
     public DueDateNotificationJobOptions DueDateNotifications { get; set; } = new();
     public ClockSweepJobOptions ClockSweep { get; set; } = new();
+    public RequestActionJobOptions RequestActions { get; set; } = new();
+}
+
+/// <summary>
+/// Schedule for the Quartz.NET job that runs request actions (§6.20) and reconciles request steps whose task closed. The engine
+/// also fires it the moment an action becomes ready; the schedule catches what a restart or a failed hook left behind.
+/// </summary>
+public sealed class RequestActionJobOptions
+{
+    public bool Enabled { get; set; } = true;
+    /// <summary>Quartz cron expression (seconds first). Default: every 15 seconds.</summary>
+    public string Cron { get; set; } = "*/15 * * * * ?";
 }
 
 /// <summary>Schedule for the Quartz.NET recurring-task generator.</summary>
@@ -141,6 +153,26 @@ public sealed class AssetOptions
     public int CheckDueSoonDays { get; set; } = 14;
     /// <summary>A warranty ending within this many days is "expiring".</summary>
     public int WarrantyExpiringDays { get; set; } = 60;
+}
+
+/// <summary>
+/// Request actions (spec §6.20): how long a script may run, and the named database connections a script running on the web server may
+/// open (<c>Actions:Connections:erp:Provider</c> = postgres or sqlserver, <c>:ConnectionString</c>). The connection named <c>orbit</c> is
+/// always Orbit's own database. An agent-side action takes its connections from the agent's <c>actions.json</c> instead.
+/// </summary>
+public sealed class ActionOptions
+{
+    public const string Section = "Actions";
+    /// <summary>The name under which a web-side script reaches Orbit's own database.</summary>
+    public const string OrbitConnection = "orbit";
+    public int TimeoutSeconds { get; set; } = 120;
+    public Dictionary<string, ActionConnectionOptions> Connections { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+}
+
+public sealed class ActionConnectionOptions
+{
+    public string Provider { get; set; } = "postgres";
+    public string ConnectionString { get; set; } = string.Empty;
 }
 
 /// <summary>File attachments on tasks and projects (spec §6.18). The bytes live in the database, so there is nothing to configure but the limits.</summary>

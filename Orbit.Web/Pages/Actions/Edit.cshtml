@@ -1,0 +1,117 @@
+@page "{id:guid?}"
+@model Orbit.Pages.Actions.EditModel
+@using Orbit.Application.Requests
+@{
+    var a = Model.Item;
+    ViewData["Title"] = a is null ? "New action" : a.Name;
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Actions/Index">Actions</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@(a?.Name ?? "New action")</li>
+    </ol>
+</nav>
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <h1 class="h3 mb-0">@(a?.Name ?? "New action")</h1>
+    @if (a is not null)
+    {
+        <form method="post" asp-page-handler="Delete" asp-route-id="@a.Id" data-confirm="@($"Delete the action \"{a.Name}\"?")">
+            <button type="submit" class="btn btn-outline-danger btn-sm" disabled="@(a.Steps.Count > 0)" title="@(a.Steps.Count > 0 ? "In use by a flow" : null)">Delete</button>
+        </form>
+    }
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-8">
+        <form method="post" asp-route-id="@a?.Id" class="card">
+            <div class="card-body">
+                @if (Model.SaveError is not null) { <div class="alert alert-danger py-2">@Model.SaveError</div> }
+                @if (Model.Checked)
+                {
+                    @if (Model.CheckResult.Count == 0) { <div class="alert alert-success py-2">The script compiles.</div> }
+                    else
+                    {
+                        <div class="alert alert-danger py-2">
+                            <div class="fw-semibold">The script doesn't compile:</div>
+                            <ul class="mb-0">@foreach (var e in Model.CheckResult) { <li>@e</li> }</ul>
+                        </div>
+                    }
+                }
+                <div class="row g-2 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label" asp-for="Form.Name">Name</label>
+                        <input class="form-control" asp-for="Form.Name" maxlength="@RequestFlowRules.MaxActionNameLength" required />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" asp-for="Form.Description">Description <span class="text-muted fw-normal">(optional)</span></label>
+                        <input class="form-control" asp-for="Form.Description" maxlength="@RequestFlowRules.MaxDescriptionLength" placeholder="What it does, for whoever places it in a flow" />
+                    </div>
+                </div>
+                <div class="row g-2 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label" asp-for="Form.RunsOn">Runs</label>
+                        <select class="form-select js-sync" data-syncs="where" asp-for="Form.RunsOn" asp-items="Ui.EnumItems<ActionRunsOn>(Model.Form.RunsOn, label: w => w.Label())"></select>
+                    </div>
+                    <div class="col-md-6" data-for-where="Agent">
+                        <label class="form-label" asp-for="Form.AgentId">On which agent</label>
+                        <select class="form-select" asp-for="Form.AgentId">
+                            <option value="">Any connected agent that can run scripts</option>
+                            @foreach (var c in Model.Agents)
+                            {
+                                <option value="@c.Agent.Id" selected="@(c.Agent.Id == Model.Form.AgentId)">@c.Agent.Name (@(c.Online ? c.RunsScripts ? "connected" : "connected, too old to run scripts" : "not connected"))</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" asp-for="Form.Parameters">Parameters <span class="text-muted fw-normal">(one per line, optional)</span></label>
+                    <textarea class="form-control font-monospace" asp-for="Form.Parameters" rows="3" placeholder="product-code | Product code&#10;Reason"></textarea>
+                    <div class="form-text">A label, or <code>key | Label</code>. Each flow step that runs the action binds a value to every parameter; the script reads them as <code>Inputs["key"]</code>.</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" asp-for="Form.Script">Script (C#)</label>
+                    <textarea class="form-control font-monospace" asp-for="Form.Script" rows="18" spellcheck="false" style="font-size: .85rem; white-space: pre; tab-size: 4"></textarea>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary">Save</button>
+                    <button type="submit" class="btn btn-outline-secondary" asp-page-handler="Check" asp-route-id="@a?.Id">Check it compiles</button>
+                </div>
+            </div>
+        </form>
+    </div>
+    <div class="col-lg-4">
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">What a script sees</div>
+            <div class="card-body small">
+                <dl class="mb-2">
+                    <dt class="font-monospace fw-normal">Request</dt><dd class="text-muted">Number, Title, Requester (Id, Name, Email), Department, Category, Flow.</dd>
+                    <dt class="font-monospace fw-normal">Values["step.field"]</dt><dd class="text-muted">Every value of the request: a form's answers, a task's number, an approval's outcome. Also <code>Value("step.field")</code>.</dd>
+                    <dt class="font-monospace fw-normal">Inputs["key"]</dt><dd class="text-muted">The parameters as the step bound them. Also <code>Input("key")</code>.</dd>
+                    <dt class="font-monospace fw-normal">Connections.Open("name")</dt><dd class="text-muted">A <code>DbConnection</code> (Npgsql or SqlClient) from the connections configured where the script runs; disposed when the run ends. On the server: <code>@string.Join("</code>, <code>", Model.WebConnections)</code>. On an agent: its <code>actions.json</code>.</dd>
+                    <dt class="font-monospace fw-normal">Http</dt><dd class="text-muted">An <code>HttpClient</code>.</dd>
+                    <dt class="font-monospace fw-normal">Log("...")</dt><dd class="text-muted">A line of output, shown on the request page; the return value is appended.</dd>
+                    <dt class="font-monospace fw-normal">Ct</dt><dd class="text-muted">Cancelled when the time limit is reached.</dd>
+                </dl>
+                <p class="text-muted mb-1">Usings: System, System.Linq, System.Collections.Generic, System.Threading.Tasks, System.Data.Common, System.Net.Http, System.Text.Json, Npgsql, Microsoft.Data.SqlClient. <code>await</code> works at the top level; <code>using var</code> doesn't (write <code>var db = Connections.Open(...)</code>).</p>
+                <p class="text-danger mb-0">A script runs as the Orbit server or the agent's service account, with no sandbox. An exception fails the step, which a manager can retry or skip.</p>
+            </div>
+        </div>
+        @if (a is not null && a.Steps.Count > 0)
+        {
+            <div class="card mb-3">
+                <div class="card-header fw-semibold">Used by</div>
+                <ul class="list-group list-group-flush small">
+                    @foreach (var s in a.Steps)
+                    {
+                        <li class="list-group-item"><a asp-page="/RequestCatalogue/Step" asp-route-id="@s.Id">@s.Flow.Category.Title › @s.Flow.Title › @s.Title</a></li>
+                    }
+                </ul>
+            </div>
+        }
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/requests.js" asp-append-version="true"></script>
+}

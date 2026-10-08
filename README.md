@@ -7,14 +7,15 @@ Built on ASP.NET Core Razor Pages (.NET 10), EF Core + PostgreSQL, ASP.NET Core 
 
 ## Solution layout
 
-`Orbit.slnx` holds four projects, side by side at the root:
+`Orbit.slnx` holds five projects, side by side at the root:
 
 | Project | What it is |
 |---|---|
 | `Orbit.Web/` | The web app: Razor Pages UI, MCP server, background jobs, and the server side of the Orbit Agent. Builds `Orbit.Web.dll`. |
 | `Orbit.Agent/` | The **Orbit Agent** - a separate Worker Service that runs inside the corporate network. Published on its own; not part of the web app's output. |
 | `Orbit.Agents.Contracts/` | Messages and method names shared by the web app and the agent, so the two can't drift. No dependencies. |
-| `Orbit.Tests/` | xunit tests for the pure code: the access rules, permission catalogue, role rules and list scoping (spec §6.5), and the working-day calendar, critical path engine and staleness fingerprint (spec §6.17). |
+| `Orbit.Scripting/` | The Roslyn script host that runs request actions (spec §6.20), referenced by the web app and the agent so a script compiles the same on both. Brings Npgsql and SqlClient for the scripts' database connections. |
+| `Orbit.Tests/` | xunit tests for the pure code: the access rules, permission catalogue, role rules and list scoping (spec §6.5), the working-day calendar, critical path engine and staleness fingerprint (spec §6.17), the asset and request rules (spec §6.19, §6.20) and the script host. |
 
 Plus `deploy/` (systemd units for Orbit and the agent, env file template, least-privilege DB role script,
 deployment notes), `orbit-spec.md` and `dotnet-tools.json` (pins `dotnet-ef`).
@@ -29,14 +30,14 @@ Inside `Orbit.Web/`, folders stand in for the layers of spec §11, and namespace
 | `Auth/` | API-key and Orbit Agent authentication schemes, `OrbitSignInManager` (directory sign-in), claims factory, actor resolution, page filters |
 | `Agents/` | Server side of the Orbit Agent: the SignalR hub agents connect to, the registry of connected agents, the register/de-register endpoints |
 | `Mcp/` | `OrbitTools` - the 32 MCP tools, mapped onto the same services the UI uses |
-| `Jobs/` | Quartz.NET jobs: recurring-task generation, due-date notifications and the clock sweep, cron-scheduled from `Jobs:*` |
+| `Jobs/` | Quartz.NET jobs: recurring-task generation, due-date notifications, the clock sweep and the request action runner, cron-scheduled from `Jobs:*` |
 | `Reporting/` | QuestPDF report rendering |
 | `Pages/` | Razor Pages UI (dashboard, tasks, projects, backlog, sprints, recurring, time, assets, requests, admin, reports) |
 | `Areas/Identity/` | Overrides of the default Identity UI (login, self-registration disabled, no self-delete) |
 | `Migrations/` | EF Core migrations |
 
 ```
-dotnet build Orbit.slnx                              # all four projects
+dotnet build Orbit.slnx                              # all five projects
 dotnet run --project Orbit.Web                       # the web app
 dotnet test Orbit.slnx                               # the unit tests
 dotnet ef migrations add <Name> --project Orbit.Web  # from the solution root (dotnet tool restore first)
@@ -87,15 +88,18 @@ scopes below it, and a role with no grants sees nothing.
 | `assets.edit` | Dept / All | Edit assets: status, disposal, type, properties, location, holders; delete one registered in error | - | Dept |
 | `assets.check` | Own / Dept / All | Record asset checks (Own: "Confirm I have it" on the assets you hold) | Own | Dept |
 | `assets.configure` | Dept / All | The department's asset types (with properties and check intervals) and locations | - | Dept |
-| `requests.submit` | Own / Dept | Log requests through any department's request flows, and see the ones logged by or for you (Own: for yourself; Dept: also for anyone in your department) | Own | Own |
-| `requests.configure` | Dept / All | The department's request categories, options and questions | - | Dept |
+| `requests.submit` | Own / Dept | Log requests through any department's request flows, follow the ones you logged or were addressed in, and act on the steps addressed to you (Dept: *Your requests* also follows the ones anyone in your department logged) | Own | Own |
+| `requests.configure` | Dept / All | The department's request categories and flows: steps, fields, approvers, dependencies, bindings | - | Dept |
+| `requests.manage` | Dept / All | See every request filed with the department, act on any step, cancel, retry or skip a failed step | - | Dept |
+| `actions.create` | All | Admin > Actions: the scripts request flows run, and where each runs (C# running as the server or an agent, so granted sparingly) | - | - |
 
 The navbar follows the same grants: Today and My Tasks need **Edit tasks**, Tasks **View tasks**, Projects **Edit
 projects**, Backlog and Sprints **Plan tasks**, Recurring **Create tasks**, My Time **Log time** and Assets **View
 assets**, each at any scope. Hiding a link blocks nothing - the pages keep their own rules. The Dashboard is always
 there and adapts: someone who can view tasks but not edit them sees their department's (or company's) work read-only,
-and someone who can't see tasks gets links to what they can use. **New task** shows only with **Create tasks** and
-**New project** only with **Create projects**, and the create pages behind them need the same permission.
+and someone who can't see tasks gets links to what they can use. Anyone who can log requests also gets a **My waiting
+approvals** card there: the requests waiting for their approval, oldest first. **New task** shows only with **Create
+tasks** and **New project** only with **Create projects**, and the create pages behind them need the same permission.
 
 A role with any grant at Department scope needs its users and keys to belong to a department. The same rules
 are enforced in `AccessPolicy` and `Scoping` for signed-in users and for API keys; grants are read from the
@@ -282,23 +286,45 @@ instead.
 ## Requests
 
 **Requests** (spec §6.20, navbar link on **Log requests**) is where anyone asks a department for something. Pick a
-tile (*Report a problem*, *Request something new*...), then an option. An option is either a **link** to a page
-elsewhere, for self-service, or a **flow**: its questions one at a time (text, number, date, a choice, one of the
-assets you hold or a description of something else, how urgent it is, and who it is for), an optional step to attach
-files, and a review. The request is then logged as an unassigned task in the department that owns the category. The
-answers go in the task's description, the urgency sets its priority, the asset its asset, the person it is for its
-*Requestee*, and a date question marked *sets the due date* its due date. The flow's configurer sets the task's
-type. **Who it is for** lists the people you may log for: with **Log requests** at Own that is just you, so the
-question is skipped; at Department, anyone in your department. A requestee other than you is emailed, and can open
-the task as their own. **Your requests** on the same page lists what you have logged and what was logged for you,
-with its status; the plain task lists don't show it, since a request usually belongs to another department, but the
-Tasks list's *Requestee: Me* filter does.
+tile (*Report a problem*, *Products*...), then a flow. A **flow** is a sequence of **steps** the department built:
 
-Each department runs its own catalogue (**Admin > Request flows**, **Configure request flows**): categories
-with an icon and colour, options, and each flow's questions. A department with none can load a generic example
-catalogue to start from; its *Change something* flows file **Change** tasks and its *Request something new* flows
-**Request** tasks (two task types beside Meeting, Planning, Task, Training and Audit). Every task logged through a
-flow carries the source *Request*, whatever its type, and the Tasks list and `list_tasks` filter on it.
+- **Form** - questions, one at a time: text, number, date, a choice, how urgent it is (Low to Critical, each with
+  what it means), files, an asset type, or an asset, project or person picked from a list the builder scoped (the
+  department's, the whole company's, or the assets you hold).
+- **Approval** - ordered stages of approvers (a person, or everyone with a role in a department or in the requester's
+  own), any one or all of them; a decline ends it, and each decision may carry a comment.
+- **Task** - creates an Orbit task in a department, with its type, priority (fixed, or from an urgency answer), title
+  and description filled from earlier answers, assignees set in advance or none, and the forms' files copied to it;
+  done when the task is.
+- **Action** - runs a script from the action library with the request's values.
+- **Web page** - opens a page in a new tab; done when you open it.
+
+Each step waits for the steps the builder chose (an approval's accept or decline can send the request down different
+steps) and may use their values as tokens - `{{details.description}}` - in a task's title, a page's address or an
+action's inputs. Logging a request fills in the first form and creates a numbered request (`R-26-00007`) filed with the
+department; its page shows the steps as a timeline, what each is waiting for, and what you can do: fill in a form,
+open a page, approve or decline. The request is complete when every step is. **Needs your action** on the Requests
+page lists the forms, pages and approvals waiting for you (the Dashboard's **My waiting approvals** card repeats the
+approvals); **Your requests** what you logged or were addressed in (at Department scope, your whole department's);
+**Department requests** (needs **Manage requests**) everything filed with your department, where a manager can also
+cancel a request or retry and skip a step that failed. The tasks a flow creates carry the source *Request* and link
+back to their request; the Tasks list and `list_tasks` filter on the source.
+
+Each department builds its own flows (**Admin > Request flows**, needs **Configure request flows**): categories with an
+icon and colour, flows, and each flow's steps with their fields, stages, dependencies and settings, with a *Not set
+up* badge until a flow can be offered. A flow with requests in progress keeps its structure until they finish, and
+nothing a request ever used can be deleted - archive it instead.
+
+**Actions** (**Admin > Actions**, needs **Create actions**, which no shipped role has) are C# scripts (Roslyn) with
+parameters that a flow's Action step binds to values. A script sees the request (`Request.Number`, the requester),
+every value (`Values["step.field"]`), its inputs (`Inputs["key"]`), named database connections
+(`Connections.Open("erp")` - Npgsql or SqlClient, from `Actions:Connections:*` on the server plus `orbit` for
+Orbit's own database, or from the agent's `actions.json`), an `HttpClient`, `Log(...)` and a cancellation token.
+It is compiled when saved. An action runs either on the Orbit server or on an **Orbit Agent** inside the network
+(agent 1.2 or later), so a script can update an internal database without that database being reachable from Orbit.
+Scripts run unsandboxed as the server or the agent's service account - that is what the permission guards - and the
+audit log records a script's hash, never its text. A failed action (an exception, a compile error, the 120-second
+limit) leaves the step for a manager to retry or skip.
 
 ## Reports
 
@@ -343,6 +369,8 @@ And one about assets:
 ## Configuration
 
 See `Orbit.Web/appsettings.json` for defaults and `deploy/orbit.env.example` for the production environment
-variables (`Database:ApplyMigrations`, `DataProtection:KeyRingPath`, `Jobs:*`, `Security:*`, `Agents:*`, `CriticalPath:*`, `Assets:*`, `Seed:Admin:*`, `App:BaseUrl`).
+variables (`Database:ApplyMigrations`, `DataProtection:KeyRingPath`, `Jobs:*`, `Security:*`, `Agents:*`, `CriticalPath:*`, `Assets:*`, `Attachments:*`, `Actions:*`, `Seed:Admin:*`, `App:BaseUrl`).
+`Actions:TimeoutSeconds` caps a request action's script, and `Actions:Connections:<name>:Provider` / `ConnectionString`
+name the databases a script on the server may open; an agent's connections go in its own `actions.json` (deploy/README.md).
 `App:BaseUrl` is also the address put into an agent's `configure` command, so it must be the public `https` URL.
 Notification emails go through Identity's `IEmailSender`; the shipped implementation only logs them.

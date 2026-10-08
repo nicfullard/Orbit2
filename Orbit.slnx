@@ -16,5 +16,6 @@
   <Project Path="Orbit.Web/Orbit.Web.csproj" />
   <Project Path="Orbit.Agent/Orbit.Agent.csproj" />
   <Project Path="Orbit.Agents.Contracts/Orbit.Agents.Contracts.csproj" />
+  <Project Path="Orbit.Scripting/Orbit.Scripting.csproj" />
   <Project Path="Orbit.Tests/Orbit.Tests.csproj" />
 </Solution>

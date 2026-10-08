@@ -58,10 +58,35 @@ public sealed class NotificationService(
         await SendAsync(assignee.Email!, subject, body);
     }
 
+    /// <summary>A request step is waiting for the person (§6.20): a form to fill in, a page to open, an approval to give.</summary>
+    public async Task RequestStepAsync(Request request, ApplicationUser person, string what, CancellationToken ct = default)
+    {
+        if (!CanNotify(person)) return;
+        var subject = $"[Orbit] {request.Number}: please {what}";
+        var body =
+            $"<p>Hi {Enc(person.DisplayName)},</p>" +
+            $"<p>The request <a href=\"{RequestUrl(request.Id)}\">{Enc(request.Number)} {Enc(request.Title)}</a>, logged by {Enc(request.Requester?.DisplayName)}, needs you to {Enc(what)}.</p>";
+        await SendAsync(person.Email!, subject, body);
+    }
+
+    /// <summary>The request has finished (§6.20) - completed, declined or cancelled - told to the person who logged it.</summary>
+    public async Task RequestFinishedAsync(Request request, ApplicationUser requester, CancellationToken ct = default)
+    {
+        if (!CanNotify(requester)) return;
+        var state = request.Status.Label().ToLowerInvariant();
+        var subject = $"[Orbit] Request {state}: {request.Title}";
+        var body =
+            $"<p>Hi {Enc(requester.DisplayName)},</p>" +
+            $"<p>Your request <a href=\"{RequestUrl(request.Id)}\">{Enc(request.Number)} {Enc(request.Title)}</a> is {state}.</p>";
+        await SendAsync(requester.Email!, subject, body);
+    }
+
     private static bool CanNotify(ApplicationUser user) =>
         user.IsActive && !user.IsSystemAccount && !string.IsNullOrWhiteSpace(user.Email);
 
     private string TaskUrl(Guid id) => $"{app.Value.BaseUrl.TrimEnd('/')}/Tasks/Details/{id}";
+
+    private string RequestUrl(Guid id) => $"{app.Value.BaseUrl.TrimEnd('/')}/Requests/Request/{id}";
 
     private static string Enc(string? s) => WebUtility.HtmlEncode(s ?? string.Empty);
 

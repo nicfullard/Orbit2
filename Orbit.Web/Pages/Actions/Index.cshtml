@@ -1,0 +1,52 @@
+@page
+@model Orbit.Pages.Actions.IndexModel
+@{
+    ViewData["Title"] = "Actions";
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div>
+        <h1 class="h3 mb-1">Actions</h1>
+        <div class="text-muted small">
+            Scripts a request flow's Action step runs - C# that updates a database, calls a service, or anything else - with the request's
+            values and the parameters the step binds. Written here; placed in flows by whoever configures them.
+        </div>
+    </div>
+    <a class="btn btn-primary btn-sm" asp-page="/Actions/Edit">New action</a>
+</div>
+
+<div class="card">
+    @if (Model.Items.Count == 0)
+    {
+        <div class="card-body text-muted fst-italic">No actions yet.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Action</th>
+                        <th>Runs</th>
+                        <th class="d-none d-md-table-cell">Parameters</th>
+                        <th class="d-none d-md-table-cell">Used by</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var a in Model.Items)
+                    {
+                        <tr>
+                            <td>
+                                <a asp-page="/Actions/Edit" asp-route-id="@a.Id" class="fw-semibold text-decoration-none">@a.Name</a>
+                                @if (!string.IsNullOrWhiteSpace(a.Description)) { <div class="small text-muted">@Ui.Truncate(a.Description, 100)</div> }
+                            </td>
+                            <td class="small">@a.RunsOn.Label()@if (a.Agent is not null) { <text> · @a.Agent.Name</text> }</td>
+                            <td class="d-none d-md-table-cell small font-monospace">@string.Join(", ", a.Parameters.Select(p => p.Key))</td>
+                            <td class="d-none d-md-table-cell small">@(a.Steps.Count == 0 ? "nobody yet" : string.Join(", ", a.Steps.Select(s => s.Flow.Title).Distinct()))</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>

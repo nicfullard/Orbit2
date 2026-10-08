@@ -184,26 +184,52 @@ public static class AccessPolicy
     // ---------------------------------------------------------------- requests (§6.20)
 
     /// <summary>
-    /// Logging a request through any department's request flows: requests.submit at any scope. It files a task in the flow's
-    /// department without tasks.create there - the flow, not the requester, decides what is filed - so a Member can ask another
-    /// department for help.
+    /// Logging a request through any department's request flows: requests.submit at any scope. A flow's task steps file tasks in
+    /// their departments without tasks.create there - the flow, not the requester, decides what is filed - so a Member can ask
+    /// another department for help.
     /// </summary>
     public static bool CanSubmitRequests(Actor a) => a.UserId is not null && a.ScopeOf(Permission.RequestsSubmit) >= PermissionScope.Own;
 
-    /// <summary>Logging requests for other people (requests.submit above Own): a flow's User question is asked rather than answered as you.</summary>
-    public static bool CanRequestForOthers(Actor a) => CanSubmitRequests(a) && a.ScopeOf(Permission.RequestsSubmit) >= PermissionScope.Department;
+    /// <summary>
+    /// Following the requests anyone in your department logged, under Your requests (requests.submit at Department): a team lead or
+    /// PA keeping an eye on the team's requests. Own follows only your own and the ones addressed to you.
+    /// </summary>
+    public static bool CanSeeDepartmentsRequests(Actor a) => CanSubmitRequests(a) && a.ScopeOf(Permission.RequestsSubmit) >= PermissionScope.Department;
+
+    /// <summary>A department's request categories, flows and steps: requests.configure reaching that department.</summary>
+    public static bool CanConfigureRequestsIn(Actor a, Guid departmentId) => a.CanInDepartment(Permission.RequestsConfigure, departmentId);
+
+    /// <summary>The requests filed with a department - seeing them all, cancelling, retrying or skipping a failed step: requests.manage reaching it.</summary>
+    public static bool CanManageRequestsIn(Actor a, Guid departmentId) => a.CanInDepartment(Permission.RequestsManage, departmentId);
 
     /// <summary>
-    /// Whom a request may be logged for (a flow's User question): yourself at Own; anyone in your department at Department; anyone
-    /// at All (the built-in role). The scope reaches the person's home department, not the flow's.
+    /// Opening a request: its requester, anyone it was addressed to (a step assigned to them, or an approval asked of them -
+    /// <paramref name="isParticipant"/>, worked out by the caller from the request's steps and approvals), or requests.manage reaching
+    /// its department. Always a person: the page lives behind the requests.submit door.
     /// </summary>
-    public static bool CanRequestFor(Actor a, Guid userId, Guid? userDepartmentId) =>
-        CanSubmitRequests(a) &&
-        (userId == a.UserId || a.CanAnywhere(Permission.RequestsSubmit)
-            || (userDepartmentId is Guid d && a.CanInDepartment(Permission.RequestsSubmit, d)));
+    public static bool CanViewRequest(Actor a, Request r, bool isParticipant) =>
+        a.UserId is not null && (r.RequesterId == a.UserId || isParticipant || CanManageRequestsIn(a, r.DepartmentId));
 
-    /// <summary>A department's request categories, options and questions: requests.configure reaching that department.</summary>
-    public static bool CanConfigureRequestsIn(Actor a, Guid departmentId) => a.CanInDepartment(Permission.RequestsConfigure, departmentId);
+    /// <summary>Filling in a form step or marking a web-page step done: the person it is assigned to, or a manager of the request's department.</summary>
+    public static bool CanActOnStep(Actor a, Request r, RequestStep step) =>
+        a.UserId is not null && (step.AssignedToId == a.UserId || CanManageRequestsIn(a, r.DepartmentId));
+
+    /// <summary>An approval is given by the approver it was asked of, nobody else - not even a manager.</summary>
+    public static bool CanDecide(Actor a, RequestApproval approval) => a.UserId is not null && approval.ApproverId == a.UserId;
+
+    /// <summary>Cancelling a request while it is in progress: its requester, or a manager of its department.</summary>
+    public static bool CanCancelRequest(Actor a, Request r) =>
+        r.Status == RequestStatus.InProgress && a.UserId is not null && (r.RequesterId == a.UserId || CanManageRequestsIn(a, r.DepartmentId));
+
+    /// <summary>Retrying or skipping a failed step: a manager of the request's department.</summary>
+    public static bool CanRetryOrSkipStep(Actor a, Request r) => CanManageRequestsIn(a, r.DepartmentId);
+
+    /// <summary>The action library (Admin &gt; Actions): actions.create, which is All-only.</summary>
+    public static bool CanCreateActions(Actor a) => a.CanAnywhere(Permission.ActionsCreate);
+
+    /// <summary>Removing a file from a request: whoever uploaded it, or a manager of the request's department.</summary>
+    public static bool CanDeleteAttachment(Actor a, Attachment at, Request parent) =>
+        (a.UserId is not null && at.UploadedById == a.UserId) || CanManageRequestsIn(a, parent.DepartmentId);
 
     public static bool CanManageUsers(Actor a) => a.CanAnywhere(Permission.UsersManage);
     public static bool CanManageRoles(Actor a) => a.CanAnywhere(Permission.RolesManage);

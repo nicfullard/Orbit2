@@ -19,6 +19,7 @@ public class DetailsModel(
     UserDirectoryService users,
     TaskStructureService structure,
     AttachmentService attachments,
+    RequestService requests,
     IOptions<AttachmentOptions> attachmentOptions,
     IActorProvider actors) : OrbitPageModel
 {
@@ -57,6 +58,8 @@ public class DetailsModel(
     public IReadOnlyList<Attachment> Attachments { get; private set; } = [];
     public bool CanAttach { get; private set; }
     public AttachmentOptions AttachmentLimits => attachmentOptions.Value;
+    /// <summary>The request whose task step created this task (§6.20), for the link in the badges.</summary>
+    public (Guid Id, string Number)? FromRequest { get; private set; }
 
     /// <summary>An upload may exceed the default request body limit; raise it before the files are read (see Uploads).</summary>
     public override void OnPageHandlerSelected(PageHandlerSelectedContext context)
@@ -105,6 +108,7 @@ public class DetailsModel(
     public async Task<IActionResult> OnGetAsync(Guid id, CancellationToken ct)
     {
         await LoadAsync(id, ct);
+        if (Task.Source == TaskSource.Request) FromRequest = await requests.ForTaskAsync(id, ct);
         return Page();
     }
 

@@ -15,6 +15,7 @@ using Orbit.Data;
 using Orbit.Data.Entities;
 using Orbit.Jobs;
 using Orbit.Mcp;
+using Orbit.Scripting;
 using QuestPDF.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -35,6 +36,7 @@ builder.Services.Configure<SecurityOptions>(config.GetSection(SecurityOptions.Se
 builder.Services.Configure<CriticalPathOptions>(config.GetSection(CriticalPathOptions.Section));
 builder.Services.Configure<AttachmentOptions>(config.GetSection(AttachmentOptions.Section));
 builder.Services.Configure<AssetOptions>(config.GetSection(AssetOptions.Section));
+builder.Services.Configure<ActionOptions>(config.GetSection(ActionOptions.Section));
 var security = config.GetSection(SecurityOptions.Section).Get<SecurityOptions>() ?? new SecurityOptions();
 
 // Behind nginx/Caddy on the same host (deploy/README.md) the app only ever sees 127.0.0.1 over plain http.
@@ -121,9 +123,10 @@ builder.Services.AddRazorPages(options =>
         options.Conventions.AuthorizePage("/Assets/Edit", Policies.Permission(Permission.AssetsEdit));
         options.Conventions.AuthorizeFolder("/AssetTypes", Policies.Permission(Permission.AssetsConfigure));
         options.Conventions.AuthorizeFolder("/AssetLocations", Policies.Permission(Permission.AssetsConfigure));
-        // Requests (§6.20): logging them, and configuring the flows - separate folders, so the two doors don't stack.
+        // Requests (§6.20): logging and acting on them, configuring the flows, and the action library - separate folders, so the doors don't stack.
         options.Conventions.AuthorizeFolder("/Requests", Policies.Permission(Permission.RequestsSubmit));
         options.Conventions.AuthorizeFolder("/RequestCatalogue", Policies.Permission(Permission.RequestsConfigure));
+        options.Conventions.AuthorizeFolder("/Actions", Policies.Permission(Permission.ActionsCreate));
     })
     .AddMvcOptions(o =>
     {
@@ -163,7 +166,12 @@ builder.Services.AddScoped<AssetService>();
 builder.Services.AddScoped<AssetTypeService>();
 builder.Services.AddScoped<AssetLocationService>();
 builder.Services.AddScoped<RequestCatalogueService>();
+builder.Services.AddScoped<RequestActionService>();
 builder.Services.AddScoped<RequestService>();
+builder.Services.AddScoped<RequestEngine>();
+builder.Services.AddScoped<AgentScriptDispatcher>();
+// One script host per process (§6.20): compiled scripts are cached in it.
+builder.Services.AddSingleton<ScriptHost>();
 builder.Services.AddTransient<IEmailSender, LoggingEmailSender>();
 
 // --- MCP server (Streamable HTTP, stateless) ----------------------------------------------

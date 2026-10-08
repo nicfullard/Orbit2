@@ -44,10 +44,13 @@ public class NavigationTests
         var auditor = TestActors.Grants(null, (Permission.TasksView, PermissionScope.All), (Permission.ProjectsView, PermissionScope.All));
         Assert.Equal(["Dashboard", "Tasks"], Menu(auditor));
         Assert.Equal(["Dashboard"], Menu(TestActors.Nobody(Finance)));
-        // Configuring request flows is in the Admin menu, not the main one.
+        // Configuring request flows and the action library are in the Admin menu, not the main one.
         var configurer = TestActors.Grants(Finance, (Permission.RequestsConfigure, PermissionScope.Department));
         Assert.Equal(["Dashboard"], Menu(configurer));
         Assert.Equal("/RequestCatalogue/Index", Navigation.AdminVisible(configurer).Single().Page);
+        var scripter = TestActors.Grants(null, (Permission.ActionsCreate, PermissionScope.All));
+        Assert.Equal(["Dashboard"], Menu(scripter));
+        Assert.Equal("/Actions/Index", Navigation.AdminVisible(scripter).Single().Page);
     }
 
     /// <summary>NAV-003: taking one permission away takes its items - planning takes Backlog and Sprints, editing Today and My Tasks.</summary>

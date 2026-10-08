@@ -83,12 +83,12 @@ public class CreateForAccessTests
         var nobody = TestActors.Nobody(Finance);
         Assert.False(AccessPolicy.CanCreateTaskFor(nobody, nobody.UserId!.Value, Finance));
 
-        // The two "for whom" permissions don't leak into each other: request flows follow requests.submit, tasks tasks.create_for.
+        // The two department-reaching permissions don't leak into each other: following the department's requests is requests.submit, tasks tasks.create_for.
         var requester = TestActors.Grants(Finance, (Permission.RequestsSubmit, PermissionScope.Department), (Permission.TasksCreateFor, PermissionScope.Own));
-        Assert.True(AccessPolicy.CanRequestFor(requester, colleague, Finance));
+        Assert.True(AccessPolicy.CanSeeDepartmentsRequests(requester));
         Assert.False(AccessPolicy.CanCreateTaskFor(requester, colleague, Finance));
         var creator = TestActors.Grants(Finance, (Permission.RequestsSubmit, PermissionScope.Own), (Permission.TasksCreateFor, PermissionScope.Department));
-        Assert.False(AccessPolicy.CanRequestFor(creator, colleague, Finance));
+        Assert.False(AccessPolicy.CanSeeDepartmentsRequests(creator));
         Assert.True(AccessPolicy.CanCreateTaskFor(creator, colleague, Finance));
     }
 

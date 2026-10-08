@@ -1,5 +1,7 @@
 using Orbit.Agent;
 using Orbit.Agent.Ldap;
+using Orbit.Agent.Scripting;
+using Orbit.Scripting;
 
 var verb = args.Length > 0 && !args[0].StartsWith('-') ? args[0].ToLowerInvariant() : "run";
 var rest = args.Length > 0 && !args[0].StartsWith('-') ? args[1..] : args;
@@ -39,6 +41,8 @@ builder.Services.AddWindowsService(o => o.ServiceName = "Orbit Agent");
 builder.Services.AddSystemd();
 builder.Services.AddSingleton(config);
 builder.Services.AddSingleton<LdapDirectory>();
+builder.Services.AddSingleton<ScriptHost>();
+builder.Services.AddSingleton<ScriptRunner>();
 builder.Services.AddHostedService<AgentWorker>();
 
 await builder.Build().RunAsync();

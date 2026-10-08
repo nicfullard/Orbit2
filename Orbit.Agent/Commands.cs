@@ -10,7 +10,8 @@ namespace Orbit.Agent;
 public static class Commands
 {
     public const string Usage = """
-        Orbit Agent - connects your network to Orbit so Orbit can check directory (LDAP / Active Directory) sign-ins.
+        Orbit Agent - connects your network to Orbit so Orbit can check directory (LDAP / Active Directory) sign-ins and run
+        request actions inside the network.
 
         Usage:
           Orbit.Agent configure --url <orbit url> --token <registration token> [--replace]
@@ -19,6 +20,12 @@ public static class Commands
               Connects to Orbit and waits for work. This is what a Windows service or systemd unit should start.
           Orbit.Agent remove
               De-registers this agent in Orbit and deletes its local configuration.
+
+        Request actions that Orbit runs on this agent take their database connections from actions.json in the same
+        folder as agent.json, read each time a script runs:
+          { "connections": { "erp": { "provider": "sqlserver", "connectionString": "Server=...;Database=...;" } } }
+        (provider: postgres or sqlserver). The file isn't encrypted: keep it readable by the service account only. The
+        scripts are C# written in Orbit by whoever holds actions.create there, and run here with this account's rights.
 
         The agent has no other settings: directory servers and the rest are managed in Orbit.
         """;

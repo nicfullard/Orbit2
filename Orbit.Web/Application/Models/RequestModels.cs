@@ -13,56 +13,117 @@ public sealed class RequestCategoryInput
     public RequestColour Colour { get; set; } = RequestColour.Blue;
 }
 
-/// <summary>A request option's own fields (§6.20): a Flow's task type and attachments step, or a Link's address.</summary>
-public sealed class RequestOptionInput
+/// <summary>A request flow's own fields (§6.20).</summary>
+public sealed class RequestFlowInput
 {
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
-    public RequestOptionKind Kind { get; set; } = RequestOptionKind.Flow;
-    public string? Url { get; set; }
-    public bool AllowAttachments { get; set; } = true;
-    public TaskType TaskType { get; set; } = TaskType.Task;
 }
 
-/// <summary>One question of a request flow (§6.20). <see cref="Choices"/> only for a Choice, <see cref="SetsDueDate"/> only for a Date.</summary>
-public sealed class RequestQuestionInput
+/// <summary>Adding a step to a flow (§6.20): its kind is fixed once added; the key is derived from the title when blank.</summary>
+public sealed class RequestStepAddInput
 {
-    public string Prompt { get; set; } = string.Empty;
-    public string? HelpText { get; set; }
-    public RequestQuestionType QuestionType { get; set; } = RequestQuestionType.Text;
-    public bool IsRequired { get; set; }
-    public IReadOnlyList<string> Choices { get; set; } = [];
-    public bool SetsDueDate { get; set; }
+    public RequestStepKind Kind { get; set; } = RequestStepKind.Form;
+    public string Title { get; set; } = string.Empty;
+    public string? Key { get; set; }
 }
 
-/// <summary>A category in the configuration list, with how many options it has and how many of them are live.</summary>
-public sealed record RequestCategoryListItem(RequestCategory Category, int OptionCount, int LiveOptionCount);
-
-/// <summary>One department's live categories on the Requests page, each with its live options in order.</summary>
-public sealed record RequestCatalogueSection(Department Department, IReadOnlyList<RequestCategory> Categories);
-
-/// <summary>A request the current user logged, or that was logged for them (§6.20), for "Your requests": the task, and whether they may open it.</summary>
-public sealed record MyRequest(TaskItem Task, bool CanOpen);
-
-/// <summary>Someone a request can be logged for (a flow's User question, §6.20).</summary>
-public sealed record RequestPerson(Guid Id, string Name, string? Email);
+/// <summary>One dependency of a step (§6.20): the step it waits for and, for an approval, the outcome it needs.</summary>
+public sealed record RequestDependencyInput(Guid DependsOnStepId, RequestOutcome? RequiredOutcome);
 
 /// <summary>
-/// What <c>TaskService.CreateRequestAsync</c> files (§6.20): the task a request flow composed. The department is the flow's; the
-/// requester is the actor; there is never an assignee, project or sprint.
+/// A step's settings (§6.20): the common ones, its dependencies, and the ones for its kind - the service reads only what the kind
+/// uses, so a form may post everything.
 /// </summary>
-public sealed class RequestTaskInput
+public sealed class RequestStepInput
 {
-    public required Guid DepartmentId { get; init; }
-    public required string Title { get; init; }
-    public required string Description { get; init; }
-    public TaskPriority Priority { get; init; } = TaskPriority.Medium;
-    public TaskType Type { get; init; } = TaskType.Task;
-    public DateOnly? DueDate { get; init; }
-    public Guid? AssetId { get; init; }
-    /// <summary>The requestee, whom the request is for (the flow's User question); null when it asks none. Must be someone the requester may log for.</summary>
-    public Guid? RequesteeId { get; init; }
-    public string? IdempotencyKey { get; init; }
-    /// <summary>What the Created audit entry records about the flow: its category and option, by id and title.</summary>
-    public required object RequestDetails { get; init; }
+    public string Title { get; set; } = string.Empty;
+    public string? Key { get; set; }
+    public IReadOnlyList<RequestDependencyInput> Dependencies { get; set; } = [];
+
+    // Form and Url
+    public Guid? PerformedById { get; set; }
+
+    // Url
+    public string? Url { get; set; }
+
+    // Task
+    public Guid? TaskDepartmentId { get; set; }
+    public TaskType TaskType { get; set; } = TaskType.Task;
+    public TaskPriority TaskPriority { get; set; } = TaskPriority.Medium;
+    public string? TitleTemplate { get; set; }
+    public string? DescriptionTemplate { get; set; }
+    public Guid? DueDateFieldId { get; set; }
+    public Guid? AssetFieldId { get; set; }
+    public Guid? ProjectFieldId { get; set; }
+    /// <summary>An Urgency field the priority comes from; <see cref="TaskPriority"/> applies without one.</summary>
+    public Guid? PriorityFieldId { get; set; }
+    public RequesteeSource RequesteeSource { get; set; } = RequesteeSource.Requester;
+    public Guid? RequesteeFieldId { get; set; }
+    public bool CopyAllAttachments { get; set; }
+    public Guid? CopyAttachmentsFromStepId { get; set; }
+    public IReadOnlyList<Guid> AssigneeIds { get; set; } = [];
+
+    // Action
+    public Guid? ActionId { get; set; }
+    /// <summary>By parameter key.</summary>
+    public IReadOnlyDictionary<string, string?> ActionInputs { get; set; } = new Dictionary<string, string?>();
+}
+
+/// <summary>One field of a Form step (§6.20). <see cref="Choices"/> only for a Choice; <see cref="PickerScope"/> only for Asset, Asset type, Project and User.</summary>
+public sealed class RequestFieldInput
+{
+    public string Prompt { get; set; } = string.Empty;
+    public string? Key { get; set; }
+    public string? HelpText { get; set; }
+    public RequestFieldType FieldType { get; set; } = RequestFieldType.Text;
+    public bool IsRequired { get; set; }
+    public IReadOnlyList<string> Choices { get; set; } = [];
+    public RequestPickerScope? PickerScope { get; set; }
+}
+
+/// <summary>
+/// One asset type an Asset type field offers (§6.20), with the group the list shows it under: its category for the flow's
+/// department's own, department and category for the whole company's; blank for none.
+/// </summary>
+public sealed record RequestAssetTypeChoice(Guid Id, string Name, string Group);
+
+/// <summary>One approver of a stage (§6.20): a person, or a role in a department (fixed, or the requester's own).</summary>
+public sealed class RequestApproverInput
+{
+    public ApproverKind Kind { get; set; } = ApproverKind.Person;
+    public Guid? UserId { get; set; }
+    public Guid? DepartmentId { get; set; }
+    public Guid? RoleId { get; set; }
+}
+
+/// <summary>An action in the library (§6.20) with its parameters, in order.</summary>
+public sealed class RequestActionInput
+{
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public ActionRunsOn RunsOn { get; set; } = ActionRunsOn.Web;
+    public Guid? AgentId { get; set; }
+    public string Script { get; set; } = string.Empty;
+    public IReadOnlyList<RequestActionParameterInput> Parameters { get; set; } = [];
+}
+
+public sealed record RequestActionParameterInput(string? Key, string Label);
+
+/// <summary>One department's offered categories on the Requests page, each with its offered flows in order.</summary>
+public sealed record RequestCatalogueSection(Department Department, IReadOnlyList<RequestCategory> Categories);
+
+/// <summary>Someone a form's Person field may name (§6.20).</summary>
+public sealed record RequestPerson(Guid Id, string Name, string? Email);
+
+/// <summary>A step addressed to the current person (§6.20) - a form to fill in, a page to open, an approval to give - for "Needs your action".</summary>
+public sealed record RequestActionItem(Request Request, RequestStep Step, string What, DateTime Since);
+
+/// <summary>The department requests list's filter (§6.20).</summary>
+public sealed class RequestFilter
+{
+    public Guid? DepartmentId { get; set; }
+    public RequestStatus? Status { get; set; }
+    public string? Query { get; set; }
+    public int Take { get; set; } = 100;
 }

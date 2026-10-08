@@ -13,7 +13,7 @@ public static class DefaultRoles
 
     public const string SystemAdministratorDescription = "Every permission, everywhere. Built in; cannot be edited or deleted.";
     public const string MemberDescription = "Sees their department's work; edits, plans and logs time on their own tasks; takes unassigned tasks; sees and confirms the assets they hold; logs requests with any department.";
-    public const string DepartmentAdminDescription = "Manages every task and project in their own department, including colleagues' time, the department's asset register and its request flows.";
+    public const string DepartmentAdminDescription = "Manages every task and project in their own department, including colleagues' time, the department's asset register, its request flows and the requests filed with it.";
 
     public static readonly IReadOnlyDictionary<string, PermissionScope> MemberGrants = new Dictionary<string, PermissionScope>(StringComparer.Ordinal)
     {
@@ -53,8 +53,9 @@ public static class DefaultRoles
         [Permission.AssetsEdit] = PermissionScope.Department,
         [Permission.AssetsCheck] = PermissionScope.Department,
         [Permission.AssetsConfigure] = PermissionScope.Department,
-        // Requests (§6.20): log requests with any department, and run the department's own request flows.
+        // Requests (§6.20): log requests with any department, run the department's own request flows, and manage the requests filed with it.
         [Permission.RequestsSubmit] = PermissionScope.Own,
-        [Permission.RequestsConfigure] = PermissionScope.Department
+        [Permission.RequestsConfigure] = PermissionScope.Department,
+        [Permission.RequestsManage] = PermissionScope.Department
     };
 }

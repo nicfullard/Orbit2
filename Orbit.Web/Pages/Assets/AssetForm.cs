@@ -110,6 +110,8 @@ public sealed class PersonPickerVm
     public required string SearchUrl { get; init; }
     public IReadOnlyList<UserSummary> Selected { get; init; } = [];
     public bool SubmitOnPick { get; init; }
+    /// <summary>At most one person: picking replaces the chip (a request step's performer or approver, §6.20).</summary>
+    public bool Single { get; init; }
     public string Placeholder { get; init; } = "Type a name, email or department...";
     public string Label { get; init; } = "Search for a person";
     /// <summary>Shown while nobody is chosen.</summary>

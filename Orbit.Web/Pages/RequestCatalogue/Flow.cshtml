@@ -1,0 +1,180 @@
+@page "{id:guid}"
+@model Orbit.Pages.RequestCatalogue.FlowModel
+@using Orbit.Application.Requests
+@using Orbit.Pages.RequestCatalogue
+@{
+    var f = Model.Flow;
+    var c = f.Category;
+    ViewData["Title"] = $"Configure {f.Title}";
+    var steps = f.Steps.ToList();
+    var byId = steps.ToDictionary(s => s.Id);
+    var live = RequestFlowRules.IsLive(f);
+    var start = RequestFlowRules.StartForm(f);
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/RequestCatalogue/Index">Request flows</a></li>
+        <li class="breadcrumb-item"><a asp-page="/RequestCatalogue/Category" asp-route-id="@c.Id">@c.Title</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@f.Title</li>
+    </ol>
+</nav>
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div>
+        <h1 class="h3 mb-0">
+            @f.Title
+            @if (f.IsArchived) { <span class="badge text-bg-secondary fs-6 align-middle">Archived</span> }
+            else if (!live) { <span class="badge text-bg-warning fs-6 align-middle" title="Offered once it has a step and every step is set up">Not offered yet</span> }
+        </h1>
+        <div class="text-muted small">A flow of <strong>@c.Title</strong> (@c.Department.Name).</div>
+    </div>
+    @if (live && Model.CanSubmit)
+    {
+        <a class="btn btn-outline-secondary btn-sm" asp-page="/Requests/Start" asp-route-id="@f.Id">Try it (logs a real request)</a>
+    }
+</div>
+
+@if (Model.InProgress > 0)
+{
+    <div class="alert alert-info py-2 small">
+        @Model.InProgress @(Model.InProgress == 1 ? "request is" : "requests are") in progress through this flow. Titles, help text, templates, assignees
+        and approvers may change and apply to the steps they haven't reached; steps, keys, dependencies and fields can't change until they finish.
+    </div>
+}
+
+<div class="row g-3">
+    <div class="col-lg-5">
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Flow</div>
+            <div class="card-body">
+                <form method="post" asp-route-id="@f.Id">
+                    @if (Model.SaveError is not null) { <div class="text-danger mb-2">@Model.SaveError</div> }
+                    <div class="mb-3">
+                        <label class="form-label" for="form-title">Title</label>
+                        <input class="form-control" id="form-title" name="form.Title" value="@Model.Form.Title" maxlength="@RequestFlowRules.MaxFlowTitleLength" required />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="form-description">Description <span class="text-muted fw-normal">(optional)</span></label>
+                        <input class="form-control" id="form-description" name="form.Description" value="@Model.Form.Description" maxlength="@RequestFlowRules.MaxDescriptionLength" />
+                    </div>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </form>
+                <hr />
+                <div class="d-flex flex-wrap gap-2">
+                    @if (f.IsArchived)
+                    {
+                        <form method="post" asp-page-handler="Archive" asp-route-id="@f.Id" asp-route-archived="false">
+                            <button class="btn btn-outline-success btn-sm" type="submit">Restore flow</button>
+                        </form>
+                    }
+                    else
+                    {
+                        <form method="post" asp-page-handler="Archive" asp-route-id="@f.Id" asp-route-archived="true"
+                              data-confirm="Archive this flow? It stops being offered; requests in progress carry on and nothing is deleted.">
+                            <button class="btn btn-outline-secondary btn-sm" type="submit">Archive flow</button>
+                        </form>
+                    }
+                    <form method="post" asp-page-handler="Delete" asp-route-id="@f.Id"
+                          data-confirm="@($"Delete the flow \"{f.Title}\" with its {steps.Count} {(steps.Count == 1 ? "step" : "steps")}? Only possible while no request was logged through it.")">
+                        <button class="btn btn-outline-danger btn-sm" type="submit">Delete flow</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Add a step</div>
+            <div class="card-body">
+                <form method="post" asp-page-handler="AddStep" asp-route-id="@f.Id">
+                    @if (Model.AddError is not null) { <div class="text-danger mb-2">@Model.AddError</div> }
+                    <div class="mb-3">
+                        <label class="form-label" for="step-kind">Kind</label>
+                        <select class="form-select" id="step-kind" name="step.Kind">
+                            @foreach (var k in Enum.GetValues<RequestStepKind>())
+                            {
+                                <option value="@k" selected="@(k == Model.NewStep.Kind)">@k.Label()</option>
+                            }
+                        </select>
+                        <div class="form-text">The kind can't change afterwards; delete the step and add another instead.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="step-title">Title</label>
+                        <input class="form-control" id="step-title" name="step.Title" value="@Model.NewStep.Title" maxlength="@RequestFlowRules.MaxStepTitleLength" required placeholder="e.g. Product details" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="step-key">Key <span class="text-muted fw-normal">(optional)</span></label>
+                        <input class="form-control font-monospace" id="step-key" name="step.Key" value="@Model.NewStep.Key" maxlength="@RequestFlowRules.MaxKeyLength" placeholder="from the title, e.g. product-details" />
+                        <div class="form-text">How later steps refer to this one: <code>{{product-details.description}}</code>. Letters, digits and hyphens.</div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Add step</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Steps <span class="text-muted fw-normal">(@steps.Count)</span></div>
+            @if (steps.Count == 0)
+            {
+                <div class="card-body text-muted fst-italic">No steps yet. A flow usually starts with a form for the person asking.</div>
+            }
+            else
+            {
+                <ul class="list-group list-group-flush">
+                    @for (var i = 0; i < steps.Count; i++)
+                    {
+                        var s = steps[i];
+                        var problems = RequestFlowRules.Problems(s);
+                        var dependsOn = s.Dependencies.Select(d => byId.TryGetValue(d.DependsOnStepId, out var on) ? on.Title + (d.RequiredOutcome is null ? "" : $" ({d.RequiredOutcome.ToString()!.ToLowerInvariant()})") : "?").ToList();
+                        <li class="list-group-item d-flex flex-wrap align-items-center gap-2">
+                            <span class="badge rounded-pill text-bg-light border" aria-label="Step @(i + 1)">@(i + 1)</span>
+                            <div class="flex-grow-1" style="min-width: 12rem">
+                                <a asp-page="/RequestCatalogue/Step" asp-route-id="@s.Id" class="fw-semibold text-decoration-none">@s.Title</a>
+                                <span class="badge text-bg-light border">@s.Kind.Label()</span>
+                                <code class="small text-muted">@s.Key</code>
+                                @if (s.Id == start?.Id) { <span class="badge bg-info-subtle text-info-emphasis border" title="The form shown when the request is logged">Start form</span> }
+                                @if (problems.Count > 0) { <span class="badge text-bg-warning" title="@string.Join("; ", problems)">Not set up: @string.Join("; ", problems)</span> }
+                                <div class="small text-muted">
+                                    @if (dependsOn.Count == 0) { <text>Starts straight away</text> }
+                                    else { <text>After @string.Join(" and ", dependsOn)</text> }
+                                    @switch (s.Kind)
+                                    {
+                                        case RequestStepKind.Form:
+                                            <text> · @(s.Fields.Count == 1 ? "1 field" : $"{s.Fields.Count} fields") · @(s.PerformedBy?.DisplayName ?? "the person asking")</text>
+                                            break;
+                                        case RequestStepKind.Approval:
+                                            <text> · @(s.Stages.Count == 1 ? "1 stage" : $"{s.Stages.Count} stages")</text>
+                                            break;
+                                        case RequestStepKind.Task:
+                                            <text> · @s.TaskType task in @(s.TaskDepartment?.Name ?? "?") · @(s.Assignees.Count == 0 ? "unassigned" : string.Join(", ", s.Assignees.Select(a => a.User.DisplayName)))</text>
+                                            break;
+                                        case RequestStepKind.Action:
+                                            <text> · @(s.Action?.Name ?? "no action chosen")</text>
+                                            break;
+                                        case RequestStepKind.Url:
+                                            <text> · @Ui.Truncate(s.Url, 50) · @(s.PerformedBy?.DisplayName ?? "the person asking")</text>
+                                            break;
+                                    }
+                                </div>
+                            </div>
+                            <div class="d-flex flex-wrap gap-1">
+                                <form method="post" asp-page-handler="MoveStep" asp-route-id="@f.Id" asp-route-stepId="@s.Id" asp-route-direction="-1">
+                                    <button class="btn btn-sm btn-outline-secondary py-0" type="submit" disabled="@(i == 0)" title="Move up" aria-label="Move @s.Title up">&uarr;</button>
+                                </form>
+                                <form method="post" asp-page-handler="MoveStep" asp-route-id="@f.Id" asp-route-stepId="@s.Id" asp-route-direction="1">
+                                    <button class="btn btn-sm btn-outline-secondary py-0" type="submit" disabled="@(i == steps.Count - 1)" title="Move down" aria-label="Move @s.Title down">&darr;</button>
+                                </form>
+                                <a class="btn btn-sm btn-outline-primary py-0" asp-page="/RequestCatalogue/Step" asp-route-id="@s.Id">Set up</a>
+                            </div>
+                        </li>
+                    }
+                </ul>
+                <div class="card-footer small text-muted">
+                    The order is how steps are shown; what waits for what is set on each step. The start form is the first form with nothing to wait for,
+                    performed by the person asking.
+                </div>
+            }
+        </div>
+    </div>
+</div>

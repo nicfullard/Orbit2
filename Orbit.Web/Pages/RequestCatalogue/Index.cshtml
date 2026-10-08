@@ -11,8 +11,8 @@
     <div>
         <h1 class="h3 mb-1">Request flows</h1>
         <div class="text-muted small">
-            What each department offers on the Requests page: categories of options, each either a flow of questions that logs a task with
-            the department, or a link to a page elsewhere.
+            What each department offers on the Requests page: categories of flows, each a sequence of steps - forms, approvals, tasks,
+            actions and web pages - that a request walks through.
         </div>
     </div>
     @if (AccessPolicy.CanSubmitRequests(Model.Actor))
@@ -26,9 +26,7 @@
         @if (groups.Count == 0)
         {
             <div class="card mb-3">
-                <div class="card-body text-muted fst-italic">
-                    No request categories yet. Add one, or start from the example and change it to suit.
-                </div>
+                <div class="card-body text-muted fst-italic">No request categories yet. Add one, then its flows.</div>
             </div>
         }
         @foreach (var g in groups)
@@ -44,14 +42,14 @@
                     @for (var i = 0; i < list.Count; i++)
                     {
                         var c = list[i];
-                        var live = c.Options.Count(RequestRules.IsLive);
+                        var live = c.Flows.Count(RequestFlowRules.IsLive);
                         <li class="list-group-item d-flex flex-wrap align-items-center gap-3 @(c.IsArchived ? "text-muted" : "")">
                             <span class="request-option-icon @RequestIcons.ColourClass(c.Colour)">@RequestIcons.Svg(c.Icon, 20)</span>
                             <div class="flex-grow-1" style="min-width: 12rem">
                                 <a asp-page="/RequestCatalogue/Category" asp-route-id="@c.Id" class="fw-semibold text-decoration-none">@c.Title</a>
                                 @if (c.IsArchived) { <span class="badge text-bg-secondary">Archived</span> }
                                 <div class="small text-muted">
-                                    @c.Options.Count @(c.Options.Count == 1 ? "option" : "options")@if (c.Options.Count > 0) { <text>, @live offered</text> }
+                                    @c.Flows.Count @(c.Flows.Count == 1 ? "flow" : "flows")@if (c.Flows.Count > 0) { <text>, @live offered</text> }
                                     @if (!string.IsNullOrWhiteSpace(c.Description)) { <text> · @Ui.Truncate(c.Description, 80)</text> }
                                 </div>
                             </div>
@@ -86,34 +84,19 @@
                 </div>
             </div>
         }
-        @if (Model.EmptyDepartments.Count > 0)
-        {
-            <div class="card mb-3">
-                <div class="card-header fw-semibold">Start from the example</div>
-                <div class="card-body">
-                    <p class="small text-muted">
-                        Loads @RequestExample.Catalogue.Count categories of everyday requests - report a problem, change something, request
-                        something new, help - with their questions, as a starting point to change or delete. Only into a department with no categories yet.
-                    </p>
-                    <form method="post" asp-page-handler="Example" data-confirm="Load the example request flows? You can change or delete everything afterwards.">
-                        @if (Model.EmptyDepartments.Count == 1)
-                        {
-                            <input type="hidden" name="departmentId" value="@Model.EmptyDepartments[0].Id" />
-                            <button type="submit" class="btn btn-outline-primary">Load the example into @Model.EmptyDepartments[0].Name</button>
-                        }
-                        else
-                        {
-                            <label class="form-label small" for="example-department">Department</label>
-                            <div class="d-flex gap-2">
-                                <select class="form-select form-select-sm" id="example-department" name="departmentId">
-                                    @foreach (var d in Model.EmptyDepartments) { <option value="@d.Id" selected="@(d.Id == Model.Actor.DepartmentId)">@d.Name</option> }
-                                </select>
-                                <button type="submit" class="btn btn-sm btn-outline-primary text-nowrap">Load example</button>
-                            </div>
-                        }
-                    </form>
-                </div>
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">How a flow works</div>
+            <div class="card-body small text-muted">
+                <p>A flow is a list of <strong>steps</strong>. A step can wait for other steps, and use what they gathered: a task's title can be
+                   <code>{{details.description}}</code>, the answer to the <em>description</em> field of the <em>details</em> form.</p>
+                <ul class="mb-0 ps-3">
+                    <li><strong>Form</strong> - questions for the person asking (or a named person).</li>
+                    <li><strong>Approval</strong> - stages of approvers; later steps can hang on accept or decline.</li>
+                    <li><strong>Task</strong> - creates an Orbit task; done when the task is.</li>
+                    <li><strong>Action</strong> - runs a script from the action library.</li>
+                    <li><strong>Web page</strong> - opens a page in a new tab.</li>
+                </ul>
             </div>
-        }
+        </div>
     </div>
 </div>

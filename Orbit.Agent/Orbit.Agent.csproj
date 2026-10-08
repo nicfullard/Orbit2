@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Orbit.Agent</RootNamespace>
     <AssemblyName>Orbit.Agent</AssemblyName>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Orbit.Agents.Contracts\Orbit.Agents.Contracts.csproj" />
+    <ProjectReference Include="..\Orbit.Scripting\Orbit.Scripting.csproj" />
   </ItemGroup>
 
 </Project>

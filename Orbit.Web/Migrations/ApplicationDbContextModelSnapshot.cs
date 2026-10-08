@@ -722,6 +722,9 @@ namespace Orbit.Migrations
                     b.Property<Guid?>("ProjectId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("RequestId")
+                        .HasColumnType("uuid");
+
                     b.Property<long>("SizeBytes")
                         .HasColumnType("bigint");
 
@@ -740,13 +743,15 @@ namespace Orbit.Migrations
 
                     b.HasIndex("ProjectId");
 
+                    b.HasIndex("RequestId");
+
                     b.HasIndex("TaskId");
 
                     b.HasIndex("UploadedById");
 
                     b.ToTable("Attachments", t =>
                         {
-                            t.HasCheckConstraint("CK_Attachments_OneParent", "num_nonnulls(\"TaskId\", \"ProjectId\", \"AssetId\") = 1");
+                            t.HasCheckConstraint("CK_Attachments_OneParent", "num_nonnulls(\"TaskId\", \"ProjectId\", \"AssetId\", \"RequestId\") = 1");
                         });
                 });
 
@@ -1177,6 +1182,174 @@ namespace Orbit.Migrations
                     b.ToTable("RecurringTaskDefinitions");
                 });
 
+            modelBuilder.Entity("Orbit.Data.Entities.Request", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("DepartmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("FlowId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Number")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<Guid>("RequesterId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FlowId");
+
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique()
+                        .HasFilter("\"IdempotencyKey\" IS NOT NULL");
+
+                    b.HasIndex("Number")
+                        .IsUnique();
+
+                    b.HasIndex("RequesterId");
+
+                    b.HasIndex("DepartmentId", "Status");
+
+                    b.ToTable("Requests");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestAction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("AgentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("RunsOn")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Script")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AgentId");
+
+                    b.ToTable("RequestActions");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestActionParameter", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ActionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActionId", "Key")
+                        .IsUnique();
+
+                    b.ToTable("RequestActionParameters");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestApproval", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ApproverId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTime?>("DecidedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Decision")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int>("StageOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("StepId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApproverId", "Decision");
+
+                    b.HasIndex("StepId", "StageOrder", "ApproverId")
+                        .IsUnique();
+
+                    b.ToTable("RequestApprovals");
+                });
+
             modelBuilder.Entity("Orbit.Data.Entities.RequestCategory", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1224,14 +1397,11 @@ namespace Orbit.Migrations
                     b.ToTable("RequestCategories");
                 });
 
-            modelBuilder.Entity("Orbit.Data.Entities.RequestOption", b =>
+            modelBuilder.Entity("Orbit.Data.Entities.RequestFlow", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
-
-                    b.Property<bool>("AllowAttachments")
-                        .HasColumnType("boolean");
 
                     b.Property<Guid>("CategoryId")
                         .HasColumnType("uuid");
@@ -1249,7 +1419,143 @@ namespace Orbit.Migrations
                     b.Property<bool>("IsArchived")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CategoryId");
+
+                    b.ToTable("RequestFlows");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestFlowApprovalStage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Rule")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int>("StageOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("StepId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StepId");
+
+                    b.ToTable("RequestFlowApprovalStages");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestFlowApprover", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("DepartmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid?>("RoleId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("StageId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DepartmentId");
+
+                    b.HasIndex("RoleId");
+
+                    b.HasIndex("StageId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("RequestFlowApprovers");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestFlowStep", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ActionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("AssetFieldId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("CopyAllAttachments")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid?>("CopyAttachmentsFromStepId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DescriptionTemplate")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("DueDateFieldId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("FlowId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid?>("PerformedById")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("PriorityFieldId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ProjectFieldId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("RequesteeFieldId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("RequesteeSource")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid?>("TaskDepartmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("TaskPriority")
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
@@ -1264,8 +1570,9 @@ namespace Orbit.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)");
 
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<string>("TitleTemplate")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
 
                     b.Property<string>("Url")
                         .HasMaxLength(2000)
@@ -1273,12 +1580,133 @@ namespace Orbit.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CategoryId");
+                    b.HasIndex("ActionId");
 
-                    b.ToTable("RequestOptions");
+                    b.HasIndex("AssetFieldId");
+
+                    b.HasIndex("CopyAttachmentsFromStepId");
+
+                    b.HasIndex("DueDateFieldId");
+
+                    b.HasIndex("PerformedById");
+
+                    b.HasIndex("PriorityFieldId");
+
+                    b.HasIndex("ProjectFieldId");
+
+                    b.HasIndex("RequesteeFieldId");
+
+                    b.HasIndex("TaskDepartmentId");
+
+                    b.HasIndex("FlowId", "Key")
+                        .IsUnique();
+
+                    b.ToTable("RequestFlowSteps");
                 });
 
-            modelBuilder.Entity("Orbit.Data.Entities.RequestQuestion", b =>
+            modelBuilder.Entity("Orbit.Data.Entities.RequestFlowStepActionInput", b =>
+                {
+                    b.Property<Guid>("StepId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ParameterKey")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("ValueTemplate")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.HasKey("StepId", "ParameterKey");
+
+                    b.ToTable("RequestFlowStepActionInputs");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestFlowStepAssignee", b =>
+                {
+                    b.Property<Guid>("StepId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("StepId", "UserId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("RequestFlowStepAssignees");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestFlowStepDependency", b =>
+                {
+                    b.Property<Guid>("StepId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("DependsOnStepId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("RequiredOutcome")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.HasKey("StepId", "DependsOnStepId");
+
+                    b.HasIndex("DependsOnStepId");
+
+                    b.ToTable("RequestFlowStepDependencies");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestFormAnswer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("AssetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("AssetTypeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("AttachmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("FieldId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ProjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("StepId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Value")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssetId");
+
+                    b.HasIndex("AssetTypeId");
+
+                    b.HasIndex("AttachmentId");
+
+                    b.HasIndex("FieldId");
+
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("StepId", "FieldId");
+
+                    b.ToTable("RequestFormAnswers");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestFormField", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -1291,6 +1719,11 @@ namespace Orbit.Migrations
                     b.Property<int>("DisplayOrder")
                         .HasColumnType("integer");
 
+                    b.Property<string>("FieldType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<string>("HelpText")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
@@ -1298,27 +1731,86 @@ namespace Orbit.Migrations
                     b.Property<bool>("IsRequired")
                         .HasColumnType("boolean");
 
-                    b.Property<Guid>("OptionId")
-                        .HasColumnType("uuid");
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("PickerScope")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<string>("Prompt")
                         .IsRequired()
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)");
 
-                    b.Property<string>("QuestionType")
+                    b.Property<Guid>("StepId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StepId", "Key")
+                        .IsUnique();
+
+                    b.ToTable("RequestFormFields");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestStep", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("AssignedToId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CompletedById")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<Guid>("FlowStepId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Output")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
-                    b.Property<bool>("SetsDueDate")
-                        .HasColumnType("boolean");
+                    b.Property<Guid?>("TaskId")
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("OptionId");
+                    b.HasIndex("AssignedToId");
 
-                    b.ToTable("RequestQuestions");
+                    b.HasIndex("CompletedById");
+
+                    b.HasIndex("FlowStepId");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("TaskId");
+
+                    b.HasIndex("RequestId", "FlowStepId")
+                        .IsUnique();
+
+                    b.ToTable("RequestSteps");
                 });
 
             modelBuilder.Entity("Orbit.Data.Entities.RolePermission", b =>
@@ -1934,6 +2426,11 @@ namespace Orbit.Migrations
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade);
 
+                    b.HasOne("Orbit.Data.Entities.Request", "Request")
+                        .WithMany("Attachments")
+                        .HasForeignKey("RequestId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
                     b.HasOne("Orbit.Data.Entities.TaskItem", "Task")
                         .WithMany("Attachments")
                         .HasForeignKey("TaskId")
@@ -1947,6 +2444,8 @@ namespace Orbit.Migrations
                     b.Navigation("Asset");
 
                     b.Navigation("Project");
+
+                    b.Navigation("Request");
 
                     b.Navigation("Task");
 
@@ -2083,6 +2582,73 @@ namespace Orbit.Migrations
                     b.Navigation("Project");
                 });
 
+            modelBuilder.Entity("Orbit.Data.Entities.Request", b =>
+                {
+                    b.HasOne("Orbit.Data.Entities.Department", "Department")
+                        .WithMany()
+                        .HasForeignKey("DepartmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Orbit.Data.Entities.RequestFlow", "Flow")
+                        .WithMany()
+                        .HasForeignKey("FlowId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Orbit.Data.Entities.ApplicationUser", "Requester")
+                        .WithMany()
+                        .HasForeignKey("RequesterId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Department");
+
+                    b.Navigation("Flow");
+
+                    b.Navigation("Requester");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestAction", b =>
+                {
+                    b.HasOne("Orbit.Data.Entities.Agent", "Agent")
+                        .WithMany()
+                        .HasForeignKey("AgentId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Agent");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestActionParameter", b =>
+                {
+                    b.HasOne("Orbit.Data.Entities.RequestAction", "Action")
+                        .WithMany("Parameters")
+                        .HasForeignKey("ActionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Action");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestApproval", b =>
+                {
+                    b.HasOne("Orbit.Data.Entities.ApplicationUser", "Approver")
+                        .WithMany()
+                        .HasForeignKey("ApproverId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Orbit.Data.Entities.RequestStep", "Step")
+                        .WithMany("Approvals")
+                        .HasForeignKey("StepId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Approver");
+
+                    b.Navigation("Step");
+                });
+
             modelBuilder.Entity("Orbit.Data.Entities.RequestCategory", b =>
                 {
                     b.HasOne("Orbit.Data.Entities.Department", "Department")
@@ -2094,10 +2660,10 @@ namespace Orbit.Migrations
                     b.Navigation("Department");
                 });
 
-            modelBuilder.Entity("Orbit.Data.Entities.RequestOption", b =>
+            modelBuilder.Entity("Orbit.Data.Entities.RequestFlow", b =>
                 {
                     b.HasOne("Orbit.Data.Entities.RequestCategory", "Category")
-                        .WithMany("Options")
+                        .WithMany("Flows")
                         .HasForeignKey("CategoryId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -2105,15 +2671,275 @@ namespace Orbit.Migrations
                     b.Navigation("Category");
                 });
 
-            modelBuilder.Entity("Orbit.Data.Entities.RequestQuestion", b =>
+            modelBuilder.Entity("Orbit.Data.Entities.RequestFlowApprovalStage", b =>
                 {
-                    b.HasOne("Orbit.Data.Entities.RequestOption", "Option")
-                        .WithMany("Questions")
-                        .HasForeignKey("OptionId")
+                    b.HasOne("Orbit.Data.Entities.RequestFlowStep", "Step")
+                        .WithMany("Stages")
+                        .HasForeignKey("StepId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Option");
+                    b.Navigation("Step");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestFlowApprover", b =>
+                {
+                    b.HasOne("Orbit.Data.Entities.Department", "Department")
+                        .WithMany()
+                        .HasForeignKey("DepartmentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Orbit.Data.Entities.ApplicationRole", "Role")
+                        .WithMany()
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Orbit.Data.Entities.RequestFlowApprovalStage", "Stage")
+                        .WithMany("Approvers")
+                        .HasForeignKey("StageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Orbit.Data.Entities.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Department");
+
+                    b.Navigation("Role");
+
+                    b.Navigation("Stage");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestFlowStep", b =>
+                {
+                    b.HasOne("Orbit.Data.Entities.RequestAction", "Action")
+                        .WithMany("Steps")
+                        .HasForeignKey("ActionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Orbit.Data.Entities.RequestFormField", "AssetField")
+                        .WithMany()
+                        .HasForeignKey("AssetFieldId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Orbit.Data.Entities.RequestFlowStep", "CopyAttachmentsFromStep")
+                        .WithMany()
+                        .HasForeignKey("CopyAttachmentsFromStepId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Orbit.Data.Entities.RequestFormField", "DueDateField")
+                        .WithMany()
+                        .HasForeignKey("DueDateFieldId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Orbit.Data.Entities.RequestFlow", "Flow")
+                        .WithMany("Steps")
+                        .HasForeignKey("FlowId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Orbit.Data.Entities.ApplicationUser", "PerformedBy")
+                        .WithMany()
+                        .HasForeignKey("PerformedById")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Orbit.Data.Entities.RequestFormField", "PriorityField")
+                        .WithMany()
+                        .HasForeignKey("PriorityFieldId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Orbit.Data.Entities.RequestFormField", "ProjectField")
+                        .WithMany()
+                        .HasForeignKey("ProjectFieldId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Orbit.Data.Entities.RequestFormField", "RequesteeField")
+                        .WithMany()
+                        .HasForeignKey("RequesteeFieldId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Orbit.Data.Entities.Department", "TaskDepartment")
+                        .WithMany()
+                        .HasForeignKey("TaskDepartmentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Action");
+
+                    b.Navigation("AssetField");
+
+                    b.Navigation("CopyAttachmentsFromStep");
+
+                    b.Navigation("DueDateField");
+
+                    b.Navigation("Flow");
+
+                    b.Navigation("PerformedBy");
+
+                    b.Navigation("PriorityField");
+
+                    b.Navigation("ProjectField");
+
+                    b.Navigation("RequesteeField");
+
+                    b.Navigation("TaskDepartment");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestFlowStepActionInput", b =>
+                {
+                    b.HasOne("Orbit.Data.Entities.RequestFlowStep", "Step")
+                        .WithMany("ActionInputs")
+                        .HasForeignKey("StepId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Step");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestFlowStepAssignee", b =>
+                {
+                    b.HasOne("Orbit.Data.Entities.RequestFlowStep", "Step")
+                        .WithMany("Assignees")
+                        .HasForeignKey("StepId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Orbit.Data.Entities.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Step");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestFlowStepDependency", b =>
+                {
+                    b.HasOne("Orbit.Data.Entities.RequestFlowStep", "DependsOnStep")
+                        .WithMany()
+                        .HasForeignKey("DependsOnStepId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Orbit.Data.Entities.RequestFlowStep", "Step")
+                        .WithMany("Dependencies")
+                        .HasForeignKey("StepId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("DependsOnStep");
+
+                    b.Navigation("Step");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestFormAnswer", b =>
+                {
+                    b.HasOne("Orbit.Data.Entities.Asset", "Asset")
+                        .WithMany()
+                        .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Orbit.Data.Entities.AssetType", "AssetType")
+                        .WithMany()
+                        .HasForeignKey("AssetTypeId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Orbit.Data.Entities.Attachment", "Attachment")
+                        .WithMany()
+                        .HasForeignKey("AttachmentId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Orbit.Data.Entities.RequestFormField", "Field")
+                        .WithMany()
+                        .HasForeignKey("FieldId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Orbit.Data.Entities.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Orbit.Data.Entities.RequestStep", "Step")
+                        .WithMany("Answers")
+                        .HasForeignKey("StepId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Orbit.Data.Entities.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Asset");
+
+                    b.Navigation("AssetType");
+
+                    b.Navigation("Attachment");
+
+                    b.Navigation("Field");
+
+                    b.Navigation("Project");
+
+                    b.Navigation("Step");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestFormField", b =>
+                {
+                    b.HasOne("Orbit.Data.Entities.RequestFlowStep", "Step")
+                        .WithMany("Fields")
+                        .HasForeignKey("StepId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Step");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestStep", b =>
+                {
+                    b.HasOne("Orbit.Data.Entities.ApplicationUser", "AssignedTo")
+                        .WithMany()
+                        .HasForeignKey("AssignedToId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Orbit.Data.Entities.ApplicationUser", "CompletedBy")
+                        .WithMany()
+                        .HasForeignKey("CompletedById")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Orbit.Data.Entities.RequestFlowStep", "FlowStep")
+                        .WithMany()
+                        .HasForeignKey("FlowStepId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Orbit.Data.Entities.Request", "Request")
+                        .WithMany("Steps")
+                        .HasForeignKey("RequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Orbit.Data.Entities.TaskItem", "Task")
+                        .WithMany()
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("AssignedTo");
+
+                    b.Navigation("CompletedBy");
+
+                    b.Navigation("FlowStep");
+
+                    b.Navigation("Request");
+
+                    b.Navigation("Task");
                 });
 
             modelBuilder.Entity("Orbit.Data.Entities.RolePermission", b =>
@@ -2359,14 +3185,53 @@ namespace Orbit.Migrations
                     b.Navigation("GeneratedTasks");
                 });
 
-            modelBuilder.Entity("Orbit.Data.Entities.RequestCategory", b =>
+            modelBuilder.Entity("Orbit.Data.Entities.Request", b =>
                 {
-                    b.Navigation("Options");
+                    b.Navigation("Attachments");
+
+                    b.Navigation("Steps");
                 });
 
-            modelBuilder.Entity("Orbit.Data.Entities.RequestOption", b =>
+            modelBuilder.Entity("Orbit.Data.Entities.RequestAction", b =>
                 {
-                    b.Navigation("Questions");
+                    b.Navigation("Parameters");
+
+                    b.Navigation("Steps");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestCategory", b =>
+                {
+                    b.Navigation("Flows");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestFlow", b =>
+                {
+                    b.Navigation("Steps");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestFlowApprovalStage", b =>
+                {
+                    b.Navigation("Approvers");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestFlowStep", b =>
+                {
+                    b.Navigation("ActionInputs");
+
+                    b.Navigation("Assignees");
+
+                    b.Navigation("Dependencies");
+
+                    b.Navigation("Fields");
+
+                    b.Navigation("Stages");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.RequestStep", b =>
+                {
+                    b.Navigation("Answers");
+
+                    b.Navigation("Approvals");
                 });
 
             modelBuilder.Entity("Orbit.Data.Entities.Sprint", b =>

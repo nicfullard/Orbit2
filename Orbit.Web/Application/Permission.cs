@@ -33,6 +33,8 @@ public static class Permission
     public const string AssetsConfigure = "assets.configure";
     public const string RequestsSubmit = "requests.submit";
     public const string RequestsConfigure = "requests.configure";
+    public const string RequestsManage = "requests.manage";
+    public const string ActionsCreate = "actions.create";
 }
 
 /// <summary>

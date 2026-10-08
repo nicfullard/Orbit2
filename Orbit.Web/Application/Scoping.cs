@@ -155,6 +155,21 @@ public static class Scoping
         };
     }
 
+    /// <summary>
+    /// The requests an actor manages (<c>requests.manage</c>, §6.20): every department's at All, their department's at Department. The
+    /// requests a person logged or was addressed in are theirs whatever this says; the services list those separately.
+    /// </summary>
+    public static IQueryable<Request> Requests(IQueryable<Request> q, Actor actor)
+    {
+        var dept = actor.DepartmentId;
+        return actor.ScopeOf(Permission.RequestsManage) switch
+        {
+            PermissionScope.All => q,
+            PermissionScope.Department => q.Where(r => r.DepartmentId == dept),
+            _ => q.Where(r => false)
+        };
+    }
+
     /// <summary>Audit entries the actor may read (<c>audit.view</c>): All, or the actor's own department's.</summary>
     public static IQueryable<AuditLog> Audit(IQueryable<AuditLog> q, Actor actor)
     {

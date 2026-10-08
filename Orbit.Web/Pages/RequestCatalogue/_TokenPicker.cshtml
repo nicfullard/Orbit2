@@ -1,0 +1,15 @@
+@model (IReadOnlyList<Orbit.Application.Requests.RequestToken> Tokens, string TargetId)
+@* A select of the values a template may use (spec §6.20); choosing one inserts its token where the cursor is in the target box (requests.js). *@
+@if (Model.Tokens.Count > 0)
+{
+    <div class="d-flex align-items-center gap-2 mt-1">
+        <label class="small text-muted mb-0" for="tokens-@Model.TargetId">Insert a value</label>
+        <select class="form-select form-select-sm w-auto js-token-picker" id="tokens-@Model.TargetId" data-target="@Model.TargetId">
+            <option value="">Choose...</option>
+            @foreach (var t in Model.Tokens)
+            {
+                <option value="@t.Text">@t.Label</option>
+            }
+        </select>
+    </div>
+}

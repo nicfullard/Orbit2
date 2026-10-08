@@ -60,29 +60,120 @@ public enum TaskSource
     Request
 }
 
-/// <summary>What choosing a request option does (§6.20): walk through its questions and log a task, or open a web page.</summary>
-public enum RequestOptionKind
+/// <summary>What a step of a request flow is (§6.20). A flow may hold any number of each.</summary>
+public enum RequestStepKind
 {
-    Flow,
-    Link
+    /// <summary>Questions answered by the requester (or a named person): the flow's fields.</summary>
+    Form,
+    /// <summary>Ordered stages of approvers; ends Accepted or Declined, and later steps may hang on either.</summary>
+    Approval,
+    /// <summary>Creates an Orbit task from earlier answers; done when the task is.</summary>
+    Task,
+    /// <summary>Runs a script from the action library, on the web server or an Orbit Agent.</summary>
+    Action,
+    /// <summary>Opens a web page in a new tab; done when the person marks it so.</summary>
+    Url
 }
 
-/// <summary>The kind of answer a request question takes (§6.20).</summary>
-public enum RequestQuestionType
+/// <summary>The kind of answer a form field takes (§6.20).</summary>
+public enum RequestFieldType
 {
     Text,
     Number,
     Date,
-    /// <summary>One of the assets the person holds, or a description of something else. A picked asset becomes the task's asset.</summary>
-    Asset,
-    /// <summary>How urgent the request is, one of the four task priorities; it becomes the task's priority.</summary>
-    Urgency,
     Choice,
-    /// <summary>
-    /// Who the request is for: a person the requester may log for (requests.submit scope). It becomes the task's RequesteeId. At
-    /// Own scope it isn't asked - the answer is the requester.
-    /// </summary>
+    /// <summary>How urgent it is: one of the four task priorities, shown with what each means. A task step can take its priority from it.</summary>
+    Urgency,
+    /// <summary>One or more files, kept on the request and copied to a task step that asks for them.</summary>
+    Attachment,
+    /// <summary>An asset from the register, within the field's scope.</summary>
+    Asset,
+    /// <summary>One of the active asset types within the field's scope; its name is the answer.</summary>
+    AssetType,
+    /// <summary>An open project, within the field's scope.</summary>
+    Project,
+    /// <summary>An active person, within the field's scope.</summary>
     User
+}
+
+/// <summary>
+/// What an Asset, Asset type, Project or User field offers (§6.20): the flow's department's own, the whole company's, or - assets
+/// only - the ones the person asking holds.
+/// </summary>
+public enum RequestPickerScope
+{
+    Department,
+    Company,
+    Held
+}
+
+/// <summary>How an approval step ended, and what a dependency on one may require before the dependent step starts.</summary>
+public enum RequestOutcome
+{
+    Accepted,
+    Declined
+}
+
+/// <summary>How many of a stage's approvers must approve: one of them, or all of them. Any decline declines the stage.</summary>
+public enum ApprovalRule
+{
+    Any,
+    All
+}
+
+/// <summary>Who an approver is (§6.20): a named person, everyone with a role in a department, or that role in the requester's department.</summary>
+public enum ApproverKind
+{
+    Person,
+    RoleInDepartment,
+    RoleInRequestersDepartment
+}
+
+/// <summary>Whom a task step's task is for (its requestee, §6.2.2): nobody, the requester, or the person a User field names.</summary>
+public enum RequesteeSource
+{
+    None,
+    Requester,
+    Field
+}
+
+/// <summary>Where a request action's script runs (§6.20): in the Orbit web process, or on an Orbit Agent inside the network.</summary>
+public enum ActionRunsOn
+{
+    Web,
+    Agent
+}
+
+/// <summary>A request's state (§6.20). <see cref="InProgress"/> until every step has settled.</summary>
+public enum RequestStatus
+{
+    InProgress,
+    Completed,
+    Declined,
+    Cancelled
+}
+
+/// <summary>
+/// A request step's state (§6.20). <see cref="Pending"/> waits on its dependencies; <see cref="Ready"/> is being done; the rest are
+/// settled - except <see cref="Failed"/>, which someone retries or skips.
+/// </summary>
+public enum RequestStepStatus
+{
+    Pending,
+    Ready,
+    Completed,
+    Declined,
+    Failed,
+    Skipped,
+    Cancelled
+}
+
+/// <summary>One approver's answer in an approval stage.</summary>
+public enum ApprovalDecision
+{
+    Pending,
+    Approved,
+    Declined
 }
 
 /// <summary>A request category's accent colour (§6.20); each has a light and a dark value in site.css.</summary>
@@ -245,24 +336,81 @@ public static class TaskStatusExtensions
         _ => type.ToString()
     };
 
-    public static string Label(this RequestQuestionType type) => type switch
+    public static string Label(this RequestStepKind kind) => kind switch
     {
-        RequestQuestionType.Text => "Text",
-        RequestQuestionType.Number => "Number",
-        RequestQuestionType.Date => "Date",
-        RequestQuestionType.Asset => "Asset",
-        RequestQuestionType.Urgency => "Urgency",
-        RequestQuestionType.Choice => "Choice (pick one)",
-        RequestQuestionType.User => "User (who it's for)",
+        RequestStepKind.Url => "Web page",
+        _ => kind.ToString()
+    };
+
+    public static string Label(this RequestFieldType type) => type switch
+    {
+        RequestFieldType.Choice => "Choice (pick one)",
+        RequestFieldType.Attachment => "Files",
+        RequestFieldType.AssetType => "Asset type",
+        RequestFieldType.User => "Person",
         _ => type.ToString()
     };
 
-    public static string Label(this RequestOptionKind kind) => kind switch
+    public static string Label(this RequestPickerScope scope) => scope switch
     {
-        RequestOptionKind.Flow => "Questions, then log a task",
-        RequestOptionKind.Link => "Open a web page",
+        RequestPickerScope.Department => "The flow's department's",
+        RequestPickerScope.Company => "The whole company's",
+        RequestPickerScope.Held => "The ones the person asking holds",
+        _ => scope.ToString()
+    };
+
+    public static string Label(this ApprovalRule rule) => rule switch
+    {
+        ApprovalRule.Any => "Any one of them",
+        ApprovalRule.All => "All of them",
+        _ => rule.ToString()
+    };
+
+    public static string Label(this ApproverKind kind) => kind switch
+    {
+        ApproverKind.Person => "A person",
+        ApproverKind.RoleInDepartment => "Everyone with a role in a department",
+        ApproverKind.RoleInRequestersDepartment => "Everyone with a role in the requester's department",
         _ => kind.ToString()
     };
+
+    public static string Label(this RequesteeSource source) => source switch
+    {
+        RequesteeSource.None => "Nobody",
+        RequesteeSource.Requester => "The person who logged the request",
+        RequesteeSource.Field => "The person a field names",
+        _ => source.ToString()
+    };
+
+    public static string Label(this ActionRunsOn runsOn) => runsOn switch
+    {
+        ActionRunsOn.Web => "On the Orbit server",
+        ActionRunsOn.Agent => "On an Orbit Agent",
+        _ => runsOn.ToString()
+    };
+
+    public static string Label(this RequestStatus status) => status switch
+    {
+        RequestStatus.InProgress => "In progress",
+        _ => status.ToString()
+    };
+
+    public static string Label(this RequestStepStatus status) => status switch
+    {
+        RequestStepStatus.Pending => "Waiting",
+        RequestStepStatus.Ready => "In progress",
+        _ => status.ToString()
+    };
+
+    public static string Label(this ApprovalDecision decision) => decision switch
+    {
+        ApprovalDecision.Pending => "Not yet decided",
+        _ => decision.ToString()
+    };
+
+    /// <summary>Settled: nothing more will happen to the step. Failed isn't, since it is retried or skipped.</summary>
+    public static bool IsSettled(this RequestStepStatus status) =>
+        status is RequestStepStatus.Completed or RequestStepStatus.Declined or RequestStepStatus.Skipped or RequestStepStatus.Cancelled;
 
     /// <summary>The conventional two-letter code: FS, SS, FF, SF.</summary>
     public static string Code(this DependencyType type) => type switch

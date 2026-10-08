@@ -25,6 +25,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Orbit.Agents.Contracts\Orbit.Agents.Contracts.csproj" />
+    <ProjectReference Include="..\Orbit.Scripting\Orbit.Scripting.csproj" />
   </ItemGroup>
 
 </Project>

@@ -20,7 +20,8 @@ public class IndexModel(AuditService audit, DepartmentService departments, IActo
     /// <summary>audit.view for every department offers the department filter; at Department scope the log is the viewer's own department's.</summary>
     public bool CanFilterDepartments { get; private set; }
     public static readonly string[] EntityTypes =
-        [AuditEntity.Task, AuditEntity.Project, AuditEntity.Sprint, AuditEntity.RecurringTaskDefinition, AuditEntity.Department, AuditEntity.User, AuditEntity.Role, AuditEntity.ApiKey];
+        [AuditEntity.Task, AuditEntity.Project, AuditEntity.Sprint, AuditEntity.RecurringTaskDefinition, AuditEntity.Department, AuditEntity.User, AuditEntity.Role, AuditEntity.ApiKey,
+         AuditEntity.Request, AuditEntity.RequestFlow, AuditEntity.RequestCategory, AuditEntity.RequestAction];
 
     public async Task OnGetAsync(CancellationToken ct)
     {

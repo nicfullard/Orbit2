@@ -37,3 +37,13 @@ public sealed class TaskRowsVm
     public string? EmptyMessage { get; init; }
     public DateOnly Today { get; init; } = DateOnly.FromDateTime(DateTime.UtcNow);
 }
+
+/// <summary>
+/// Model for the dashboard's My waiting approvals card (spec §6.9): the request approvals asked of the viewer, oldest first, and
+/// who the viewer is, so a request they logged themselves reads "logged by you".
+/// </summary>
+public sealed record WaitingApprovalsVm(IReadOnlyList<RequestActionItem> Items, Guid? MeId)
+{
+    /// <summary>How many rows the card lists before it links to the Requests page for the rest.</summary>
+    public const int Shown = 8;
+}

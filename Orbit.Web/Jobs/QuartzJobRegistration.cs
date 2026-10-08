@@ -21,6 +21,8 @@ public static class QuartzJobRegistration
                 startupDelay: TimeSpan.FromSeconds(30));
             Schedule<ClockSweepJob>(q, ClockSweepJob.Key,
                 options.ClockSweep.Enabled, options.ClockSweep.Cron, runOnStartup: false, startupDelay: TimeSpan.Zero);
+            Schedule<RequestActionJob>(q, RequestActionJob.Key,
+                options.RequestActions.Enabled, options.RequestActions.Cron, runOnStartup: true, startupDelay: TimeSpan.FromSeconds(20));
         });
 
         // Runs the scheduler as a hosted service; on shutdown, lets in-flight jobs finish.

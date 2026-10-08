@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using Microsoft.AspNetCore.SignalR.Client;
 using Orbit.Agent.Ldap;
+using Orbit.Agent.Scripting;
 using Orbit.Agents.Contracts;
 
 namespace Orbit.Agent;
@@ -12,7 +13,7 @@ namespace Orbit.Agent;
 /// sends commands down it and gets each result back as the return value, so the corporate firewall needs no
 /// inbound rule at all.
 /// </summary>
-public sealed class AgentWorker(AgentConfig config, LdapDirectory ldap, ILoggerFactory loggerFactory, ILogger<AgentWorker> logger) : BackgroundService
+public sealed class AgentWorker(AgentConfig config, LdapDirectory ldap, ScriptRunner scripts, ILoggerFactory loggerFactory, ILogger<AgentWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -39,6 +40,7 @@ public sealed class AgentWorker(AgentConfig config, LdapDirectory ldap, ILoggerF
         connection.On<LdapAuthRequest, LdapAuthResult>(AgentMethods.Authenticate, request => ldap.AuthenticateAsync(request, stoppingToken));
         connection.On<LdapTestRequest, LdapTestResult>(AgentMethods.TestDirectory, request => ldap.TestAsync(request, stoppingToken));
         connection.On<LdapListUsersRequest, LdapListUsersResult>(AgentMethods.ListDirectoryUsers, request => ldap.ListUsersAsync(request, stoppingToken));
+        connection.On<ScriptRunRequest, ScriptRunResult>(AgentMethods.RunScript, request => scripts.RunAsync(request, stoppingToken));
 
         connection.Reconnecting += error =>
         {
@@ -120,7 +122,7 @@ public sealed class AgentWorker(AgentConfig config, LdapDirectory ldap, ILoggerF
                 MachineName = Environment.MachineName,
                 OsDescription = RuntimeInformation.OSDescription,
                 Version = Version,
-                Capabilities = [AgentCapabilities.LdapAuthenticate, AgentCapabilities.LdapTest, AgentCapabilities.LdapListUsers]
+                Capabilities = [AgentCapabilities.LdapAuthenticate, AgentCapabilities.LdapTest, AgentCapabilities.LdapListUsers, AgentCapabilities.ScriptRun]
             }, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

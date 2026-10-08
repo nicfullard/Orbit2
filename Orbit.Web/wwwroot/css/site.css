@@ -551,8 +551,8 @@ body {
   white-space: normal;
 }
 .request-choices .btn-check:checked + .btn { box-shadow: inset 0 0 0 1px var(--bs-primary); }
-.request-choices .request-choice-other { border-style: dashed; }
 .request-choices .btn .small { display: block; font-weight: normal; color: var(--bs-secondary-color); }
+/* An Urgency question's four answers, each edged in its priority's colour. */
 .request-urgency-low { border-left: 4px solid var(--bs-secondary-border-subtle) !important; }
 .request-urgency-medium { border-left: 4px solid var(--bs-info) !important; }
 .request-urgency-high { border-left: 4px solid var(--bs-warning) !important; }
@@ -561,6 +561,41 @@ body {
 .request-review dd { white-space: pre-wrap; margin-bottom: .9rem; }
 .request-review .btn-link { padding: 0; font-size: .85rem; vertical-align: baseline; }
 .request-done-icon { color: var(--bs-success); }
+
+/* A request's page: its steps down a line, each marked with its number (a tick once done) in the colour of its state. */
+.request-timeline { max-width: 56rem; }
+.request-timeline-item { display: flex; gap: 1rem; position: relative; padding-bottom: 1rem; }
+.request-timeline-item::before {
+  content: '';
+  position: absolute;
+  left: .95rem;
+  top: 2rem;
+  bottom: 0;
+  border-left: 2px solid var(--orbit-surface-border);
+}
+.request-timeline-item:last-child::before { display: none; }
+.request-timeline-marker {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  border: 2px solid var(--orbit-surface-border);
+  background: var(--orbit-surface-bg);
+  font-weight: 600;
+  font-size: .8rem;
+  z-index: 1;
+}
+.request-timeline-body { flex: 1 1 auto; min-width: 0; }
+.request-timeline-item.is-ready .request-timeline-marker { border-color: var(--bs-primary); color: var(--bs-primary); }
+.request-timeline-item.is-completed .request-timeline-marker { background: var(--bs-success); border-color: var(--bs-success); color: #fff; }
+.request-timeline-item.is-declined .request-timeline-marker,
+.request-timeline-item.is-failed .request-timeline-marker { border-color: var(--bs-danger); color: var(--bs-danger); }
+.request-timeline-item.is-skipped .request-timeline-marker,
+.request-timeline-item.is-cancelled .request-timeline-marker { color: var(--bs-secondary-color); text-decoration: line-through; }
+.request-timeline-item.is-pending .request-timeline-body { opacity: .75; }
 
 /* Configuring request flows: the icon and colour pickers are radio buttons drawn as tiles and swatches. */
 .request-icon-picker { display: flex; flex-wrap: wrap; gap: .35rem; }

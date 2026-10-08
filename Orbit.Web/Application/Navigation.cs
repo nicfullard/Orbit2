@@ -61,6 +61,7 @@ public static class Navigation
         new("Agents", "/Admin/Agents/Index", a => a.Has(Permission.AgentsManage)),
         new("Working Calendar", "/Admin/Calendar/Index", a => a.Has(Permission.CalendarManage)),
         new("Request flows", "/RequestCatalogue/Index", a => a.Has(Permission.RequestsConfigure)),
+        new("Actions", "/Actions/Index", a => a.Has(Permission.ActionsCreate)),
         new("Activity Log", "/Admin/Activity/Index", a => a.Has(Permission.AuditView))
     ];
 

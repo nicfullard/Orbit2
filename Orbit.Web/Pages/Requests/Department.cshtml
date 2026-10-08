@@ -1,0 +1,85 @@
+@page
+@model Orbit.Pages.Requests.DepartmentModel
+@{
+    ViewData["Title"] = "Department requests";
+    var f = Model.Filter;
+    const string AnyLabel = "Any";
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Requests/Index">Requests</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Department requests</li>
+    </ol>
+</nav>
+<div class="mb-3">
+    <h1 class="h3 mb-1">Department requests</h1>
+    <div class="text-muted">Every request filed with @(Model.Departments.Count == 1 ? Model.Departments[0].Name : "the departments you manage"), whoever logged it.</div>
+</div>
+
+<form method="get" class="row g-2 align-items-end mb-3">
+    @if (Model.Departments.Count > 1)
+    {
+        <div class="col-sm-4 col-lg-3">
+            <label class="form-label small mb-1" for="dept">Department</label>
+            <select class="form-select form-select-sm" id="dept" name="dept">
+                <option value="">All</option>
+                @foreach (var d in Model.Departments) { <option value="@d.Id" selected="@(d.Id == f.DepartmentId)">@d.Name</option> }
+            </select>
+        </div>
+    }
+    <div class="col-sm-4 col-lg-3">
+        <label class="form-label small mb-1" for="status">Status</label>
+        <select class="form-select form-select-sm" id="status" name="status" asp-items="Ui.EnumItems<RequestStatus>(f.Status, AnyLabel, s => s.Label())"></select>
+    </div>
+    <div class="col-sm-4 col-lg-4">
+        <label class="form-label small mb-1" for="q">Number, title or requester</label>
+        <input class="form-control form-control-sm" id="q" name="q" value="@f.Query" />
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-primary">Filter</button>
+    </div>
+</form>
+
+<div class="card">
+    @if (Model.Items.Count == 0)
+    {
+        <div class="card-body text-muted fst-italic">No requests match.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Request</th>
+                        <th class="d-none d-md-table-cell">Flow</th>
+                        <th class="d-none d-md-table-cell">Logged by</th>
+                        <th>Status</th>
+                        <th class="d-none d-sm-table-cell">Logged</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in Model.Items)
+                    {
+                        <tr>
+                            <td>
+                                <span class="font-monospace text-muted small me-1">@r.Number</span>
+                                <a asp-page="/Requests/Request" asp-route-id="@r.Id" class="text-decoration-none">@r.Title</a>
+                                @if (Model.Departments.Count > 1) { <div class="small text-muted">@r.Department.Name</div> }
+                            </td>
+                            <td class="d-none d-md-table-cell">@r.Flow.Title</td>
+                            <td class="d-none d-md-table-cell">@r.Requester.DisplayName</td>
+                            <td><span class="badge @Ui.RequestStatusBadge(r.Status)">@r.Status.Label()</span></td>
+                            <td class="d-none d-sm-table-cell text-nowrap small" title="@Ui.When(r.CreatedAt)">@Ui.Ago(r.CreatedAt)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (Model.Items.Count >= 200)
+        {
+            <div class="card-footer small text-muted">Showing the first 200; narrow the filter to see others.</div>
+        }
+    }
+</div>

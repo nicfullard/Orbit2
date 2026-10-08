@@ -45,7 +45,14 @@
             <span class="badge @Ui.StatusBadge(t.Status)">@t.Status.Label()</span>
             <span class="badge @Ui.PriorityBadge(t.Priority)">@t.Priority</span>
             <span class="badge @Ui.TypeBadge(t.Type)" title="Type">@t.Type</span>
-            <span class="badge @Ui.SourceBadge(t.Source)">@Ui.SourceLabel(t.Source)</span>
+            @if (Model.FromRequest is { } from)
+            {
+                <a asp-page="/Requests/Request" asp-route-id="@from.Id" class="badge @Ui.SourceBadge(t.Source) text-decoration-none" title="Created by a request">Request @from.Number</a>
+            }
+            else
+            {
+                <span class="badge @Ui.SourceBadge(t.Source)">@Ui.SourceLabel(t.Source)</span>
+            }
             <span class="badge text-bg-light border">@t.Department.Name</span>
             @if (t.Sprint is not null)
             {

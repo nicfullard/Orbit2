@@ -1,0 +1,46 @@
+@using Orbit.Application.Requests
+@using Orbit.Pages.RequestCatalogue
+@model (FieldForm Form, string Prefix, bool Frozen)
+@* One field's settings (spec §6.20), for adding and for editing. Inputs post under "field.X" (the add form) or "f0.X"... no: the handler binds
+   a FieldForm parameter named "field", so every form uses that prefix; the Prefix only keeps ids unique on the page. *@
+@{
+    var f = Model.Form;
+    var p = Model.Prefix;
+}
+<div class="mb-2">
+    <label class="form-label small mb-1" for="@p-prompt">Prompt</label>
+    <input class="form-control form-control-sm" id="@p-prompt" name="field.Prompt" value="@f.Prompt" maxlength="@RequestFlowRules.MaxPromptLength" required placeholder="The question asked" />
+</div>
+<div class="row g-2 mb-2">
+    <div class="col-sm-6">
+        <label class="form-label small mb-1" for="@p-type">Answer type</label>
+        <select class="form-select form-select-sm js-sync" data-syncs="type" id="@p-type" name="field.FieldType" asp-items="Ui.EnumItems<RequestFieldType>(f.FieldType, label: t => t.Label())" disabled="@Model.Frozen"></select>
+        @if (Model.Frozen) { <input type="hidden" name="field.FieldType" value="@f.FieldType" /> }
+    </div>
+    <div class="col-sm-6">
+        <label class="form-label small mb-1" for="@p-key">Key</label>
+        <input class="form-control form-control-sm font-monospace" id="@p-key" name="field.Key" value="@f.Key" maxlength="@RequestFlowRules.MaxKeyLength" placeholder="from the prompt" readonly="@Model.Frozen" />
+    </div>
+</div>
+<div class="mb-2" data-for-type="Choice">
+    <label class="form-label small mb-1" for="@p-choices">Answers <span class="text-muted">(one per line)</span></label>
+    <textarea class="form-control form-control-sm" id="@p-choices" name="field.Choices" rows="3">@f.Choices</textarea>
+</div>
+<div class="mb-2" data-for-type="Asset AssetType Project User">
+    <label class="form-label small mb-1" for="@p-scope">Offers</label>
+    <select class="form-select form-select-sm" id="@p-scope" name="field.PickerScope">
+        <option value="" selected="@(f.PickerScope is null)">Choose...</option>
+        @foreach (var sc in Enum.GetValues<RequestPickerScope>())
+        {
+            <option value="@sc" selected="@(sc == f.PickerScope)">@sc.Label()@(sc == RequestPickerScope.Held ? " (assets only)" : "")</option>
+        }
+    </select>
+</div>
+<div class="mb-2">
+    <label class="form-label small mb-1" for="@p-help">Help text <span class="text-muted">(optional)</span></label>
+    <input class="form-control form-control-sm" id="@p-help" name="field.HelpText" value="@f.HelpText" maxlength="@RequestFlowRules.MaxHelpTextLength" placeholder="What a good answer looks like" />
+</div>
+<div class="form-check mb-2">
+    <input class="form-check-input" type="checkbox" id="@p-required" name="field.IsRequired" value="true" checked="@f.IsRequired" />
+    <label class="form-check-label small" for="@p-required">Required</label>
+</div>

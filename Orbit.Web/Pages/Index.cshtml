@@ -75,6 +75,10 @@
             </div>
         </div>
         <div class="col-lg-4">
+            @if (Model.WaitingApprovals is WaitingApprovalsVm noTasksApprovals)
+            {
+                <partial name="_WaitingApprovalsCard" model="noTasksApprovals" />
+            }
             @if (Model.AssetChecks is AssetCheckSummary noTasksChecks)
             {
                 <partial name="_AssetChecksCard" model="noTasksChecks" />
@@ -205,6 +209,11 @@ else
     </div>
 
     <div class="col-lg-4">
+        @* First in the column: the one card here that waits on the viewer. *@
+        @if (Model.WaitingApprovals is WaitingApprovalsVm approvals)
+        {
+            <partial name="_WaitingApprovalsCard" model="approvals" />
+        }
         @if (d.CanEditTasks)
         {
             <div class="card mb-3">
