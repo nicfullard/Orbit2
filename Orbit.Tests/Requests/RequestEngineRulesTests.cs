@@ -121,9 +121,70 @@ public class RequestEngineRulesTests
             new() { Kind = ApproverKind.Person, UserId = cat }, // twice is once
             new() { Kind = ApproverKind.Person, UserId = gone }
         ];
-        Assert.Equal([cat, bob, ann], RequestEngineRules.ResolveApprovers(approvers, finance, people));
-        Assert.Equal([cat, bob], RequestEngineRules.ResolveApprovers(approvers, null, people));
-        Assert.Empty(RequestEngineRules.ResolveApprovers([new() { Kind = ApproverKind.RoleInDepartment, RoleId = admins, DepartmentId = Guid.NewGuid() }], finance, people));
+        Assert.Equal([cat, bob, ann], RequestEngineRules.ResolveApprovers(approvers, new ApprovalRequester(finance), people));
+        Assert.Equal([cat, bob], RequestEngineRules.ResolveApprovers(approvers, new ApprovalRequester(null), people));
+        Assert.Empty(RequestEngineRules.ResolveApprovers([new() { Kind = ApproverKind.RoleInDepartment, RoleId = admins, DepartmentId = Guid.NewGuid() }], new ApprovalRequester(finance), people));
+    }
+
+    /// <summary>
+    /// REQ-018: the requester's manager and the manager of their department resolve to those people - nobody when there is none, or
+    /// when they are no longer active - once each when they are the same person, and the requester themself when they manage
+    /// their own department.
+    /// </summary>
+    [Fact]
+    public void Managers_resolve_to_the_requesters_own()
+    {
+        var finance = Guid.NewGuid();
+        var ann = Guid.NewGuid();
+        var bob = Guid.NewGuid();
+        var gone = Guid.NewGuid();
+        var claude = Guid.NewGuid();
+        ApproverCandidate[] people =
+        [
+            new(ann, finance, null, true, false),
+            new(bob, null, Guid.NewGuid(), true, false), new(bob, null, null, true, false),
+            new(gone, finance, null, false, false),
+            new(claude, null, null, true, true)
+        ];
+        RequestFlowApprover[] manager = [new() { Kind = ApproverKind.RequestersManager }];
+        RequestFlowApprover[] departmentManager = [new() { Kind = ApproverKind.RequestersDepartmentManager }];
+        RequestFlowApprover[] both = [.. manager, .. departmentManager];
+
+        Assert.Equal([ann], RequestEngineRules.ResolveApprovers(manager, new ApprovalRequester(finance, ann, bob), people));
+        Assert.Equal([bob], RequestEngineRules.ResolveApprovers(departmentManager, new ApprovalRequester(finance, ann, bob), people));
+        Assert.Equal([ann, bob], RequestEngineRules.ResolveApprovers(both, new ApprovalRequester(finance, ann, bob), people));
+        Assert.Equal([bob], RequestEngineRules.ResolveApprovers(both, new ApprovalRequester(finance, bob, bob), people)); // one person, asked once
+
+        Assert.Empty(RequestEngineRules.ResolveApprovers(both, new ApprovalRequester(finance), people)); // neither is set
+        Assert.Empty(RequestEngineRules.ResolveApprovers(both, new ApprovalRequester(finance, gone, gone), people)); // deactivated since
+        Assert.Empty(RequestEngineRules.ResolveApprovers(both, new ApprovalRequester(finance, claude, claude), people));
+        // A manager is only asked by an approver of that kind, never because a role or a person was named.
+        Assert.Empty(RequestEngineRules.ResolveApprovers([new() { Kind = ApproverKind.Person, UserId = Guid.NewGuid() }], new ApprovalRequester(finance, ann, bob), people));
+    }
+
+    /// <summary>REQ-018: a stage with nobody to ask says why by the kinds of approver it names, and where to put it right.</summary>
+    [Fact]
+    public void A_stage_with_nobody_says_why()
+    {
+        var finance = Guid.NewGuid();
+        var someone = Guid.NewGuid();
+        Assert.Equal("nobody active holds that role there. Fix the flow's approvers, then retry.",
+            RequestEngineRules.NobodyToApprove([ApproverKind.RoleInDepartment], new ApprovalRequester(finance), "Ann"));
+
+        var noManager = RequestEngineRules.NobodyToApprove([ApproverKind.RequestersManager], new ApprovalRequester(finance), "Ann");
+        Assert.StartsWith("Ann has no manager. Set the manager under Admin > Users or Admin > Departments", noManager);
+        Assert.StartsWith("Ann's manager is no longer active.",
+            RequestEngineRules.NobodyToApprove([ApproverKind.RequestersManager], new ApprovalRequester(finance, someone), "Ann"));
+
+        ApproverKind[] department = [ApproverKind.RequestersDepartmentManager];
+        Assert.StartsWith("Ann isn't in a department.", RequestEngineRules.NobodyToApprove(department, new ApprovalRequester(null), "Ann"));
+        Assert.StartsWith("Ann's department has no manager.", RequestEngineRules.NobodyToApprove(department, new ApprovalRequester(finance), "Ann"));
+        Assert.StartsWith("the manager of Ann's department is no longer active.",
+            RequestEngineRules.NobodyToApprove(department, new ApprovalRequester(finance, null, someone), "Ann"));
+
+        Assert.StartsWith("nobody active holds that role there; Ann has no manager; Ann's department has no manager.",
+            RequestEngineRules.NobodyToApprove([ApproverKind.Person, ApproverKind.RequestersManager, ApproverKind.RequestersDepartmentManager, ApproverKind.RequestersManager],
+                new ApprovalRequester(finance), "Ann"));
     }
 
     /// <summary>REQ-014: answers in their canonical forms, and refused or missing required answers reported per field.</summary>

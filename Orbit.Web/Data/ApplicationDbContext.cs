@@ -65,6 +65,10 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             b.HasOne(u => u.Department).WithMany(d => d.Users)
                 .HasForeignKey(u => u.DepartmentId).OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(u => u.DepartmentId);
+            // Users are deactivated, never deleted (§6.5), so this only says what a hand-run delete would do: leave the reports without a manager.
+            b.HasOne(u => u.Manager).WithMany()
+                .HasForeignKey(u => u.ManagerId).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(u => u.ManagerId);
         });
 
         builder.Entity<ApplicationRole>(b =>
@@ -89,6 +93,9 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             b.Property(d => d.Name).HasMaxLength(200).IsRequired();
             b.Property(d => d.Description).HasMaxLength(2000);
             b.HasIndex(d => d.Name).IsUnique();
+            b.HasOne(d => d.Manager).WithMany()
+                .HasForeignKey(d => d.ManagerId).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(d => d.ManagerId);
         });
 
         builder.Entity<Project>(b =>

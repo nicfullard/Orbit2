@@ -107,18 +107,49 @@ public sealed class UserDirectoryService(ApplicationDbContext db, IActorProvider
     {
         var actor = await actors.GetAsync(ct);
         if (!actor.Has(Permission.AssetsCreate) && !actor.Has(Permission.AssetsEdit)) return [];
+        return await SearchEveryoneAsync(query, null, limit, ct);
+    }
+
+    /// <summary>
+    /// People who can be made a person's or a department's manager (spec §6.5, §6.6) matching what was typed into the picker, found
+    /// as <see cref="SearchAssetHolderCandidatesAsync"/> finds holders: a manager may sit in any department. It answers only
+    /// callers who manage users or departments, and leaves out <paramref name="excludingUserId"/> - the person whose manager is
+    /// being chosen, who can't be their own.
+    /// </summary>
+    public async Task<IReadOnlyList<UserSummary>> SearchManagerCandidatesAsync(string? query, Guid? excludingUserId = null, int limit = 20, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        if (!AccessPolicy.CanManageUsers(actor) && !AccessPolicy.CanManageDepartments(actor)) return [];
+        return await SearchEveryoneAsync(query, excludingUserId, limit, ct);
+    }
+
+    /// <summary>Active people anywhere in the organisation whose name, email or department contains the text; nobody for no text.</summary>
+    private async Task<IReadOnlyList<UserSummary>> SearchEveryoneAsync(string? query, Guid? excludingUserId, int limit, CancellationToken ct)
+    {
         var text = query?.Trim();
         if (string.IsNullOrEmpty(text)) return [];
         var anywhere = $"%{text}%";
         var prefix = $"{text}%";
         var users = await db.Users.AsNoTracking().Include(u => u.Department)
-            .Where(u => u.IsActive && !u.IsSystemAccount
+            .Where(u => u.IsActive && !u.IsSystemAccount && u.Id != excludingUserId
                 && (EF.Functions.ILike(u.DisplayName, anywhere) || EF.Functions.ILike(u.Email!, anywhere)
                     || (u.Department != null && EF.Functions.ILike(u.Department.Name, anywhere))))
             .OrderBy(u => EF.Functions.ILike(u.DisplayName, prefix) ? 0 : 1).ThenBy(u => u.DisplayName)
             .Take(Math.Clamp(limit, 1, 50))
             .ToListAsync(ct);
         return await ToSummariesAsync(db, users, ct);
+    }
+
+    /// <summary>
+    /// The person a save newly names as a manager (§6.5, §6.6), or a refusal: they exist and <see cref="ManagerRules.Refusal"/> lets
+    /// them through. A manager a save keeps isn't looked up again, as a kept requestee or asset isn't.
+    /// </summary>
+    public static async Task<ApplicationUser> RequireManagerAsync(ApplicationDbContext db, Guid managerId, CancellationToken ct)
+    {
+        var manager = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == managerId, ct)
+            ?? throw new ValidationException("The person chosen as manager doesn't exist.");
+        if (ManagerRules.Refusal(manager) is string refusal) throw new ValidationException(refusal);
+        return manager;
     }
 
     /// <summary>
@@ -166,6 +197,6 @@ public sealed class UserDirectoryService(ApplicationDbContext db, IActorProvider
     {
         var role = roles.GetValueOrDefault(u.Id) ?? ResolvedRole.None;
         return new UserSummary(u.Id, u.DisplayName, u.Email ?? string.Empty, role.Ref, role.ScopeOf(Permission.TasksView) == PermissionScope.All,
-            u.DepartmentId, u.Department?.Name, u.IsActive, u.IsSystemAccount, u.CreatedAt, u.AuthSource, u.LockoutEnd);
+            u.DepartmentId, u.Department?.Name, u.IsActive, u.IsSystemAccount, u.CreatedAt, u.AuthSource, u.LockoutEnd, u.ManagerId, u.Manager?.DisplayName);
     }
 }

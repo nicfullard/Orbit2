@@ -93,6 +93,11 @@
                             <div class="form-text" id="departmentHint">Required for a role with permissions scoped to a department.</div>
                         </div>
                         <div class="col-md-12">
+                            <label class="form-label" for="manager-input">Manager <span class="text-muted">(optional)</span></label>
+                            <partial name="/Pages/Assets/_PersonPicker.cshtml" model="@UserForm.ManagerPicker(Url, Model.Manager, u.Id)" />
+                            <div class="form-text">Whom the user reports to. A request flow can ask them to approve what the user asks for.</div>
+                        </div>
+                        <div class="col-md-12">
                             <label class="form-label" for="Form_AuthSource">Sign-in method</label>
                             <select class="form-select" id="Form_AuthSource" name="Form.AuthSource" asp-items="authItems"></select>
                             <div class="form-text">

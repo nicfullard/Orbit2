@@ -669,12 +669,17 @@ public sealed class RequestCatalogueService(ApplicationDbContext db, IActorProvi
                 approver.DepartmentId = dept.Id;
                 what = $"{role.Name} in {dept.Name}";
                 break;
-            default:
+            case ApproverKind.RoleInRequestersDepartment:
                 var r = await RequireRoleAsync(input.RoleId, ct);
                 if (stage.Approvers.Any(a => a.Kind == ApproverKind.RoleInRequestersDepartment && a.RoleId == r.Id))
                     throw new ValidationException($"{r.Name} in the requester's department is already an approver of this stage.");
                 approver.RoleId = r.Id;
                 what = $"{r.Name} in the requester's department";
+                break;
+            default:
+                // The requester's manager, or their department's: nothing to name, and once in a stage is enough.
+                what = ApproverLabel(approver);
+                if (stage.Approvers.Any(a => a.Kind == input.Kind)) throw new ValidationException($"{what} is already an approver of this stage.");
                 break;
         }
         db.RequestFlowApprovers.Add(approver);
@@ -702,12 +707,13 @@ public sealed class RequestCatalogueService(ApplicationDbContext db, IActorProvi
         return step.Id;
     }
 
-    /// <summary>"Jane Smith", "Department Admin in Finance", "Department Admin in the requester's department".</summary>
+    /// <summary>"Jane Smith", "Department Admin in Finance", "Department Admin in the requester's department", "The requester's manager".</summary>
     public static string ApproverLabel(RequestFlowApprover a) => a.Kind switch
     {
         ApproverKind.Person => a.User?.DisplayName ?? "a person",
         ApproverKind.RoleInDepartment => $"{a.Role?.Name ?? "a role"} in {a.Department?.Name ?? "a department"}",
-        _ => $"{a.Role?.Name ?? "a role"} in the requester's department"
+        ApproverKind.RoleInRequestersDepartment => $"{a.Role?.Name ?? "a role"} in the requester's department",
+        _ => a.Kind.Label()
     };
 
     // ---------------------------------------------------------------- helpers

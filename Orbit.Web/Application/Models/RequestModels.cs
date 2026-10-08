@@ -90,7 +90,10 @@ public sealed class RequestFieldInput
 /// </summary>
 public sealed record RequestAssetTypeChoice(Guid Id, string Name, string Group);
 
-/// <summary>One approver of a stage (§6.20): a person, or a role in a department (fixed, or the requester's own).</summary>
+/// <summary>
+/// One approver of a stage (§6.20): a person, a role in a department (fixed, or the requester's own), or - with nothing else to
+/// name - the requester's manager or the manager of their department.
+/// </summary>
 public sealed class RequestApproverInput
 {
     public ApproverKind Kind { get; set; } = ApproverKind.Person;

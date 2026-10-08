@@ -545,12 +545,14 @@ public sealed class RequestEngine(
     {
         var stage = step.FlowStep.Stages.FirstOrDefault(s => s.StageOrder == order);
         if (stage is null) return false;
-        var candidates = await CandidatesAsync(stage.Approvers, ct);
-        var ids = RequestEngineRules.ResolveApprovers(stage.Approvers, request.Requester.DepartmentId, candidates);
+        var requester = await RequesterAsync(request, stage.Approvers, ct);
+        var candidates = await CandidatesAsync(stage.Approvers, requester, ct);
+        var ids = RequestEngineRules.ResolveApprovers(stage.Approvers, requester, candidates);
         if (ids.Count == 0)
         {
             var named = string.Join("; ", stage.Approvers.Select(RequestCatalogueService.ApproverLabel));
-            Fail(request, step, actor, $"Stage {order} of \"{step.FlowStep.Title}\" has nobody to approve it ({named}): nobody active holds that role there. Fix the flow's approvers, then retry.");
+            var why = RequestEngineRules.NobodyToApprove(stage.Approvers.Select(a => a.Kind).ToList(), requester, request.Requester.DisplayName);
+            Fail(request, step, actor, $"Stage {order} of \"{step.FlowStep.Title}\" has nobody to approve it ({named}): {why}");
             return true;
         }
         foreach (var id in ids)
@@ -563,9 +565,24 @@ public sealed class RequestEngine(
         return true;
     }
 
-    private async Task<IReadOnlyList<ApproverCandidate>> CandidatesAsync(IEnumerable<RequestFlowApprover> approvers, CancellationToken ct)
+    /// <summary>
+    /// The requester as the approvers are resolved against them: their department and manager as they stand now, and their
+    /// department's manager - read only when an approver asks for it.
+    /// </summary>
+    private async Task<ApprovalRequester> RequesterAsync(Request request, IEnumerable<RequestFlowApprover> approvers, CancellationToken ct)
+    {
+        var who = request.Requester;
+        Guid? departmentManagerId = who.DepartmentId is Guid d && approvers.Any(a => a.Kind == ApproverKind.RequestersDepartmentManager)
+            ? await db.Departments.AsNoTracking().Where(x => x.Id == d).Select(x => x.ManagerId).FirstOrDefaultAsync(ct)
+            : null;
+        return new ApprovalRequester(who.DepartmentId, who.ManagerId, departmentManagerId);
+    }
+
+    private async Task<IReadOnlyList<ApproverCandidate>> CandidatesAsync(IEnumerable<RequestFlowApprover> approvers, ApprovalRequester requester, CancellationToken ct)
     {
         var userIds = approvers.Where(a => a.Kind == ApproverKind.Person && a.UserId != null).Select(a => a.UserId!.Value).ToList();
+        if (requester.ManagerId is Guid manager) userIds.Add(manager);
+        if (requester.DepartmentManagerId is Guid departmentManager) userIds.Add(departmentManager);
         var roleIds = approvers.Where(a => a.Kind != ApproverKind.Person && a.RoleId != null).Select(a => a.RoleId!.Value).ToList();
         var rows = await db.Users.AsNoTracking()
             .Where(u => userIds.Contains(u.Id) || db.UserRoles.Any(ur => ur.UserId == u.Id && roleIds.Contains(ur.RoleId)))

@@ -19,7 +19,7 @@
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
-                <thead class="table-light"><tr><th>Name</th><th>Email</th><th>Role</th><th>Department</th><th>Status</th><th>Created</th><th></th></tr></thead>
+                <thead class="table-light"><tr><th>Name</th><th>Email</th><th>Role</th><th>Department</th><th>Manager</th><th>Status</th><th>Created</th><th></th></tr></thead>
                 <tbody>
                     @foreach (var u in Model.Users)
                     {
@@ -28,6 +28,7 @@
                             <td>@u.Email @if (u.AuthSource == AuthSource.Ldap) { <span class="badge text-bg-info" title="Signs in with the company directory">LDAP</span> }</td>
                             <td><span class="badge @Ui.RoleBadge(u.Role)">@u.Role.Name</span></td>
                             <td>@(u.DepartmentName ?? "-")</td>
+                            <td>@(u.ManagerName ?? "-")</td>
                             <td>@if (u.IsActive) { <span class="badge text-bg-success">Active</span> } else { <span class="badge text-bg-secondary">Deactivated</span> }
                                 @if (u.IsLockedOut) { <span class="badge text-bg-warning" title="Too many wrong passwords. Unlock from the user's page.">Locked out</span> }</td>
                             <td>@Ui.Day(DateOnly.FromDateTime(u.CreatedAt))</td>

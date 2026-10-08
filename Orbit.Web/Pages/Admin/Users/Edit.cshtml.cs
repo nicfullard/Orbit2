@@ -10,8 +10,10 @@ using ValidationException = Orbit.Application.ValidationException;
 
 namespace Orbit.Pages.Admin.Users;
 
-public class EditModel(UserAdminService users, DepartmentService departments, RoleService roles, IActorProvider actors, LdapSettingsService ldapSettings, AssetService assets) : OrbitPageModel
+public class EditModel(UserAdminService users, DepartmentService departments, RoleService roles, IActorProvider actors, LdapSettingsService ldapSettings, AssetService assets, UserDirectoryService directory) : OrbitPageModel
 {
+    /// <summary>The manager chosen, as the picker's chip.</summary>
+    public IReadOnlyList<UserSummary> Manager { get; private set; } = [];
     public bool DirectoryEnabled { get; private set; }
     /// <summary>Assets (not disposed) this person still holds (§6.19) - what a leaver has to hand back.</summary>
     public int AssetsHeld { get; private set; }
@@ -126,5 +128,6 @@ public class EditModel(UserAdminService users, DepartmentService departments, Ro
     {
         DepartmentItems = await UserForm.DepartmentItemsAsync(departments, Form.DepartmentId, ct);
         RoleItems = await roles.ListForPickerAsync(ct);
+        Manager = Form.ManagerId is Guid m ? await directory.FindManyAsync([m], ct) : [];
     }
 }

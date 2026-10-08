@@ -361,6 +361,12 @@
                                                     @foreach (var d in Model.Departments) { <option value="@d.Id" selected="@(d.Id == ap.DepartmentId)">@d.Name</option> }
                                                 </select>
                                             </div>
+                                            <div class="form-text mt-0 mb-2" data-for-kind="RequestersManager">
+                                                Whoever is the manager of the person who logged the request when the stage opens (set under Admin &gt; Users). For someone with no manager there is nobody to ask, and the step fails until one is set.
+                                            </div>
+                                            <div class="form-text mt-0 mb-2" data-for-kind="RequestersDepartmentManager">
+                                                Whoever manages the department of the person who logged the request when the stage opens (set under Admin &gt; Departments). With no department, or no manager for it, there is nobody to ask, and the step fails until one is set.
+                                            </div>
                                             <button type="submit" class="btn btn-sm btn-outline-primary">Add approver</button>
                                         </form>
                                     </details>

@@ -19,6 +19,11 @@
         {
             <div class="text-muted">@d.Description</div>
         }
+        <div class="small mt-1">
+            <span class="text-muted">Manager:</span>
+            @if (d.Manager is null) { <span class="text-muted fst-italic">none</span> }
+            else { <span>@d.Manager.DisplayName</span>@if (!d.Manager.IsActive) { <span class="text-muted"> (deactivated)</span> } }
+        </div>
     </div>
     <div class="d-flex gap-2">
         <a class="btn btn-outline-secondary btn-sm" asp-page="/Tasks/Index" asp-route-DepartmentId="@d.Id" asp-route-OpenOnly="true">Open tasks</a>

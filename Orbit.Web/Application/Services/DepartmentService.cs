@@ -19,7 +19,7 @@ public sealed class DepartmentService(ApplicationDbContext db, IActorProvider ac
     public async Task<Department> GetAsync(Guid id, CancellationToken ct = default)
     {
         await actors.GetAsync(ct);
-        return await db.Departments.AsNoTracking().FirstOrDefaultAsync(d => d.Id == id, ct)
+        return await db.Departments.AsNoTracking().Include(d => d.Manager).FirstOrDefaultAsync(d => d.Id == id, ct)
             ?? throw new NotFoundException("Department not found.");
     }
 
@@ -31,14 +31,15 @@ public sealed class DepartmentService(ApplicationDbContext db, IActorProvider ac
                 d,
                 d.Users.Count(u => u.IsActive && !u.IsSystemAccount),
                 d.Projects.Count(p => p.Status == ProjectStatus.Active),
-                d.Tasks.Count(t => t.Status != TaskItemStatus.Done && t.Status != TaskItemStatus.Cancelled)))
+                d.Tasks.Count(t => t.Status != TaskItemStatus.Done && t.Status != TaskItemStatus.Cancelled),
+                d.Manager != null ? d.Manager.DisplayName : null))
             .ToListAsync(ct);
     }
 
     public async Task<DepartmentDetail> GetDetailAsync(Guid id, CancellationToken ct = default)
     {
         await RequireManagerAsync(ct);
-        var dept = await db.Departments.AsNoTracking().FirstOrDefaultAsync(d => d.Id == id, ct)
+        var dept = await db.Departments.AsNoTracking().Include(d => d.Manager).FirstOrDefaultAsync(d => d.Id == id, ct)
             ?? throw new NotFoundException("Department not found.");
         var users = await db.Users.AsNoTracking().Include(u => u.Department)
             .Where(u => !u.IsSystemAccount && u.DepartmentId == id).OrderBy(u => u.DisplayName).ToListAsync(ct);
@@ -58,20 +59,21 @@ public sealed class DepartmentService(ApplicationDbContext db, IActorProvider ac
             projects.Select(r => new ProjectListItem(r.Project, r.Total, r.Open, r.Done)).ToList(), open, total);
     }
 
-    public async Task<Department> CreateAsync(string name, string? description, CancellationToken ct = default)
+    public async Task<Department> CreateAsync(string name, string? description, Guid? managerId = null, CancellationToken ct = default)
     {
         var actor = await RequireManagerAsync(ct);
         var n = RequireName(name);
         if (await db.Departments.AnyAsync(d => d.Name == n, ct))
             throw new ValidationException($"A department named \"{n}\" already exists.");
-        var dept = new Department { Name = n, Description = Clean(description), CreatedAt = DateTime.UtcNow };
+        var manager = await ValidateManagerAsync(null, managerId, ct);
+        var dept = new Department { Name = n, Description = Clean(description), ManagerId = manager, CreatedAt = DateTime.UtcNow };
         db.Departments.Add(dept);
-        audit.Add(actor, AuditEntity.Department, dept.Id, AuditAction.Created, dept.Id, dept.Name, new { dept.Name });
+        audit.Add(actor, AuditEntity.Department, dept.Id, AuditAction.Created, dept.Id, dept.Name, new { dept.Name, managerId = manager });
         await db.SaveChangesAsync(ct);
         return dept;
     }
 
-    public async Task<Department> UpdateAsync(Guid id, string name, string? description, CancellationToken ct = default)
+    public async Task<Department> UpdateAsync(Guid id, string name, string? description, Guid? managerId, CancellationToken ct = default)
     {
         var actor = await RequireManagerAsync(ct);
         var n = RequireName(name);
@@ -79,10 +81,13 @@ public sealed class DepartmentService(ApplicationDbContext db, IActorProvider ac
             ?? throw new NotFoundException("Department not found.");
         if (await db.Departments.AnyAsync(d => d.Name == n && d.Id != id, ct))
             throw new ValidationException($"A department named \"{n}\" already exists.");
-        var changes = new ChangeSet().TrackText("name", dept.Name, n).TrackText("description", dept.Description, description);
+        var manager = await ValidateManagerAsync(dept.ManagerId, managerId, ct);
+        var changes = new ChangeSet().TrackText("name", dept.Name, n).TrackText("description", dept.Description, description)
+            .Track("managerId", dept.ManagerId, manager);
         if (!changes.HasChanges) return dept;
         dept.Name = n;
         dept.Description = Clean(description);
+        dept.ManagerId = manager;
         audit.Add(actor, AuditEntity.Department, dept.Id, AuditAction.Updated, dept.Id, dept.Name, changes.Changes);
         await db.SaveChangesAsync(ct);
         return dept;
@@ -106,6 +111,17 @@ public sealed class DepartmentService(ApplicationDbContext db, IActorProvider ac
         var actor = await actors.GetAsync(ct);
         AccessPolicy.Require(AccessPolicy.CanManageDepartments(actor), "You don't have permission to manage departments.");
         return actor;
+    }
+
+    /// <summary>
+    /// The department's manager (spec §6.6): none, the one it has, or a new one - any active person, of this department or
+    /// another. The one it has isn't checked again, so a manager since deactivated doesn't block renaming the department.
+    /// </summary>
+    private async Task<Guid?> ValidateManagerAsync(Guid? current, Guid? wanted, CancellationToken ct)
+    {
+        if (wanted is not Guid id || id == Guid.Empty) return null;
+        if (id == current) return current;
+        return (await UserDirectoryService.RequireManagerAsync(db, id, ct)).Id;
     }
 
     private static string RequireName(string? name)

@@ -272,7 +272,10 @@ public static class RequestFlowRules
 
     // ---------------------------------------------------------------- approvals
 
-    /// <summary>REQ-010: an approver names what its kind needs - a person, or a role (and, unless the requester's, a department).</summary>
+    /// <summary>
+    /// REQ-010: an approver names what its kind needs - a person, or a role (and, unless the requester's, a department); the
+    /// requester's manager and their department's manager need nothing named.
+    /// </summary>
     public static void ValidateApprover(RequestApproverInput input)
     {
         if (!Enum.IsDefined(input.Kind)) throw new ValidationException("Choose one of the approver kinds offered.");

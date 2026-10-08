@@ -7,9 +7,11 @@ using ValidationException = Orbit.Application.ValidationException;
 
 namespace Orbit.Pages.Admin.Users;
 
-public class CreateModel(UserAdminService users, DepartmentService departments, RoleService roles, LdapSettingsService ldapSettings) : OrbitPageModel
+public class CreateModel(UserAdminService users, DepartmentService departments, RoleService roles, LdapSettingsService ldapSettings, UserDirectoryService directory) : OrbitPageModel
 {
     [BindProperty] public UserForm Form { get; set; } = new();
+    /// <summary>The manager chosen, as the picker's chip, when the form comes back.</summary>
+    public IReadOnlyList<UserSummary> Manager { get; private set; } = [];
     public IReadOnlyList<SelectListItem> DepartmentItems { get; private set; } = [];
     public IReadOnlyList<RolePickerItem> RoleItems { get; private set; } = [];
     public bool DirectoryEnabled { get; private set; }
@@ -43,5 +45,6 @@ public class CreateModel(UserAdminService users, DepartmentService departments, 
         DepartmentItems = await UserForm.DepartmentItemsAsync(departments, Form.DepartmentId, ct);
         RoleItems = await roles.ListForPickerAsync(ct);
         DirectoryEnabled = await ldapSettings.IsEnabledAsync(ct);
+        Manager = Form.ManagerId is Guid m ? await directory.FindManyAsync([m], ct) : [];
     }
 }

@@ -89,6 +89,9 @@ public class RequestFlowRulesTests
         Assert.Throws<ValidationException>(() => RequestFlowRules.ValidateApprover(new RequestApproverInput { Kind = ApproverKind.Person }));
         Assert.Throws<ValidationException>(() => RequestFlowRules.ValidateApprover(new RequestApproverInput { Kind = ApproverKind.RoleInDepartment, RoleId = Guid.NewGuid() }));
         RequestFlowRules.ValidateApprover(new RequestApproverInput { Kind = ApproverKind.RoleInRequestersDepartment, RoleId = Guid.NewGuid() });
+        RequestFlowRules.ValidateApprover(new RequestApproverInput { Kind = ApproverKind.RequestersManager });
+        RequestFlowRules.ValidateApprover(new RequestApproverInput { Kind = ApproverKind.RequestersDepartmentManager });
+        Assert.Throws<ValidationException>(() => RequestFlowRules.ValidateApprover(new RequestApproverInput { Kind = (ApproverKind)99 }));
         var parameters = RequestFlowRules.ValidateParameters([new(null, "Product code"), new("why", "Reason")]);
         Assert.Equal([("product-code", "Product code"), ("why", "Reason")], parameters);
         Assert.Throws<ValidationException>(() => RequestFlowRules.ValidateParameters([new("a", "A"), new("a", "B")]));

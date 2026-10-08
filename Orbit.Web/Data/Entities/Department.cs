@@ -7,6 +7,10 @@ public class Department
     public string? Description { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+    /// <summary>The person who runs the department (spec §6.6); optional. They need not belong to it, and it grants them nothing: a request flow can ask them to approve (§6.20).</summary>
+    public Guid? ManagerId { get; set; }
+    public ApplicationUser? Manager { get; set; }
+
     /// <summary>Soft archive: an archived department is no longer offered for new users/projects/tasks.</summary>
     public bool IsArchived { get; set; }
     public DateTime? ArchivedAt { get; set; }

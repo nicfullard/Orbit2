@@ -26,6 +26,12 @@ public sealed record StepTransitions(IReadOnlyList<Guid> Ready, IReadOnlyList<Gu
 /// <summary>A person who might be an approver: what the resolution rule needs to know about them.</summary>
 public sealed record ApproverCandidate(Guid Id, Guid? DepartmentId, Guid? RoleId, bool IsActive, bool IsSystemAccount);
 
+/// <summary>
+/// What the resolution rule needs to know about whoever logged the request: their department, their manager, and the manager of
+/// their department - each null when there is none.
+/// </summary>
+public sealed record ApprovalRequester(Guid? DepartmentId, Guid? ManagerId = null, Guid? DepartmentManagerId = null);
+
 /// <summary>The raw answer to one field as the form posts it: the typed or chosen text, the id picked, or how many files came.</summary>
 public sealed record RequestAnswerInput(string? Value, Guid? Id = null, int FileCount = 0);
 
@@ -135,10 +141,12 @@ public static class RequestEngineRules
 
     /// <summary>
     /// REQ-018: the people a stage's approvers resolve to when it opens - a named person; everyone holding the role in the department;
-    /// everyone holding it in the requester's department (nobody when the requester has none). Each person once, active people
-    /// only, never a system account. The requester is not excluded: a flow may well ask them to confirm.
+    /// everyone holding it in the requester's department (nobody when the requester has none); the requester's manager; the manager
+    /// of the requester's department (nobody when there is none). Each person once, active people only, never a system account.
+    /// The requester is not excluded: a flow may well ask them to confirm, and a department's manager is asked about their own
+    /// request as about anyone's.
     /// </summary>
-    public static IReadOnlyList<Guid> ResolveApprovers(IEnumerable<RequestFlowApprover> approvers, Guid? requesterDepartmentId, IReadOnlyList<ApproverCandidate> people)
+    public static IReadOnlyList<Guid> ResolveApprovers(IEnumerable<RequestFlowApprover> approvers, ApprovalRequester requester, IReadOnlyList<ApproverCandidate> people)
     {
         var usable = people.Where(p => p.IsActive && !p.IsSystemAccount).ToList();
         var result = new List<Guid>();
@@ -148,15 +156,37 @@ public static class RequestEngineRules
             {
                 ApproverKind.Person => usable.Where(p => p.Id == a.UserId).Select(p => p.Id),
                 ApproverKind.RoleInDepartment => usable.Where(p => p.RoleId == a.RoleId && p.DepartmentId == a.DepartmentId).Select(p => p.Id),
-                ApproverKind.RoleInRequestersDepartment => requesterDepartmentId is Guid d
+                ApproverKind.RoleInRequestersDepartment => requester.DepartmentId is Guid d
                     ? usable.Where(p => p.RoleId == a.RoleId && p.DepartmentId == d).Select(p => p.Id)
                     : [],
+                ApproverKind.RequestersManager => usable.Where(p => p.Id == requester.ManagerId).Select(p => p.Id),
+                ApproverKind.RequestersDepartmentManager => usable.Where(p => p.Id == requester.DepartmentManagerId).Select(p => p.Id),
                 _ => []
             };
             foreach (var id in ids)
                 if (!result.Contains(id)) result.Add(id);
         }
         return result;
+    }
+
+    /// <summary>
+    /// REQ-018: why a stage resolved to nobody and what puts it right, for the manager who reads the failed step: by the kinds of
+    /// approver it names - a role nobody active holds, a requester with no manager, a department with none.
+    /// </summary>
+    public static string NobodyToApprove(IReadOnlyCollection<ApproverKind> kinds, ApprovalRequester requester, string requesterName)
+    {
+        var why = new List<string>();
+        if (kinds.Any(k => k is ApproverKind.Person or ApproverKind.RoleInDepartment or ApproverKind.RoleInRequestersDepartment))
+            why.Add("nobody active holds that role there");
+        if (kinds.Contains(ApproverKind.RequestersManager))
+            why.Add(requester.ManagerId is null ? $"{requesterName} has no manager" : $"{requesterName}'s manager is no longer active");
+        if (kinds.Contains(ApproverKind.RequestersDepartmentManager))
+            why.Add(requester.DepartmentId is null ? $"{requesterName} isn't in a department"
+                : requester.DepartmentManagerId is null ? $"{requesterName}'s department has no manager"
+                : $"the manager of {requesterName}'s department is no longer active");
+        var managers = kinds.Any(k => k is ApproverKind.RequestersManager or ApproverKind.RequestersDepartmentManager);
+        return $"{string.Join("; ", why)}. "
+            + (managers ? "Set the manager under Admin > Users or Admin > Departments, or fix the flow's approvers, then retry." : "Fix the flow's approvers, then retry.");
     }
 
     // ---------------------------------------------------------------- answers

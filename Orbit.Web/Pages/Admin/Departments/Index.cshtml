@@ -21,7 +21,7 @@
         else
         {
             <table class="table table-hover align-middle mb-0">
-                <thead class="table-light"><tr><th>Department</th><th class="text-end">Users</th><th class="text-end">Active projects</th><th class="text-end">Open tasks</th><th>Status</th><th></th></tr></thead>
+                <thead class="table-light"><tr><th>Department</th><th>Manager</th><th class="text-end">Users</th><th class="text-end">Active projects</th><th class="text-end">Open tasks</th><th>Status</th><th></th></tr></thead>
                 <tbody>
                     @foreach (var d in Model.Departments)
                     {
@@ -33,6 +33,7 @@
                                     <div class="small text-muted">@Ui.Truncate(d.Department.Description, 120)</div>
                                 }
                             </td>
+                            <td>@(d.ManagerName ?? "-")</td>
                             <td class="text-end">@d.UserCount</td>
                             <td class="text-end">@d.ActiveProjectCount</td>
                             <td class="text-end">@d.OpenTaskCount</td>

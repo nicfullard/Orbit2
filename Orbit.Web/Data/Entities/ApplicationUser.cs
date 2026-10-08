@@ -14,6 +14,10 @@ public class ApplicationUser : IdentityUser<Guid>
     public Guid? DepartmentId { get; set; }
     public Department? Department { get; set; }
 
+    /// <summary>The person this user reports to (spec §6.5); optional. It grants nobody anything: a request flow can ask them to approve (§6.20).</summary>
+    public Guid? ManagerId { get; set; }
+    public ApplicationUser? Manager { get; set; }
+
     /// <summary>Soft delete flag. Deactivated users can't sign in and are hidden from pickers.</summary>
     public bool IsActive { get; set; } = true;
 

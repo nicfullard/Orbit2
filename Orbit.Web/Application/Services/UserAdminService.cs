@@ -17,7 +17,7 @@ public sealed class UserAdminService(
     public async Task<IReadOnlyList<UserSummary>> ListAsync(CancellationToken ct = default)
     {
         await RequireAdminAsync(ct);
-        var users = await db.Users.AsNoTracking().Include(u => u.Department)
+        var users = await db.Users.AsNoTracking().Include(u => u.Department).Include(u => u.Manager)
             .Where(u => !u.IsSystemAccount)
             .OrderByDescending(u => u.IsActive).ThenBy(u => u.DisplayName).ToListAsync(ct);
         return await UserDirectoryService.ToSummariesAsync(db, users, ct);
@@ -26,7 +26,7 @@ public sealed class UserAdminService(
     public async Task<UserSummary> GetAsync(Guid id, CancellationToken ct = default)
     {
         await RequireAdminAsync(ct);
-        var user = await db.Users.AsNoTracking().Include(u => u.Department).FirstOrDefaultAsync(u => u.Id == id && !u.IsSystemAccount, ct)
+        var user = await db.Users.AsNoTracking().Include(u => u.Department).Include(u => u.Manager).FirstOrDefaultAsync(u => u.Id == id && !u.IsSystemAccount, ct)
             ?? throw new NotFoundException("User not found.");
         var roles = await RoleResolver.ForUsersAsync(db, [id], ct);
         return UserDirectoryService.ToSummary(user, roles);
@@ -39,6 +39,7 @@ public sealed class UserAdminService(
         var displayName = RequireDisplayName(input.DisplayName);
         var role = await RequireRoleAsync(input.RoleId, ct);
         var departmentId = await ValidateDepartmentForRoleAsync(role, input.DepartmentId, ct);
+        var managerId = await ValidateManagerAsync(null, null, input.ManagerId, displayName, ct);
         var isDirectoryUser = input.AuthSource == AuthSource.Ldap;
         if (isDirectoryUser)
             await RequireDirectorySignInEnabledAsync(ct);
@@ -54,6 +55,7 @@ public sealed class UserAdminService(
             EmailConfirmed = true,
             DisplayName = displayName,
             DepartmentId = departmentId,
+            ManagerId = managerId,
             AuthSource = input.AuthSource,
             IsActive = true,
             LockoutEnabled = true,
@@ -64,7 +66,7 @@ public sealed class UserAdminService(
         Throw(await userManager.AddToRoleAsync(user, role.Name));
 
         audit.Add(actor, AuditEntity.User, user.Id, AuditAction.Created, departmentId, displayName, input.DirectoryDn is null
-            ? new { email, role = role.Name, roleId = role.Id, departmentId, authSource = input.AuthSource }
+            ? new { email, role = role.Name, roleId = role.Id, departmentId, managerId, authSource = input.AuthSource }
             : new { email, role = role.Name, roleId = role.Id, departmentId, authSource = input.AuthSource, source = "directoryImport", directoryDn = input.DirectoryDn });
         await db.SaveChangesAsync(ct);
         return await GetAsync(user.Id, ct);
@@ -80,6 +82,7 @@ public sealed class UserAdminService(
         var displayName = RequireDisplayName(input.DisplayName);
         var role = await RequireRoleAsync(input.RoleId, ct);
         var departmentId = await ValidateDepartmentForRoleAsync(role, input.DepartmentId, ct);
+        var managerId = await ValidateManagerAsync(user.Id, user.ManagerId, input.ManagerId, displayName, ct);
         var currentRoleNames = await userManager.GetRolesAsync(user);
         var currentRole = (await RoleResolver.ForUsersAsync(db, [id], ct)).GetValueOrDefault(id) ?? ResolvedRole.None;
 
@@ -93,12 +96,14 @@ public sealed class UserAdminService(
         var changes = new ChangeSet()
             .TrackText("displayName", user.DisplayName, displayName)
             .Track("departmentId", user.DepartmentId, departmentId)
+            .Track("managerId", user.ManagerId, managerId)
             .Track("role", currentRole.Name, role.Name)
             .Track("authSource", user.AuthSource, input.AuthSource);
         if (!changes.HasChanges) return await GetAsync(id, ct);
 
         user.DisplayName = displayName;
         user.DepartmentId = departmentId;
+        user.ManagerId = managerId;
         if (user.AuthSource != input.AuthSource)
         {
             user.AuthSource = input.AuthSource;
@@ -112,8 +117,9 @@ public sealed class UserAdminService(
             if (currentRoleNames.Count > 0) Throw(await userManager.RemoveFromRolesAsync(user, currentRoleNames));
             Throw(await userManager.AddToRoleAsync(user, role.Name));
         }
-        // Refresh the user's cookie claims on their next request.
-        Throw(await userManager.UpdateSecurityStampAsync(user));
+        // Refresh the user's cookie claims on their next request. Their manager is in no claim, so a change to that alone leaves their session be.
+        if (changes.Changes.Keys.Any(k => k != "managerId"))
+            Throw(await userManager.UpdateSecurityStampAsync(user));
 
         audit.Add(actor, AuditEntity.User, user.Id, AuditAction.Updated, departmentId, displayName, changes.Changes);
         await db.SaveChangesAsync(ct);
@@ -254,6 +260,26 @@ public sealed class UserAdminService(
             if (dept.IsArchived) throw new ValidationException($"Department \"{dept.Name}\" is archived.");
         }
         return departmentId;
+    }
+
+    /// <summary>
+    /// The person's manager (spec §6.5): none, the one they have, or a new one - any active person but themselves, and nobody who
+    /// already reports to them, directly or through others. <paramref name="userId"/> is null for a user being created.
+    /// </summary>
+    private async Task<Guid?> ValidateManagerAsync(Guid? userId, Guid? current, Guid? wanted, string displayName, CancellationToken ct)
+    {
+        if (wanted is not Guid id || id == Guid.Empty) return null;
+        if (id == current) return current;
+        if (id == userId) throw new ValidationException("A person can't be their own manager.");
+        var manager = await UserDirectoryService.RequireManagerAsync(db, id, ct);
+        if (userId is Guid self)
+        {
+            var managerOf = await db.Users.AsNoTracking().Where(u => u.ManagerId != null)
+                .ToDictionaryAsync(u => u.Id, u => u.ManagerId!.Value, ct);
+            if (ManagerRules.ReportsInACircle(self, id, managerOf))
+                throw new ValidationException($"{manager.DisplayName} reports to {displayName}, directly or through others, so can't also be their manager.");
+        }
+        return id;
     }
 
     private static string RequireEmail(string? email)

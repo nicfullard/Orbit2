@@ -9,6 +9,8 @@ public sealed class UserInput
     public Guid? DepartmentId { get; set; }
     /// <summary>The role (spec §6.5); one per user.</summary>
     public Guid RoleId { get; set; }
+    /// <summary>The person they report to (spec §6.5); null for none.</summary>
+    public Guid? ManagerId { get; set; }
     public AuthSource AuthSource { get; set; } = AuthSource.Local;
     /// <summary>Temporary password (create only, local users only).</summary>
     public string? Password { get; set; }
@@ -29,7 +31,10 @@ public sealed record UserSummary(
     bool IsSystemAccount,
     DateTime CreatedAt,
     AuthSource AuthSource = AuthSource.Local,
-    DateTimeOffset? LockoutEnd = null)
+    DateTimeOffset? LockoutEnd = null,
+    Guid? ManagerId = null,
+    /// <summary>The manager's name, where the lookup loaded it (the user admin pages); null elsewhere, and when there is no manager.</summary>
+    string? ManagerName = null)
 {
     /// <summary>Locked by too many wrong passwords. (A deactivated user is also "locked", forever - that isn't this.)</summary>
     public bool IsLockedOut => IsActive && LockoutEnd > DateTimeOffset.UtcNow;
@@ -44,7 +49,7 @@ public sealed class ApiKeyInput
     public Guid? DepartmentId { get; set; }
 }
 
-public sealed record DepartmentOverview(Department Department, int UserCount, int ActiveProjectCount, int OpenTaskCount);
+public sealed record DepartmentOverview(Department Department, int UserCount, int ActiveProjectCount, int OpenTaskCount, string? ManagerName = null);
 
 public sealed record DepartmentDetail(
     Department Department,

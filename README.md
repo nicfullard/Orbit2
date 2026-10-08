@@ -58,6 +58,12 @@ dotnet ef migrations add <Name> --project Orbit.Web  # from the solution root (d
 Self-registration is disabled: accounts are created under **Admin > Users** - one at a time, or many at once with
 **Import from directory** (below).
 
+A user may be given a **manager** (whom they report to) on their page under **Admin > Users**, and a department a
+**manager** (who runs it, in the department or not) under **Admin > Departments**. Both are optional and grant
+nothing by themselves: they are who a request flow asks when an approval names *the requester's manager* or *the
+manager of the requester's department* (below). Nobody can be their own manager, or report to someone who reports
+to them.
+
 ## Permissions and scopes
 
 A user or API key has one **role**; a role is a set of **permissions**, each granted at a **scope** (spec §6.5).
@@ -295,8 +301,11 @@ tile (*Report a problem*, *Products*...), then a flow. A **flow** is a sequence 
   department's, your own department's, the whole company's, or the assets you hold). An asset question that offers
   ten or fewer shows them all as buttons, each with its type and location, so you don't need to know what yours is
   called; with more, you search by name, number or serial.
-- **Approval** - ordered stages of approvers (a person, or everyone with a role in a department or in the requester's
-  own), any one or all of them; a decline ends it, and each decision may carry a comment.
+- **Approval** - ordered stages of approvers (a person, everyone with a role in a department or in the requester's
+  own, the requester's manager, or the manager of the requester's department), any one or all of them; a decline
+  ends it, and each decision may carry a comment. The two managers are whoever is set on the requester's user and
+  on their department when the stage opens; with none set there is nobody to ask, and the step fails saying so
+  until one is set and the step retried.
 - **Task** - creates an Orbit task in a department, with its type, priority (fixed, or from an urgency answer), title
   and description filled from earlier answers, due date (none, the day the task is created, or a date answer),
   assignees set in advance or none, and the forms' files copied to it; done when the task is.

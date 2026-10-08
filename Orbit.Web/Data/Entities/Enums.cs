@@ -146,12 +146,17 @@ public enum ApprovalRule
     All
 }
 
-/// <summary>Who an approver is (§6.20): a named person, everyone with a role in a department, or that role in the requester's department.</summary>
+/// <summary>
+/// Who an approver is (§6.20): a named person, everyone with a role in a department, that role in the requester's department, the
+/// requester's own manager, or the manager of the requester's department.
+/// </summary>
 public enum ApproverKind
 {
     Person,
     RoleInDepartment,
-    RoleInRequestersDepartment
+    RoleInRequestersDepartment,
+    RequestersManager,
+    RequestersDepartmentManager
 }
 
 /// <summary>Whom a task step's task is for (its requestee, §6.2.2): nobody, the requester, or the person a User field names.</summary>
@@ -397,6 +402,8 @@ public static class TaskStatusExtensions
         ApproverKind.Person => "A person",
         ApproverKind.RoleInDepartment => "Everyone with a role in a department",
         ApproverKind.RoleInRequestersDepartment => "Everyone with a role in the requester's department",
+        ApproverKind.RequestersManager => "The requester's manager",
+        ApproverKind.RequestersDepartmentManager => "The manager of the requester's department",
         _ => kind.ToString()
     };
 
