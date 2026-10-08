@@ -28,6 +28,8 @@ public class StartModel(RequestService requests, IOptions<AttachmentOptions> att
     public IReadOnlyDictionary<Guid, string> Labels { get; private set; } = new Dictionary<Guid, string>();
     /// <summary>What each Asset type field offers, for its list.</summary>
     public IReadOnlyDictionary<Guid, IReadOnlyList<RequestAssetTypeChoice>> AssetTypes { get; private set; } = new Dictionary<Guid, IReadOnlyList<RequestAssetTypeChoice>>();
+    /// <summary>The assets each Asset field lists as buttons; a field that isn't here searches.</summary>
+    public IReadOnlyDictionary<Guid, IReadOnlyList<RequestLookupItem>> AssetChoices { get; private set; } = new Dictionary<Guid, IReadOnlyList<RequestLookupItem>>();
     public string? GeneralError { get; private set; }
     public bool FilesDropped { get; private set; }
 
@@ -70,7 +72,9 @@ public class StartModel(RequestService requests, IOptions<AttachmentOptions> att
     {
         Flow = await requests.FlowAsync(id, ct);
         StartForm = RequestFlowRules.StartForm(Flow);
-        if (StartForm is not null) AssetTypes = await requests.AssetTypeChoicesAsync(Flow, StartForm, ct);
+        if (StartForm is null) return;
+        AssetTypes = await requests.AssetTypeChoicesAsync(Flow, StartForm, ct);
+        AssetChoices = await requests.AssetChoicesAsync(Flow, StartForm, ct);
     }
 
     /// <summary>After a refused post the pickers only have ids; their labels are looked up again so the chips show.</summary>

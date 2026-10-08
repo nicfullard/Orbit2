@@ -21,6 +21,8 @@ public class FormModel(RequestService requests, IOptions<AttachmentOptions> atta
     public IReadOnlyDictionary<Guid, string> Labels { get; private set; } = new Dictionary<Guid, string>();
     /// <summary>What each Asset type field offers, for its list.</summary>
     public IReadOnlyDictionary<Guid, IReadOnlyList<RequestAssetTypeChoice>> AssetTypes { get; private set; } = new Dictionary<Guid, IReadOnlyList<RequestAssetTypeChoice>>();
+    /// <summary>The assets each Asset field lists as buttons; a field that isn't here searches.</summary>
+    public IReadOnlyDictionary<Guid, IReadOnlyList<RequestLookupItem>> AssetChoices { get; private set; } = new Dictionary<Guid, IReadOnlyList<RequestLookupItem>>();
     public string? GeneralError { get; private set; }
     public bool FilesDropped { get; private set; }
 
@@ -62,5 +64,6 @@ public class FormModel(RequestService requests, IOptions<AttachmentOptions> atta
     {
         Step = await requests.FormStepAsync(id, ct);
         AssetTypes = await requests.AssetTypeChoicesAsync(Step.FlowStep.Flow, Step.FlowStep, ct);
+        AssetChoices = await requests.AssetChoicesAsync(Step.FlowStep.Flow, Step.FlowStep, ct);
     }
 }

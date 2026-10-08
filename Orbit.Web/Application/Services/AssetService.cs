@@ -148,29 +148,6 @@ public sealed class AssetService(ApplicationDbContext db, IActorProvider actors,
             AssetRules.MatchesScan(r.AssetNumber, r.SerialNumber, t))).ToList();
     }
 
-    /// <summary>
-    /// The assets the caller holds that they can see and that aren't disposed, by name - the choices of a request flow's Asset question
-    /// (§6.20). People hold a handful, so they are all listed rather than searched; <paramref name="take"/> is a safety cap.
-    /// </summary>
-    public async Task<IReadOnlyList<AssetPickerItem>> ListHeldAsync(int take = 50, CancellationToken ct = default)
-    {
-        var actor = await actors.GetAsync(ct);
-        if (actor.UserId is not Guid me) return [];
-        var rows = await Scoping.Assets(db.Assets.AsNoTracking(), actor)
-            .Where(a => a.Status != AssetStatus.Disposed && a.Assignments.Any(x => x.UserId == me))
-            .OrderBy(a => a.Name).ThenBy(a => a.AssetNumber).ThenBy(a => a.Id)
-            .Take(Math.Clamp(take, 1, 200))
-            .Select(a => new
-            {
-                a.Id, a.AssetNumber, a.Name, a.Status,
-                Type = a.AssetType.Name,
-                Location = a.AssetLocation != null ? a.AssetLocation.Name : null,
-                Holders = a.Assignments.OrderBy(x => x.User.DisplayName).Select(x => x.User.DisplayName).ToList()
-            })
-            .ToListAsync(ct);
-        return rows.Select(r => new AssetPickerItem(r.Id, r.AssetNumber, r.Name, r.Type, r.Location, r.Holders, r.Status, false)).ToList();
-    }
-
     /// <summary>An asset's number and name for a picker's chip - only when the caller can see it; null otherwise, or when there's no such asset.</summary>
     public async Task<AssetRef?> GetRefAsync(Guid id, CancellationToken ct = default)
     {

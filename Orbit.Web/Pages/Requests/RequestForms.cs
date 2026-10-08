@@ -1,6 +1,7 @@
 using Orbit.Application;
 using Orbit.Application.Models;
 using Orbit.Application.Requests;
+using Orbit.Application.Services;
 using Orbit.Data.Entities;
 
 namespace Orbit.Pages.Requests;
@@ -22,6 +23,8 @@ public sealed class RequestFormFieldsVm
     public required IReadOnlyDictionary<Guid, string> Labels { get; init; }
     /// <summary>What each Asset type field offers, by field, for its list.</summary>
     public required IReadOnlyDictionary<Guid, IReadOnlyList<RequestAssetTypeChoice>> AssetTypes { get; init; }
+    /// <summary>The assets each Asset field lists as buttons, by field; a field that isn't here offers too many to list, and searches.</summary>
+    public required IReadOnlyDictionary<Guid, IReadOnlyList<RequestLookupItem>> AssetChoices { get; init; }
     public required string LookupUrl { get; init; }
     public required AttachmentOptions Limits { get; init; }
     public bool FilesDropped { get; init; }

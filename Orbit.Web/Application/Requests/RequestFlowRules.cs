@@ -44,6 +44,8 @@ public static class RequestFlowRules
     public const int MaxTaskTitleLength = 300;
     /// <summary>A Choice with at most this many answers is shown as buttons, a longer one as a list.</summary>
     public const int ChoiceButtonsUpTo = 6;
+    /// <summary>An Asset field that offers the person at most this many assets lists them as buttons; with more, its picker searches.</summary>
+    public const int AssetButtonsUpTo = 10;
     /// <summary>The step key reserved for the request's own tokens ({{request.number}} and the rest).</summary>
     public const string RequestKey = "request";
 

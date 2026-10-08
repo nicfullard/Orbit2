@@ -3,8 +3,8 @@
 @using Orbit.Pages.Requests
 @model RequestFormFieldsVm
 @* A form step's fields (spec §6.20), one fieldset each - the wizard in requests.js shows them one at a time. Each posts under
-   Answers[fieldId].Value (text, number, date, choice, urgency) or Answers[fieldId].Id (a picker, or the asset type list), and an
-   Attachment field's files under files-{fieldId}. *@
+   Answers[fieldId].Value (text, number, date, choice, urgency) or Answers[fieldId].Id (a picker, the asset type list, or an Asset
+   field's buttons when it offers few enough to list), and an Attachment field's files under files-{fieldId}. *@
 @{
     var limits = Model.Limits;
 }
@@ -15,7 +15,8 @@
     var answer = Model.AnswerFor(f.Id);
     var error = Model.Errors.GetValueOrDefault(f.Id);
     var describedBy = string.Join(' ', new[] { f.HelpText is null ? null : $"help-{key}", $"error-{key}" }.OfType<string>());
-    var picker = f.FieldType is RequestFieldType.Asset or RequestFieldType.Project or RequestFieldType.User;
+    var listed = f.FieldType == RequestFieldType.Asset ? Model.AssetChoices.GetValueOrDefault(f.Id) : null;
+    var picker = listed is null && f.FieldType is RequestFieldType.Asset or RequestFieldType.Project or RequestFieldType.User;
     <fieldset class="request-question js-step" id="step-@key" data-has-error="@(error is null ? null : "true")"
               data-files="@(f.FieldType == RequestFieldType.Attachment ? "true" : null)"
               data-files-required="@(f.FieldType == RequestFieldType.Attachment && f.IsRequired ? "true" : null)"
@@ -105,6 +106,34 @@
                 }
                 <input type="file" class="form-control js-files" id="q-@key" name="files-@f.Id" multiple aria-describedby="@describedBy" aria-label="@f.Prompt" />
                 <div class="form-text">Up to @limits.MaxFilesPerUpload files, @limits.MaxFileSizeMb MB each.</div>
+                break;
+            case RequestFieldType.Asset when listed is not null:
+                @if (listed.Count == 0)
+                {
+                    <div class="form-text text-danger">@(f.PickerScope == RequestPickerScope.Held ? "No assets are assigned to you." : "No assets are offered here yet.")</div>
+                }
+                else
+                {
+                    <div class="request-choices @(listed.Count > 4 ? "request-choices-2" : "")">
+                        @foreach (var asset in listed)
+                        {
+                            var rid = $"q-{key}-{asset.Id:N}";
+                            var detail = string.Join(" · ", new[] { asset.Tag, asset.Detail }.Where(s => !string.IsNullOrEmpty(s)));
+                            <input type="radio" class="btn-check" name="Answers[@f.Id].Id" id="@rid" value="@asset.Id" autocomplete="off"
+                                   checked="@(asset.Id == answer.Id)" required="@f.IsRequired" aria-describedby="@describedBy" />
+                            <label class="btn btn-outline-secondary" for="@rid">
+                                <span class="fw-semibold js-choice-label">@asset.Name</span>
+                                @if (detail.Length > 0) { <span class="small">@detail</span> }
+                            </label>
+                        }
+                        @if (!f.IsRequired)
+                        {
+                            @* A radio can't be unticked: this one takes a pick back. It has no js-choice-label, so the review reads "No answer". *@
+                            <input type="radio" class="btn-check" name="Answers[@f.Id].Id" id="q-@key-none" value="" autocomplete="off" aria-describedby="@describedBy" />
+                            <label class="btn btn-outline-secondary" for="q-@key-none"><span class="text-muted">None of these</span></label>
+                        }
+                    </div>
+                }
                 break;
             case RequestFieldType.Asset:
             case RequestFieldType.Project:

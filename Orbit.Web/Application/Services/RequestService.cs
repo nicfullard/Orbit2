@@ -386,6 +386,27 @@ public sealed class RequestService(
         return result;
     }
 
+    /// <summary>
+    /// The assets a form's Asset fields list as buttons (§6.20), by field: every asset the field's scope offers the caller, by name, when
+    /// there are at most <see cref="RequestFlowRules.AssetButtonsUpTo"/> - none at all is such a list. A field whose scope offers more
+    /// isn't here: its picker searches instead.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<Guid, IReadOnlyList<RequestLookupItem>>> AssetChoicesAsync(RequestFlow flow, RequestFlowStep form, CancellationToken ct = default)
+    {
+        var actor = await actors.GetAsync(ct);
+        RequireSubmit(actor);
+        var result = new Dictionary<Guid, IReadOnlyList<RequestLookupItem>>();
+        foreach (var fields in form.Fields.Where(f => f.FieldType == RequestFieldType.Asset).GroupBy(f => f.PickerScope))
+        {
+            var offered = await AssetItemsAsync(OfferedAssets(fields.Key, flow.Category.DepartmentId, actor.UserId!.Value)
+                .OrderBy(a => a.Name).ThenBy(a => a.AssetNumber).ThenBy(a => a.Id)
+                .Take(RequestFlowRules.AssetButtonsUpTo + 1), ct);
+            if (offered.Count > RequestFlowRules.AssetButtonsUpTo) continue;
+            foreach (var field in fields) result[field.Id] = offered;
+        }
+        return result;
+    }
+
     /// <summary>The departments whose requests the caller may list, for the Department tab's filter.</summary>
     public async Task<IReadOnlyList<Department>> ManagedDepartmentsAsync(CancellationToken ct = default)
     {
@@ -417,21 +438,10 @@ public sealed class RequestService(
         switch (field.FieldType)
         {
             case RequestFieldType.Asset:
-                var assets = db.Assets.AsNoTracking().Where(a => a.Status != AssetStatus.Disposed);
-                assets = field.PickerScope switch
-                {
-                    RequestPickerScope.Held => assets.Where(a => a.Assignments.Any(x => x.UserId == me)),
-                    RequestPickerScope.Department => assets.Where(a => a.DepartmentId == department),
-                    _ => assets
-                };
-                var rows = await assets
+                return await AssetItemsAsync(OfferedAssets(field.PickerScope, department, me)
                     .Where(a => EF.Functions.ILike(a.Name, pattern) || (a.AssetNumber != null && EF.Functions.ILike(a.AssetNumber, pattern))
                         || (a.SerialNumber != null && EF.Functions.ILike(a.SerialNumber, pattern)))
-                    .OrderBy(a => a.Name).Take(n)
-                    .Select(a => new { a.Id, a.AssetNumber, a.Name, Type = a.AssetType.Name, Location = a.AssetLocation != null ? a.AssetLocation.Name : null, a.Status })
-                    .ToListAsync(ct);
-                return rows.Select(a => new RequestLookupItem(a.Id, AssetRules.Label(a.AssetNumber, a.Name), a.Type,
-                    string.Join(" · ", new[] { a.Location, a.Status == AssetStatus.Active ? null : a.Status.Label() }.OfType<string>()))).ToList();
+                    .OrderBy(a => a.Name).Take(n), ct);
             case RequestFieldType.Project:
                 var projects = db.Projects.AsNoTracking().Where(p => p.Status == ProjectStatus.Active || p.Status == ProjectStatus.OnHold);
                 if (field.PickerScope == RequestPickerScope.Department) projects = projects.Where(p => p.DepartmentId == department);
@@ -465,6 +475,28 @@ public sealed class RequestService(
         .Include(f => f.Steps).ThenInclude(s => s.Action).ThenInclude(a => a!.Parameters)
         .Include(f => f.Steps).ThenInclude(s => s.ActionInputs)
         .AsSplitQuery();
+
+    /// <summary>The assets an Asset field's scope offers a person (§6.20): the flow's department's, everyone's, or the ones they hold - never disposed ones.</summary>
+    private IQueryable<Asset> OfferedAssets(RequestPickerScope? scope, Guid department, Guid me)
+    {
+        var assets = db.Assets.AsNoTracking().Where(a => a.Status != AssetStatus.Disposed);
+        return scope switch
+        {
+            RequestPickerScope.Held => assets.Where(a => a.Assignments.Any(x => x.UserId == me)),
+            RequestPickerScope.Department => assets.Where(a => a.DepartmentId == department),
+            _ => assets
+        };
+    }
+
+    /// <summary>Assets as a form shows them, searched or listed: the label, the type, and the location with the status when it isn't Active.</summary>
+    private static async Task<IReadOnlyList<RequestLookupItem>> AssetItemsAsync(IQueryable<Asset> assets, CancellationToken ct)
+    {
+        var rows = await assets
+            .Select(a => new { a.Id, a.AssetNumber, a.Name, Type = a.AssetType.Name, Location = a.AssetLocation != null ? a.AssetLocation.Name : null, a.Status })
+            .ToListAsync(ct);
+        return rows.Select(a => new RequestLookupItem(a.Id, AssetRules.Label(a.AssetNumber, a.Name), a.Type,
+            string.Join(" · ", new[] { a.Location, a.Status == AssetStatus.Active ? null : a.Status.Label() }.OfType<string>()))).ToList();
+    }
 
     private static void Order(RequestFlow flow)
     {
