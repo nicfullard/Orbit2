@@ -1,0 +1,21 @@
+@model NagiosInstance
+@* How an instance last answered (spec §6.21): off, never checked, failing with the reason, or well with when. *@
+@if (!Model.Enabled)
+{
+    <span class="badge text-bg-secondary">Off</span>
+}
+else if (Model.LastError is not null)
+{
+    <span class="badge text-bg-danger">Failing</span>
+    <div class="small text-danger">@Model.LastError</div>
+    @if (Model.LastSucceededAt is DateTime good) { <div class="small text-muted">Last read @Ui.Ago(good)</div> }
+}
+else if (Model.LastSucceededAt is DateTime read)
+{
+    <span class="badge text-bg-success">OK</span>
+    <span class="small text-muted">@Ui.Ago(read) · every @Model.CheckIntervalMinutes min</span>
+}
+else
+{
+    <span class="badge text-bg-light border">Not checked yet</span>
+}

@@ -1,5 +1,6 @@
 using Orbit.Agent;
 using Orbit.Agent.Ldap;
+using Orbit.Agent.Nagios;
 using Orbit.Agent.Scripting;
 using Orbit.Scripting;
 
@@ -43,6 +44,7 @@ builder.Services.AddSingleton(config);
 builder.Services.AddSingleton<LdapDirectory>();
 builder.Services.AddSingleton<ScriptHost>();
 builder.Services.AddSingleton<ScriptRunner>();
+builder.Services.AddSingleton<NagiosClient>();
 builder.Services.AddHostedService<AgentWorker>();
 
 await builder.Build().RunAsync();

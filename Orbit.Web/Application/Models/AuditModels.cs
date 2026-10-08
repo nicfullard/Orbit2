@@ -23,6 +23,8 @@ public static class AuditEntity
     public const string RequestFlow = "RequestFlow";
     public const string RequestAction = "RequestAction";
     public const string Request = "Request";
+    /// <summary>A Nagios instance's settings (spec §6.21). What a check saw is not audited; the tasks and notes it wrote are, on the task.</summary>
+    public const string NagiosInstance = "NagiosInstance";
 }
 
 public static class AuditAction

@@ -1,0 +1,250 @@
+@page "{id:guid?}"
+@model Orbit.Pages.Admin.Nagios.EditModel
+@using Orbit.Application.Nagios
+@{
+    var n = Model.Item;
+    var f = Model.Form;
+    ViewData["Title"] = n is null ? "New Nagios instance" : n.Name;
+    var plainHttp = f.BaseUrl?.TrimStart().StartsWith("http://", StringComparison.OrdinalIgnoreCase) == true;
+    var assigneePicker = new Orbit.Pages.Assets.PersonPickerVm
+    {
+        Id = "assignee-picker", FieldName = "Form.AssigneeIds", SearchUrl = Url.Page("/Admin/Nagios/Edit", "People")!,
+        Selected = Model.SelectedAssignees, Browse = true, MarkInactive = true, EmptyText = "Nobody - the tasks wait unassigned in the department",
+        Placeholder = "Type a name, or click to choose...", Label = "Search for someone to assign the tasks to",
+        DepartmentSource = "[name='Form.DepartmentId']"
+    };
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Admin/Nagios/Index">Nagios</a></li>
+        @if (n is not null) { <li class="breadcrumb-item"><a asp-page="/Admin/Nagios/Details" asp-route-id="@n.Id">@n.Name</a></li> }
+        <li class="breadcrumb-item active" aria-current="page">@(n is null ? "New instance" : "Settings")</li>
+    </ol>
+</nav>
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <h1 class="h3 mb-0">@(n?.Name ?? "New Nagios instance")</h1>
+    @if (n is not null)
+    {
+        <form method="post" asp-page-handler="Delete" asp-route-id="@n.Id" data-confirm="@($"Delete the Nagios instance \"{n.Name}\"? Orbit stops watching it and forgets its incidents. The tasks it raised are kept.")">
+            <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
+        </form>
+    }
+</div>
+
+@if (Model.SaveError is not null) { <div class="alert alert-danger py-2">@Model.SaveError</div> }
+
+@if (Model.Test is { } test)
+{
+    <div class="alert @(test.Ok ? "alert-success" : "alert-danger")">
+        <div class="fw-semibold mb-1">@(test.Ok ? "Connection test passed" : "Connection test failed")</div>
+        @if (!test.Ok) { <div>@test.Error</div> }
+        else
+        {
+            <div>Nagios Core @(test.Version ?? "(version not reported)") answered in @test.DurationMs ms: @test.Hosts hosts, @test.Services services, @test.Decisions.Count in a problem state.</div>
+        }
+        <div class="small mt-1">Nothing was saved or raised - this tested the values in the form below.</div>
+    </div>
+    @if (test.Ok && test.Decisions.Count > 0)
+    {
+        var raising = test.Decisions.Count(d => d.Verdict is NagiosVerdict.Raise or NagiosVerdict.Join);
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">What a check would do now <span class="text-muted fw-normal">(@raising @(raising == 1 ? "task" : "tasks") raised or joined)</span></div>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light"><tr><th>Host</th><th>Service</th><th>State</th><th>Since</th><th>With these settings</th></tr></thead>
+                    <tbody>
+                        @foreach (var d in test.Decisions)
+                        {
+                            var acts = d.Verdict is NagiosVerdict.Raise or NagiosVerdict.Join;
+                            <tr class="@(acts ? "table-warning" : "")">
+                                <td>@d.Problem.Host</td>
+                                <td>@(d.Problem.IsService ? d.Problem.Service : "-")</td>
+                                <td><span class="badge @Ui.NagiosStateBadge(d.Problem.State)">@d.Problem.State.Label()</span></td>
+                                <td class="text-nowrap small">@Ui.When(d.Problem.Since)</td>
+                                <td class="small @(acts ? "fw-semibold" : "text-muted")">@NagiosText.Verdict(d, Ui.When)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+}
+
+<form method="post" asp-route-id="@n?.Id">
+    <div class="row g-3">
+        <div class="col-lg-8">
+            <div class="card mb-3">
+                <div class="card-header fw-semibold">The Nagios instance</div>
+                <div class="card-body">
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" role="switch" id="Form_Enabled" name="Form.Enabled" value="true" checked="@f.Enabled" />
+                        <label class="form-check-label" for="Form_Enabled">Check this instance and raise tasks</label>
+                        <div class="form-text">While off, nothing is checked. Test connection works either way.</div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-5">
+                            <label class="form-label" for="Form_Name">Name</label>
+                            <input class="form-control" id="Form_Name" name="Form.Name" value="@f.Name" maxlength="@NagiosInstanceRules.MaxNameLength" required placeholder="Head office Nagios" />
+                        </div>
+                        <div class="col-md-7">
+                            <label class="form-label" for="Form_BaseUrl">Address</label>
+                            <input class="form-control" id="Form_BaseUrl" name="Form.BaseUrl" value="@f.BaseUrl" maxlength="500" required placeholder="http://nagios.example/nagios/" />
+                            <div class="form-text">The address you open Nagios with, as reachable from the agent's machine, not from Orbit.</div>
+                            @if (plainHttp) { <div class="form-text text-warning-emphasis">Over plain http the password crosses your network unencrypted.</div> }
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label" for="Form_Username">Username</label>
+                            <input class="form-control" id="Form_Username" name="Form.Username" value="@f.Username" maxlength="@NagiosInstanceRules.MaxUsernameLength" required autocomplete="off" />
+                            <div class="form-text">A Nagios user that may see every host and service. Orbit only reads, so give it no command rights.</div>
+                        </div>
+                        <div class="col-md-7">
+                            <label class="form-label" for="Form_Password">Password</label>
+                            <input type="password" class="form-control" id="Form_Password" name="Form.Password" maxlength="@NagiosInstanceRules.MaxPasswordLength" autocomplete="new-password" placeholder="@(Model.HasPassword ? "(stored - leave blank to keep it)" : "")" />
+                            <div class="form-text">Stored encrypted and never shown again.</div>
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label" for="Form_AgentId">Orbit Agent</label>
+                            <select class="form-select" id="Form_AgentId" name="Form.AgentId" required>
+                                <option value="">Choose...</option>
+                                @foreach (var c in Model.Agents)
+                                {
+                                    <option value="@c.Agent.Id" selected="@(c.Agent.Id == f.AgentId)">@c.Agent.Name (@(c.Online ? c.QueriesNagios ? "connected" : "connected, too old to read Nagios" : "not connected"))</option>
+                                }
+                            </select>
+                            <div class="form-text">The agent that can reach this address. Only this one is asked.</div>
+                        </div>
+                        <div class="col-md-7 d-flex align-items-center">
+                            <div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="Form_ValidateCertificate" name="Form.ValidateCertificate" value="true" checked="@f.ValidateCertificate" />
+                                    <label class="form-check-label" for="Form_ValidateCertificate">Validate the server certificate (https)</label>
+                                </div>
+                                <div class="form-text">Untick only for a certificate the agent's machine can't be made to trust.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header fw-semibold">What raises a task</div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="fw-semibold small mb-1">A host that is</div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="Form_RaiseHostDown" name="Form.RaiseHostDown" value="true" checked="@f.RaiseHostDown" />
+                                <label class="form-check-label" for="Form_RaiseHostDown">Down</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="Form_RaiseHostUnreachable" name="Form.RaiseHostUnreachable" value="true" checked="@f.RaiseHostUnreachable" />
+                                <label class="form-check-label" for="Form_RaiseHostUnreachable">Unreachable <span class="text-muted">(a parent host is down)</span></label>
+                            </div>
+                            <label class="form-label mt-2 mb-0" for="Form_HostThresholdMinutes">for longer than (minutes)</label>
+                            <input type="number" class="form-control" id="Form_HostThresholdMinutes" name="Form.HostThresholdMinutes" value="@f.HostThresholdMinutes" min="0" max="@NagiosInstanceRules.MaxThresholdMinutes" required />
+                        </div>
+                        <div class="col-md-6">
+                            <div class="fw-semibold small mb-1">A service that is</div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="Form_RaiseServiceCritical" name="Form.RaiseServiceCritical" value="true" checked="@f.RaiseServiceCritical" />
+                                <label class="form-check-label" for="Form_RaiseServiceCritical">Critical</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="Form_RaiseServiceWarning" name="Form.RaiseServiceWarning" value="true" checked="@f.RaiseServiceWarning" />
+                                <label class="form-check-label" for="Form_RaiseServiceWarning">Warning</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="Form_RaiseServiceUnknown" name="Form.RaiseServiceUnknown" value="true" checked="@f.RaiseServiceUnknown" />
+                                <label class="form-check-label" for="Form_RaiseServiceUnknown">Unknown</label>
+                            </div>
+                            <label class="form-label mt-2 mb-0" for="Form_ServiceThresholdMinutes">for longer than (minutes)</label>
+                            <input type="number" class="form-control" id="Form_ServiceThresholdMinutes" name="Form.ServiceThresholdMinutes" value="@f.ServiceThresholdMinutes" min="0" max="@NagiosInstanceRules.MaxThresholdMinutes" required />
+                        </div>
+                        <div class="col-12">
+                            <div class="form-text mt-0">
+                                Only once Nagios has finished rechecking (a hard state). A service is never raised while its host is down - the host is.
+                                A problem that already has a task is not raised again, however long it lasts.
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="Form_SkipScheduledDowntime" name="Form.SkipScheduledDowntime" value="true" checked="@f.SkipScheduledDowntime" />
+                                <label class="form-check-label" for="Form_SkipScheduledDowntime">Not while in scheduled downtime</label>
+                            </div>
+                            <div class="form-text">Its own, or its host's. When the downtime ends the threshold starts again.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="Form_SkipAcknowledged" name="Form.SkipAcknowledged" value="true" checked="@f.SkipAcknowledged" />
+                                <label class="form-check-label" for="Form_SkipAcknowledged">Not while acknowledged in Nagios</label>
+                            </div>
+                            <div class="form-text">Someone there has already taken it on.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="Form_CheckIntervalMinutes">Check every (minutes)</label>
+                            <input type="number" class="form-control" id="Form_CheckIntervalMinutes" name="Form.CheckIntervalMinutes" value="@f.CheckIntervalMinutes" min="1" max="@NagiosInstanceRules.MaxCheckIntervalMinutes" required />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="Form_MaxNewTasksPerCheck">Most new tasks in one check</label>
+                            <input type="number" class="form-control" id="Form_MaxNewTasksPerCheck" name="Form.MaxNewTasksPerCheck" value="@f.MaxNewTasksPerCheck" min="1" max="@NagiosInstanceRules.MaxNewTasksPerCheckLimit" required />
+                            <div class="form-text">A brake for a wide outage: the rest are raised on the following checks, longest down first.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header fw-semibold">Where the tasks go</div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label" for="Form_DepartmentId">Department</label>
+                            <select class="form-select" id="Form_DepartmentId" name="Form.DepartmentId" required>
+                                <option value="">Choose...</option>
+                                @foreach (var d in Model.Departments)
+                                {
+                                    <option value="@d.Id" selected="@(d.Id == f.DepartmentId)">@d.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="Form_TaskPriority">Priority</label>
+                            <select class="form-select" id="Form_TaskPriority" name="Form.TaskPriority" asp-items="Ui.EnumItems<TaskPriority>(f.TaskPriority)"></select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label" for="assignee-picker-input">Assignees</label>
+                            <partial name="/Pages/Assets/_PersonPicker.cshtml" model="assigneePicker" />
+                            <div class="form-text">Each raised task is assigned to these people, as far as they are still active.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-flex gap-2 mb-3">
+                <button type="submit" class="btn btn-primary">Save</button>
+                <button type="submit" class="btn btn-outline-primary" asp-page-handler="Test" asp-route-id="@n?.Id">Test connection</button>
+                <a class="btn btn-outline-secondary" asp-page="@(n is null ? "/Admin/Nagios/Index" : "/Admin/Nagios/Details")" asp-route-id="@n?.Id">Cancel</a>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card mb-3">
+                <div class="card-header fw-semibold">Test connection</div>
+                <div class="card-body small text-muted">
+                    <p>Asks the chosen agent to read Nagios with the values in this form, saved or not, and lists every problem Nagios reports with what a check would do about it under these settings.</p>
+                    <p class="mb-0">Use it before switching an instance on: problems that are already past their threshold are raised at the first check.</p>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header fw-semibold">How it works</div>
+                <div class="card-body small text-muted">
+                    <p>Orbit can't reach Nagios itself. An <a asp-page="/Admin/Agents/Index">Orbit Agent</a> (version 1.3 or later) inside your network reads Nagios' status and hands it to Orbit; the address and sign-in above are sent to it with each check.</p>
+                    <p>A host or service that is down opens one incident, which raises one task once it has lasted past its threshold. While that incident lasts - and while the task stays open - nothing more is raised for it.</p>
+                    <p class="mb-0">When Nagios reports it well again Orbit adds a note to the task and leaves it open for someone to close.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>

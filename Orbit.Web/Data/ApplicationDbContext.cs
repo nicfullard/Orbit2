@@ -51,6 +51,9 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<RequestStep> RequestSteps => Set<RequestStep>();
     public DbSet<RequestFormAnswer> RequestFormAnswers => Set<RequestFormAnswer>();
     public DbSet<RequestApproval> RequestApprovals => Set<RequestApproval>();
+    public DbSet<NagiosInstance> NagiosInstances => Set<NagiosInstance>();
+    public DbSet<NagiosInstanceAssignee> NagiosInstanceAssignees => Set<NagiosInstanceAssignee>();
+    public DbSet<NagiosIncident> NagiosIncidents => Set<NagiosIncident>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -657,6 +660,49 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
                 .HasForeignKey(a => a.ApproverId).OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(a => new { a.StepId, a.StageOrder, a.ApproverId }).IsUnique();
             b.HasIndex(a => new { a.ApproverId, a.Decision });
+        });
+
+        // --- Nagios monitoring (§6.21). An instance's incidents die with it; the tasks they raised stay.
+        builder.Entity<NagiosInstance>(b =>
+        {
+            // Unique ignoring case: the index is on lower("Name"), which EF cannot express, so the migration creates it by hand.
+            b.Property(n => n.Name).HasMaxLength(100).IsRequired();
+            b.Property(n => n.BaseUrl).HasMaxLength(500).IsRequired();
+            b.Property(n => n.Username).HasMaxLength(100).IsRequired();
+            b.Property(n => n.LastError).HasMaxLength(1000);
+            // An agent that is deleted leaves the instance unchecked until another is chosen.
+            b.HasOne(n => n.Agent).WithMany()
+                .HasForeignKey(n => n.AgentId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(n => n.Department).WithMany()
+                .HasForeignKey(n => n.DepartmentId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(n => n.DepartmentId);
+        });
+
+        builder.Entity<NagiosInstanceAssignee>(b =>
+        {
+            b.HasKey(a => new { a.NagiosInstanceId, a.UserId });
+            b.HasOne(a => a.Instance).WithMany(n => n.Assignees)
+                .HasForeignKey(a => a.NagiosInstanceId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(a => a.User).WithMany()
+                .HasForeignKey(a => a.UserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<NagiosIncident>(b =>
+        {
+            b.Property(i => i.HostName).HasMaxLength(255).IsRequired();
+            b.Property(i => i.ServiceDescription).HasMaxLength(255).IsRequired();
+            b.Property(i => i.Output).HasMaxLength(1000);
+            b.HasOne(i => i.Instance).WithMany(n => n.Incidents)
+                .HasForeignKey(i => i.NagiosInstanceId).OnDelete(DeleteBehavior.Cascade);
+            // Tasks are closed, never deleted, so the incident keeps pointing at the one it raised.
+            b.HasOne(i => i.Task).WithMany()
+                .HasForeignKey(i => i.TaskId).OnDelete(DeleteBehavior.Restrict);
+            // One open incident per host or service: the guarantee behind "one task per down event".
+            b.HasIndex(i => new { i.NagiosInstanceId, i.HostName, i.ServiceDescription }).IsUnique()
+                .HasFilter("\"ResolvedAt\" IS NULL").HasDatabaseName("IX_NagiosIncidents_Open");
+            b.HasIndex(i => new { i.NagiosInstanceId, i.ResolvedAt });
+            b.HasIndex(i => i.TaskId);
+            b.Ignore(i => i.IsService);
         });
 
         // Store every enum as its name so the database is readable and filterable in SQL.

@@ -14,6 +14,18 @@ public sealed class JobOptions
     public DueDateNotificationJobOptions DueDateNotifications { get; set; } = new();
     public ClockSweepJobOptions ClockSweep { get; set; } = new();
     public RequestActionJobOptions RequestActions { get; set; } = new();
+    public NagiosJobOptions Nagios { get; set; } = new();
+}
+
+/// <summary>
+/// Schedule for the Quartz.NET job that checks the Nagios instances (§6.21). It only decides how often Orbit looks for an instance
+/// that is due: how often each instance is checked is its own setting, in minutes.
+/// </summary>
+public sealed class NagiosJobOptions
+{
+    public bool Enabled { get; set; } = true;
+    /// <summary>Quartz cron expression (seconds first). Default: every minute.</summary>
+    public string Cron { get; set; } = "0 * * * * ?";
 }
 
 /// <summary>
@@ -90,6 +102,19 @@ public sealed class AgentOptions
     public int DirectoryListTimeoutSeconds { get; set; } = 45;
     /// <summary>How long a registration token stays redeemable after it is shown to the admin.</summary>
     public int RegistrationTokenLifetimeMinutes { get; set; } = 60;
+}
+
+/// <summary>Nagios monitoring (spec §6.21). The instances and their thresholds are data, edited under Admin &gt; Nagios.</summary>
+public sealed class NagiosOptions
+{
+    public const string Section = "Nagios";
+    /// <summary>How long an agent may spend reading one instance's status. Orbit waits ten seconds longer for its answer.</summary>
+    public int QueryTimeoutSeconds { get; set; } = 30;
+    /// <summary>
+    /// A check is discarded when Nagios last updated its status data longer ago than this: the daemon has probably stopped, and
+    /// acting on what it last knew would raise and resolve the wrong things. Raise it where status_update_interval is long.
+    /// </summary>
+    public int StaleAfterSeconds { get; set; } = 300;
 }
 
 /// <summary>Sign-in hardening (spec §8.3). Orbit is on the internet and, for directory users, is a door onto Active Directory.</summary>

@@ -1022,6 +1022,199 @@ namespace Orbit.Migrations
                     b.ToTable("LdapSettings");
                 });
 
+            modelBuilder.Entity("Orbit.Data.Entities.NagiosIncident", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ClockFrom")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("HostName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<DateTime?>("LastOkAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("LastSeenAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("NagiosInstanceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("OpenedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Output")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime>("ProblemSince")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Resolution")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ServiceDescription")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid?>("TaskId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TaskId");
+
+                    b.HasIndex("NagiosInstanceId", "ResolvedAt");
+
+                    b.HasIndex("NagiosInstanceId", "HostName", "ServiceDescription")
+                        .IsUnique()
+                        .HasDatabaseName("IX_NagiosIncidents_Open")
+                        .HasFilter("\"ResolvedAt\" IS NULL");
+
+                    b.ToTable("NagiosIncidents");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.NagiosInstance", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("AgentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BaseUrl")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int>("CheckIntervalMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("DepartmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("HeldBack")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("HostThresholdMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("LastAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime?>("LastQueryTime")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("LastSucceededAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("MaxNewTasksPerCheck")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("PasswordProtected")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("RaiseHostDown")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("RaiseHostUnreachable")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("RaiseServiceCritical")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("RaiseServiceUnknown")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("RaiseServiceWarning")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("ServiceThresholdMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("SkipAcknowledged")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("SkipScheduledDowntime")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("TaskPriority")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<bool>("ValidateCertificate")
+                        .HasColumnType("boolean");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AgentId");
+
+                    b.HasIndex("DepartmentId");
+
+                    b.ToTable("NagiosInstances");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.NagiosInstanceAssignee", b =>
+                {
+                    b.Property<Guid>("NagiosInstanceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("NagiosInstanceId", "UserId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("NagiosInstanceAssignees");
+                });
+
             modelBuilder.Entity("Orbit.Data.Entities.NumberCounter", b =>
                 {
                     b.Property<string>("Prefix")
@@ -2512,6 +2705,61 @@ namespace Orbit.Migrations
                     b.Navigation("RunBy");
                 });
 
+            modelBuilder.Entity("Orbit.Data.Entities.NagiosIncident", b =>
+                {
+                    b.HasOne("Orbit.Data.Entities.NagiosInstance", "Instance")
+                        .WithMany("Incidents")
+                        .HasForeignKey("NagiosInstanceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Orbit.Data.Entities.TaskItem", "Task")
+                        .WithMany()
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Instance");
+
+                    b.Navigation("Task");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.NagiosInstance", b =>
+                {
+                    b.HasOne("Orbit.Data.Entities.Agent", "Agent")
+                        .WithMany()
+                        .HasForeignKey("AgentId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Orbit.Data.Entities.Department", "Department")
+                        .WithMany()
+                        .HasForeignKey("DepartmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Agent");
+
+                    b.Navigation("Department");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.NagiosInstanceAssignee", b =>
+                {
+                    b.HasOne("Orbit.Data.Entities.NagiosInstance", "Instance")
+                        .WithMany("Assignees")
+                        .HasForeignKey("NagiosInstanceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Orbit.Data.Entities.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Instance");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("Orbit.Data.Entities.Project", b =>
                 {
                     b.HasOne("Orbit.Data.Entities.Department", "Department")
@@ -3165,6 +3413,13 @@ namespace Orbit.Migrations
                     b.Navigation("Tasks");
 
                     b.Navigation("Users");
+                });
+
+            modelBuilder.Entity("Orbit.Data.Entities.NagiosInstance", b =>
+                {
+                    b.Navigation("Assignees");
+
+                    b.Navigation("Incidents");
                 });
 
             modelBuilder.Entity("Orbit.Data.Entities.Project", b =>

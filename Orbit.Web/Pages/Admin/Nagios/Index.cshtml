@@ -1,0 +1,70 @@
+@page
+@model Orbit.Pages.Admin.Nagios.IndexModel
+@{
+    ViewData["Title"] = "Nagios";
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div>
+        <h1 class="h3 mb-1">Nagios</h1>
+        <div class="text-muted small">
+            Orbit watches these Nagios Core instances through an <a asp-page="/Admin/Agents/Index">Orbit Agent</a> inside your network, and raises a
+            task for each host or service that stays down longer than the instance allows. One down event raises one task, and Orbit notes on
+            it when Nagios reports it well again. Orbit only reads Nagios; it changes nothing there.
+        </div>
+    </div>
+    <a class="btn btn-primary btn-sm" asp-page="/Admin/Nagios/Edit">New instance</a>
+</div>
+
+<div class="card">
+    @if (Model.Items.Count == 0)
+    {
+        <div class="card-body text-muted fst-italic">No Nagios instances yet.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Instance</th>
+                        <th>Last check</th>
+                        <th>Problems</th>
+                        <th class="d-none d-md-table-cell">Agent</th>
+                        <th class="d-none d-md-table-cell">Tasks go to</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in Model.Items)
+                    {
+                        var n = item.Instance;
+                        <tr>
+                            <td>
+                                <a asp-page="/Admin/Nagios/Details" asp-route-id="@n.Id" class="fw-semibold text-decoration-none">@n.Name</a>
+                                <div class="small text-muted">@n.BaseUrl</div>
+                            </td>
+                            <td>
+                                <partial name="_Health" model="n" />
+                            </td>
+                            <td class="small">
+                                @if (item.OpenIncidents == 0) { <span class="text-muted">none</span> }
+                                else { <text>@item.Raised with a task<span class="text-muted"> · @(item.OpenIncidents - item.Raised) watched</span></text> }
+                                @if (n.HeldBack > 0) { <div class="text-warning-emphasis">@n.HeldBack held back</div> }
+                            </td>
+                            <td class="d-none d-md-table-cell small">
+                                @if (n.Agent is null) { <span class="text-danger">none chosen</span> }
+                                else
+                                {
+                                    <span>@n.Agent.Name</span>
+                                    @if (!item.AgentOnline) { <span class="badge text-bg-danger ms-1">Offline</span> }
+                                    else if (!item.AgentQueriesNagios) { <span class="badge text-bg-warning ms-1" title="Update the agent to version 1.3 or later">Too old</span> }
+                                }
+                            </td>
+                            <td class="d-none d-md-table-cell small">@n.Department.Name</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>

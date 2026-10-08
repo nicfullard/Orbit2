@@ -71,16 +71,23 @@ Razor Pages and MCP tools are thin. Both call the same scoped services in `Orbit
 - **Entities/migrations:** every enum is stored as its name (a convention at the end of
   `ApplicationDbContext.OnModelCreating`), so raw SQL uses `'Todo'`, not `0`. Recent migrations were tested on an
   empty DB and on a DB at the previous migration, forward, back (`Down`) and forward again (spec §13 item 37).
-- **Pure rules** (`Application/Scheduling/*`, `Application/Assets/*Rules`, `RoleRules`, `DependencyRules`,
-  `DirectoryImportRules`) have no DB access so they can be unit-tested. Put new domain logic there when it can be
+- **Pure rules** (`Application/Scheduling/*`, `Application/Assets/*Rules`, `Application/Nagios/*`, `RoleRules`,
+  `DependencyRules`, `DirectoryImportRules`) have no DB access so they can be unit-tested. Put new domain logic there when it can be
   separated. Tests cite the spec's acceptance IDs (e.g. `AST-005`) in their doc comments.
 - The critical path analysis is stored and marked stale by a hash of its inputs (`ScheduleFingerprint`), not by
   write hooks. A new field that affects scheduling must be added to the fingerprint.
+- **A job that writes tasks** (`RecurrenceService`, `NagiosMonitor`) builds the `TaskItem` itself as `Actor.System`:
+  `TaskService` and `CommentService` read `IActorProvider`, which throws outside an HTTP request. A row with no
+  author or creator is shown as *System*; Claude's writes carry the synthetic Claude user, never null.
+- **An agent command** is a method and capability in `Orbit.Agents.Contracts/AgentProtocol.cs`, a handler and `Hello`
+  entry in `Orbit.Agent/AgentWorker.cs`, and a dispatcher in the web app that asks only agents announcing the
+  capability. Bump the agent's `<Version>`; deployed agents are updated rarely, so keep the logic in the web app.
 
 ## Spec and documentation conventions
 
 - Code comments and docs cite spec sections (`§6.5` roles and access, `§6.15` subtasks/dependencies, `§6.17` critical
-  path, `§6.19` assets, `§7` MCP, `§8` auth). Read the relevant section before changing behaviour.
+  path, `§6.19` assets, `§6.20` requests, `§6.21` Nagios monitoring, `§7` MCP, `§8` auth). Read the relevant section
+  before changing behaviour.
 - A feature change updates `orbit-spec.md` along with the code: the functional section, a numbered entry in
   **§13 Decisions Log** (what was decided and why) and a step in **§14 Suggested Build Order**. User-visible changes
   also go in `README.md`.

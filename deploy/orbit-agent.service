@@ -13,7 +13,8 @@ SyslogIdentifier=orbit-agent
 User=orbit-agent
 Group=orbit-agent
 
-# The agent needs outbound HTTPS to Orbit and LDAP(S) to the directory - nothing inbound, and no settings beyond
+# The agent needs outbound HTTPS to Orbit, LDAP(S) to the directory and HTTP(S) to any Nagios instance it reads -
+# nothing inbound, and no settings beyond
 # /opt/orbit-agent/agent.json, which 'Orbit.Agent configure' writes (mode 600). Run configure as this same user:
 #   sudo -u orbit-agent /opt/orbit-agent/Orbit.Agent configure --url https://orbit.example.com --token <token>
 # If outbound traffic must go through a proxy, uncomment:

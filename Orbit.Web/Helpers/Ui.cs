@@ -44,6 +44,7 @@ public static class Ui
         TaskSource.Api => "badge-claude",
         TaskSource.Recurring => "text-bg-light border",
         TaskSource.Request => "bg-info-subtle text-info-emphasis border",
+        TaskSource.Nagios => "bg-danger-subtle text-danger-emphasis border",
         _ => "text-bg-light border"
     };
 
@@ -52,7 +53,16 @@ public static class Ui
         TaskSource.Api => "Claude",
         TaskSource.Recurring => "Recurring",
         TaskSource.Request => "Request",
+        TaskSource.Nagios => "Nagios",
         _ => "Manual"
+    };
+
+    /// <summary>A Nagios problem state (§6.21), in Nagios' own colours: red for down and critical, amber for warning.</summary>
+    public static string NagiosStateBadge(NagiosProblemState s) => s switch
+    {
+        NagiosProblemState.Down or NagiosProblemState.Critical => "text-bg-danger",
+        NagiosProblemState.Warning => "text-bg-warning",
+        _ => "text-bg-secondary"
     };
 
     public static string RequestStatusBadge(RequestStatus s) => s switch
@@ -165,8 +175,12 @@ public static class Ui
     public static string Truncate(string? s, int max) =>
         string.IsNullOrEmpty(s) ? string.Empty : s.Length <= max ? s : s[..max].TrimEnd() + "...";
 
+    /// <summary>
+    /// Who wrote or created something. Nobody means Orbit itself - a job such as the recurring-task generator or the Nagios
+    /// monitor (§6.21); what Claude writes over MCP is the synthetic Claude user's, never nobody's.
+    /// </summary>
     public static string AuthorName(ApplicationUser? user) =>
-        user is null ? "Claude" : user.IsSystemAccount ? "Claude" : user.DisplayName;
+        user is null ? "System" : user.IsSystemAccount ? "Claude" : user.DisplayName;
 
     public static string ActionLabel(string action) => action switch
     {

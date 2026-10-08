@@ -21,7 +21,7 @@ public class IndexModel(AuditService audit, DepartmentService departments, IActo
     public bool CanFilterDepartments { get; private set; }
     public static readonly string[] EntityTypes =
         [AuditEntity.Task, AuditEntity.Project, AuditEntity.Sprint, AuditEntity.RecurringTaskDefinition, AuditEntity.Department, AuditEntity.User, AuditEntity.Role, AuditEntity.ApiKey,
-         AuditEntity.Request, AuditEntity.RequestFlow, AuditEntity.RequestCategory, AuditEntity.RequestAction];
+         AuditEntity.Request, AuditEntity.RequestFlow, AuditEntity.RequestCategory, AuditEntity.RequestAction, AuditEntity.NagiosInstance];
 
     public async Task OnGetAsync(CancellationToken ct)
     {

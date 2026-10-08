@@ -43,7 +43,7 @@ public sealed class ReportingService(ApplicationDbContext db, IActorProvider act
             .ToListAsync(ct);
         var names = await NamesAsync(rows.Select(r => r.UserId), ct);
         return new PersonCountReport(
-            rows.Select(r => new PersonCountRow(r.UserId, Name(r.UserId, names, "System (recurring)"), r.Count))
+            rows.Select(r => new PersonCountRow(r.UserId, Name(r.UserId, names, "System"), r.Count))
                 .OrderByDescending(r => r.Count).ThenBy(r => r.Name).ToList(),
             rows.Sum(r => r.Count));
     }

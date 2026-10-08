@@ -355,7 +355,7 @@
     <div class="card-body">
         @foreach (var c in Model.Comments)
         {
-            var isClaude = c.Author is null || c.Author.IsSystemAccount;
+            var isClaude = c.Author is { IsSystemAccount: true };
             <div class="border-bottom pb-2 mb-2">
                 <div class="small">
                     <span class="fw-semibold">@Ui.AuthorName(c.Author)</span>

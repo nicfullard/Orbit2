@@ -8,7 +8,7 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
     <div>
         <h1 class="h3 mb-0">Agents</h1>
-        <div class="text-muted small">An Orbit Agent runs inside your network and connects out to Orbit, so Orbit can check sign-ins against your directory (Active Directory / LDAP) without any inbound firewall ports. Agents hold no settings of their own - those live under <a asp-page="/Admin/Directory/Index">Directory</a>.</div>
+        <div class="text-muted small">An Orbit Agent runs inside your network and connects out to Orbit, so Orbit can reach what it otherwise couldn't - check sign-ins against your directory (Active Directory / LDAP), run request actions, read Nagios - without any inbound firewall ports. Agents hold no settings of their own: those live under <a asp-page="/Admin/Directory/Index">Directory</a> and <a asp-page="/Admin/Nagios/Index">Nagios</a>.</div>
     </div>
     <a class="btn btn-primary btn-sm" asp-page="/Admin/Agents/Create">New agent</a>
 </div>
@@ -57,7 +57,7 @@
                                     }
                                     @if (a.Status == AgentStatus.Active)
                                     {
-                                        <form method="post" asp-page-handler="Revoke" asp-route-id="@a.Id" class="d-inline" data-confirm="Revoke this agent? It is disconnected immediately and its credential stops working. If it is your only agent, directory users won't be able to sign in.">
+                                        <form method="post" asp-page-handler="Revoke" asp-route-id="@a.Id" class="d-inline" data-confirm="Revoke this agent? It is disconnected immediately and its credential stops working. If it is your only agent, directory users won't be able to sign in; a Nagios instance checked through it stops being checked.">
                                             <button class="btn btn-sm btn-outline-danger" type="submit">Revoke</button>
                                         </form>
                                     }

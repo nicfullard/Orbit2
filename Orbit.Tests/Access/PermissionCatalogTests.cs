@@ -17,7 +17,7 @@ public class PermissionCatalogTests
     {
         var keys = PermissionCatalog.All.Select(p => p.Key).ToList();
         Assert.Equal(Constants.OrderBy(k => k), keys.OrderBy(k => k));
-        Assert.Equal(29, keys.Count);
+        Assert.Equal(30, keys.Count);
     }
 
     [Fact]
@@ -56,7 +56,7 @@ public class PermissionCatalogTests
     [Fact]
     public void Org_level_permissions_allow_only_all()
     {
-        foreach (var key in new[] { Permission.SprintsManage, Permission.DepartmentsManage, Permission.CalendarManage, Permission.DirectoryManage, Permission.AgentsManage })
+        foreach (var key in new[] { Permission.SprintsManage, Permission.DepartmentsManage, Permission.CalendarManage, Permission.DirectoryManage, Permission.AgentsManage, Permission.NagiosManage })
             Assert.True(PermissionCatalog.ByKey[key].AllOnly, key);
         Assert.False(PermissionCatalog.ByKey[Permission.TasksView].AllOnly);
         Assert.False(PermissionCatalog.ByKey[Permission.TasksCreate].Allows(PermissionScope.Own));
@@ -104,6 +104,20 @@ public class PermissionCatalogTests
         Assert.Contains(Permission.ActionsCreate, PermissionCatalog.AdminPermissions);
         Assert.DoesNotContain(Permission.RequestsSubmit, PermissionCatalog.AdminPermissions);
         Assert.DoesNotContain(Permission.RequestsManage, PermissionCatalog.AdminPermissions);
+    }
+
+    /// <summary>NAG-018: Nagios monitoring is company-wide only, opens its own Admin item, and is not reserved to the built-in role (spec §6.21).</summary>
+    [Fact]
+    public void Nagios_monitoring_is_an_all_only_admin_permission()
+    {
+        var nagios = PermissionCatalog.ByKey[Permission.NagiosManage];
+        Assert.True(nagios.AllOnly);
+        Assert.False(nagios.SystemAdministratorOnly);
+        Assert.Equal(PermissionCatalog.AdministrationGroup, nagios.Group);
+        Assert.Contains(Permission.NagiosManage, PermissionCatalog.AdminPermissions);
+        var monitor = TestActors.Grants(null, (Permission.NagiosManage, PermissionScope.All));
+        Assert.True(AccessPolicy.CanManageNagios(monitor));
+        Assert.Equal("/Admin/Nagios/Index", Navigation.AdminVisible(monitor).Single().Page);
     }
 
     [Fact]

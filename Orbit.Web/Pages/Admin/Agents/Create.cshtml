@@ -29,7 +29,7 @@ else
                     <input class="form-control" id="Name" name="Name" value="@Model.Name" maxlength="200" required />
                     <div class="form-text">Something that tells you where it runs, e.g. "Head office - DC01".</div>
                 </div>
-                <p class="small text-muted mb-0">An Orbit Agent is a small service you run inside your own network. It connects <em>out</em> to Orbit and lets Orbit check sign-ins against your directory (Active Directory / LDAP) without opening any firewall ports. Creating one here gives you a one-time command that configures it.</p>
+                <p class="small text-muted mb-0">An Orbit Agent is a small service you run inside your own network. It connects <em>out</em> to Orbit and lets Orbit check sign-ins against your directory (Active Directory / LDAP), run request actions and read your Nagios instances without opening any firewall ports. Creating one here gives you a one-time command that configures it.</p>
                 <div class="mt-4 d-flex gap-2">
                     <button type="submit" class="btn btn-primary">Create agent</button>
                     <a class="btn btn-outline-secondary" asp-page="/Admin/Agents/Index">Cancel</a>

@@ -127,6 +127,9 @@ public static class PermissionCatalog
             AdministrationGroup, AllOnlyScopes),
         new(Permission.AgentsManage, "Manage Orbit Agents",
             "Register, revoke and delete the on-premises Orbit Agents.",
+            AdministrationGroup, AllOnlyScopes),
+        new(Permission.NagiosManage, "Manage Nagios monitoring",
+            "Admin > Nagios: the Nagios Core instances Orbit watches through an Orbit Agent - their address and sign-in, how long a host or service may be down before a task is raised, and where those tasks go - and the problems seen on each.",
             AdministrationGroup, AllOnlyScopes)
     ];
 
@@ -141,7 +144,8 @@ public static class PermissionCatalog
     public static readonly IReadOnlyList<string> AdminPermissions =
     [
         Permission.UsersManage, Permission.RolesManage, Permission.DepartmentsManage, Permission.ApiKeysManage,
-        Permission.DirectoryManage, Permission.AgentsManage, Permission.CalendarManage, Permission.RequestsConfigure, Permission.ActionsCreate, Permission.AuditView
+        Permission.DirectoryManage, Permission.AgentsManage, Permission.NagiosManage, Permission.CalendarManage, Permission.RequestsConfigure,
+        Permission.ActionsCreate, Permission.AuditView
     ];
 
     public static PermissionDefinition? Find(string key) => ByKey.GetValueOrDefault(key);

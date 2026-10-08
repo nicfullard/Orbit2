@@ -135,7 +135,7 @@ public sealed class OrbitTools(
         [Description("Todo, InProgress, Waiting, Blocked, Done or Cancelled.")] string? status = null,
         [Description("Filter by assignee user id (GUID): the tasks that person is one of the assignees of.")] string? assigneeId = null,
         [Description("true = only tasks with no assignee - work nobody has picked up yet. Overrides assigneeId.")] bool? unassigned = null,
-        [Description("Manual, Api, Recurring or Request (logged through a department's request flow) - where the task originated.")] string? source = null,
+        [Description("Manual, Api, Recurring, Request (logged through a department's request flow) or Nagios (raised for a host or service Nagios reported down) - where the task originated.")] string? source = null,
         [Description("Low, Medium, High or Critical.")] string? priority = null,
         [Description("Meeting, Planning, Task, Training, Audit, Change or Request.")] string? type = null,
         [Description("Only tasks due on or before this date (yyyy-MM-dd).")] string? dueBefore = null,
@@ -1269,7 +1269,8 @@ public sealed class OrbitTools(
         projectId = c.ProjectId,
         assetId = c.AssetId,
         authorId = c.AuthorId,
-        author = c.Author is null ? "Claude" : c.Author.IsSystemAccount ? "Claude" : c.Author.DisplayName,
+        // No author: Orbit itself wrote it - the Nagios monitor's notes (§6.21), say. Claude's own comments carry the Claude user.
+        author = c.Author is null ? "System" : c.Author.IsSystemAccount ? "Claude" : c.Author.DisplayName,
         body = c.Body,
         createdAt = c.CreatedAt
     };

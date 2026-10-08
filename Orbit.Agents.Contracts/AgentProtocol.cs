@@ -22,6 +22,8 @@ public static class AgentMethods
     public const string ListDirectoryUsers = "ListDirectoryUsers";
     /// <summary>Orbit -> agent, returns <see cref="ScriptRunResult"/>. Runs a request action's script inside the network (agent 1.2 and later).</summary>
     public const string RunScript = "RunScript";
+    /// <summary>Orbit -> agent, returns <see cref="NagiosQueryResult"/>. Reads a Nagios Core instance's status inside the network (agent 1.3 and later).</summary>
+    public const string QueryNagios = "QueryNagios";
     /// <summary>Agent -> Orbit, sent after every (re)connect.</summary>
     public const string Hello = "Hello";
 }
@@ -37,4 +39,6 @@ public static class AgentCapabilities
     public const string LdapListUsers = "ldap.list-users";
     /// <summary>Runs request action scripts (<see cref="AgentMethods.RunScript"/>); announced by agent 1.2 and later.</summary>
     public const string ScriptRun = "script.run";
+    /// <summary>Reads Nagios status (<see cref="AgentMethods.QueryNagios"/>); announced by agent 1.3 and later.</summary>
+    public const string NagiosQuery = "nagios.query";
 }

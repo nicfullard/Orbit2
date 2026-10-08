@@ -59,6 +59,7 @@ public static class Navigation
         new("API Keys", "/Admin/ApiKeys/Index", a => a.Has(Permission.ApiKeysManage)),
         new("Directory (LDAP)", "/Admin/Directory/Index", a => a.Has(Permission.DirectoryManage)),
         new("Agents", "/Admin/Agents/Index", a => a.Has(Permission.AgentsManage)),
+        new("Nagios", "/Admin/Nagios/Index", a => a.Has(Permission.NagiosManage)),
         new("Working Calendar", "/Admin/Calendar/Index", a => a.Has(Permission.CalendarManage)),
         new("Request flows", "/RequestCatalogue/Index", a => a.Has(Permission.RequestsConfigure)),
         new("Actions", "/Actions/Index", a => a.Has(Permission.ActionsCreate)),

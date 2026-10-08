@@ -20,6 +20,7 @@ public class DetailsModel(
     TaskStructureService structure,
     AttachmentService attachments,
     RequestService requests,
+    NagiosService nagios,
     IOptions<AttachmentOptions> attachmentOptions,
     IActorProvider actors) : OrbitPageModel
 {
@@ -60,6 +61,8 @@ public class DetailsModel(
     public AttachmentOptions AttachmentLimits => attachmentOptions.Value;
     /// <summary>The request whose task step created this task (§6.20), for the link in the badges.</summary>
     public (Guid Id, string Number)? FromRequest { get; private set; }
+    /// <summary>The Nagios problem this task was raised for (§6.21): what it is and whether Nagios still reports it.</summary>
+    public NagiosTaskLink? FromNagios { get; private set; }
 
     /// <summary>An upload may exceed the default request body limit; raise it before the files are read (see Uploads).</summary>
     public override void OnPageHandlerSelected(PageHandlerSelectedContext context)
@@ -109,6 +112,7 @@ public class DetailsModel(
     {
         await LoadAsync(id, ct);
         if (Task.Source == TaskSource.Request) FromRequest = await requests.ForTaskAsync(id, ct);
+        if (Task.Source == TaskSource.Nagios) FromNagios = await nagios.ForTaskAsync(id, ct);
         return Page();
     }
 

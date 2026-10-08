@@ -37,6 +37,7 @@ builder.Services.Configure<CriticalPathOptions>(config.GetSection(CriticalPathOp
 builder.Services.Configure<AttachmentOptions>(config.GetSection(AttachmentOptions.Section));
 builder.Services.Configure<AssetOptions>(config.GetSection(AssetOptions.Section));
 builder.Services.Configure<ActionOptions>(config.GetSection(ActionOptions.Section));
+builder.Services.Configure<NagiosOptions>(config.GetSection(NagiosOptions.Section));
 var security = config.GetSection(SecurityOptions.Section).Get<SecurityOptions>() ?? new SecurityOptions();
 
 // Behind nginx/Caddy on the same host (deploy/README.md) the app only ever sees 127.0.0.1 over plain http.
@@ -110,6 +111,7 @@ builder.Services.AddRazorPages(options =>
         options.Conventions.AuthorizeFolder("/Admin/ApiKeys", Policies.Permission(Permission.ApiKeysManage));
         options.Conventions.AuthorizeFolder("/Admin/Directory", Policies.Permission(Permission.DirectoryManage));
         options.Conventions.AuthorizeFolder("/Admin/Agents", Policies.Permission(Permission.AgentsManage));
+        options.Conventions.AuthorizeFolder("/Admin/Nagios", Policies.Permission(Permission.NagiosManage));
         options.Conventions.AuthorizeFolder("/Admin/Calendar", Policies.Permission(Permission.CalendarManage));
         options.Conventions.AuthorizeFolder("/Admin/Activity", Policies.Permission(Permission.AuditView));
         options.Conventions.AuthorizeFolder("/Reports", Policies.Permission(Permission.ReportsView));
@@ -170,6 +172,11 @@ builder.Services.AddScoped<RequestActionService>();
 builder.Services.AddScoped<RequestService>();
 builder.Services.AddScoped<RequestEngine>();
 builder.Services.AddScoped<AgentScriptDispatcher>();
+// Nagios monitoring (§6.21): the settings pages' service, the monitor the job runs, and the dispatcher both read Nagios through.
+builder.Services.AddScoped<NagiosService>();
+builder.Services.AddScoped<NagiosMonitor>();
+builder.Services.AddScoped<AgentNagiosDispatcher>();
+builder.Services.AddSingleton<NagiosPasswordProtector>();
 // One script host per process (§6.20): compiled scripts are cached in it.
 builder.Services.AddSingleton<ScriptHost>();
 builder.Services.AddTransient<IEmailSender, LoggingEmailSender>();
@@ -201,7 +208,9 @@ builder.Services.AddMcpServer(o =>
             "or on unassigned. " +
             "A task may also have a requestee, whom it is for: to log a task on someone's behalf " +
             "(\"Bob asked for ...\") pass their userId from list_users as requesteeId to create_task; update_task changes it (\"none\" clears it) " +
-            "and list_tasks filters on it. The requestee sees and updates the task as their own.";
+            "and list_tasks filters on it. The requestee sees and updates the task as their own. " +
+            "A task with source Nagios was raised by Orbit's monitoring for a host or service Nagios reported down (list_tasks filters on " +
+            "source); Orbit adds a comment, author System, when Nagios reports it well again, and leaves closing the task to a person.";
     })
     .WithHttpTransport(o => o.SessionMode = HttpServerSessionMode.Stateless)
     .WithTools<OrbitTools>();

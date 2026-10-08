@@ -51,13 +51,37 @@ public enum TaskType
 /// Where a task originated. <see cref="Recurring"/> is an addition to the spec's Manual/Api pair
 /// so tasks spawned by the recurring-task job are distinguishable from human- and Claude-created ones.
 /// <see cref="Request"/> is a task logged through a department's request flow (§6.20).
+/// <see cref="Nagios"/> is a task raised for a host or service a Nagios instance reported down (§6.21).
 /// </summary>
 public enum TaskSource
 {
     Manual,
     Api,
     Recurring,
-    Request
+    Request,
+    Nagios
+}
+
+/// <summary>
+/// The problem state Nagios reports for a host (<see cref="Down"/>, <see cref="Unreachable"/>) or a service
+/// (<see cref="Warning"/>, <see cref="Critical"/>, <see cref="Unknown"/>) - §6.21. Up and OK are not problems and have no value here.
+/// </summary>
+public enum NagiosProblemState
+{
+    Down,
+    Unreachable,
+    Warning,
+    Critical,
+    Unknown
+}
+
+/// <summary>How a Nagios incident ended (§6.21).</summary>
+public enum NagiosResolution
+{
+    /// <summary>Nagios reported the host up or the service OK again.</summary>
+    Recovered,
+    /// <summary>Nagios no longer lists the host or service: removed, renamed, or hidden from the user Orbit signs in as.</summary>
+    Vanished
 }
 
 /// <summary>What a step of a request flow is (§6.20). A flow may hold any number of each.</summary>
@@ -393,6 +417,17 @@ public static class TaskStatusExtensions
     {
         RequestStatus.InProgress => "In progress",
         _ => status.ToString()
+    };
+
+    /// <summary>As Nagios writes it: DOWN, CRITICAL.</summary>
+    public static string Label(this NagiosProblemState state) => state.ToString().ToUpperInvariant();
+
+    public static bool IsHostState(this NagiosProblemState state) => state is NagiosProblemState.Down or NagiosProblemState.Unreachable;
+
+    public static string Label(this NagiosResolution resolution) => resolution switch
+    {
+        NagiosResolution.Vanished => "No longer in Nagios",
+        _ => resolution.ToString()
     };
 
     public static string Label(this RequestStepStatus status) => status switch

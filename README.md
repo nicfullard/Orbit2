@@ -1,7 +1,8 @@
 # Orbit
 
 Task and project tracker for the whole business: departments with server-side boundaries, company-wide
-sprints, recurring tasks, time tracking, reports, and an MCP server so Claude can create and query work.
+sprints, recurring tasks, time tracking, reports, an asset register, request flows, tasks raised from Nagios
+monitoring, and an MCP server so Claude can create and query work.
 Built on ASP.NET Core Razor Pages (.NET 10), EF Core + PostgreSQL, ASP.NET Core Identity, the
 `ModelContextProtocol` .NET SDK, Quartz.NET, Ical.Net and QuestPDF. The full specification is in `orbit-spec.md`.
 
@@ -15,7 +16,7 @@ Built on ASP.NET Core Razor Pages (.NET 10), EF Core + PostgreSQL, ASP.NET Core 
 | `Orbit.Agent/` | The **Orbit Agent** - a separate Worker Service that runs inside the corporate network. Published on its own; not part of the web app's output. |
 | `Orbit.Agents.Contracts/` | Messages and method names shared by the web app and the agent, so the two can't drift. No dependencies. |
 | `Orbit.Scripting/` | The Roslyn script host that runs request actions (spec §6.20), referenced by the web app and the agent so a script compiles the same on both. Brings Npgsql and SqlClient for the scripts' database connections. |
-| `Orbit.Tests/` | xunit tests for the pure code: the access rules, permission catalogue, role rules and list scoping (spec §6.5), the working-day calendar, critical path engine and staleness fingerprint (spec §6.17), the asset and request rules (spec §6.19, §6.20) and the script host. |
+| `Orbit.Tests/` | xunit tests for the pure code: the access rules, permission catalogue, role rules and list scoping (spec §6.5), the working-day calendar, critical path engine and staleness fingerprint (spec §6.17), the asset and request rules (spec §6.19, §6.20), the script host, and the Nagios status parser and incident rules (spec §6.21). |
 
 Plus `deploy/` (systemd units for Orbit and the agent, env file template, least-privilege DB role script,
 deployment notes), `orbit-spec.md` and `dotnet-tools.json` (pins `dotnet-ef`).
@@ -30,7 +31,7 @@ Inside `Orbit.Web/`, folders stand in for the layers of spec §11, and namespace
 | `Auth/` | API-key and Orbit Agent authentication schemes, `OrbitSignInManager` (directory sign-in), claims factory, actor resolution, page filters |
 | `Agents/` | Server side of the Orbit Agent: the SignalR hub agents connect to, the registry of connected agents, the register/de-register endpoints |
 | `Mcp/` | `OrbitTools` - the 32 MCP tools, mapped onto the same services the UI uses |
-| `Jobs/` | Quartz.NET jobs: recurring-task generation, due-date notifications, the clock sweep and the request action runner, cron-scheduled from `Jobs:*` |
+| `Jobs/` | Quartz.NET jobs: recurring-task generation, due-date notifications, the clock sweep, the request action runner and the Nagios check, cron-scheduled from `Jobs:*` |
 | `Reporting/` | QuestPDF report rendering |
 | `Pages/` | Razor Pages UI (dashboard, tasks, projects, backlog, sprints, recurring, time, assets, requests, admin, reports) |
 | `Areas/Identity/` | Overrides of the default Identity UI (login, self-registration disabled, no self-delete) |
@@ -92,6 +93,7 @@ scopes below it, and a role with no grants sees nothing.
 | `requests.configure` | Dept / All | The department's request categories and flows: steps, fields, approvers, dependencies, bindings | - | Dept |
 | `requests.manage` | Dept / All | See every request filed with the department, act on any step, cancel, retry or skip a failed step | - | Dept |
 | `actions.create` | All | Admin > Actions: the scripts request flows run, and where each runs (C# running as the server or an agent, so granted sparingly) | - | - |
+| `nagios.manage` | All | Admin > Nagios: the Nagios instances Orbit watches, their sign-ins, what raises a task and where it goes | - | - |
 
 The navbar follows the same grants: Today and My Tasks need **Edit tasks**, Tasks **View tasks**, Projects **Edit
 projects**, Backlog and Sprints **Plan tasks**, Recurring **Create tasks**, My Time **Log time** and Assets **View
@@ -326,6 +328,45 @@ Scripts run unsandboxed as the server or the agent's service account - that is w
 audit log records a script's hash, never its text. A failed action (an exception, a compile error, the 120-second
 limit) leaves the step for a manager to retry or skip.
 
+## Nagios monitoring
+
+Orbit watches **Nagios Core** instances and raises a task for each host or service that stays down longer than the
+instance allows (spec §6.21). The instances are inside your network, so an **Orbit Agent** (1.3 or later) reads them
+for Orbit; nothing is installed on the Nagios server and Orbit only ever *reads* it.
+
+Under **Admin > Nagios** (needs **Manage Nagios monitoring**, which no shipped role has) an instance has:
+
+- **Where it is and how to sign in**: the address you open Nagios with, as reachable from the agent's machine
+  (`http://nagios.example/nagios/`), a username and password (stored encrypted, never shown again), and the one agent
+  that can reach it. Give the Nagios user sight of every host and service and no command rights.
+- **What raises a task**: the states (host *Down*, *Unreachable*; service *Critical*, *Warning*, *Unknown* - Down and
+  Critical are ticked on a new instance), how many minutes a host and a service must have been in one, whether
+  scheduled downtime and acknowledged problems are skipped (both on by default), how often to check, and the most
+  new tasks one check may raise.
+- **Where the tasks go**: a department, a priority and the people each task is assigned to.
+
+**Test connection** reads Nagios through the agent with what is on the form, saved or not, and lists every problem
+Nagios reports with what a check would do about it. Use it before switching an instance on: problems already past
+their threshold are raised at the first check.
+
+**One down event raises one task.** Each host or service has at most one open *incident* (a unique index), and an
+incident raises a task at most once, however many checks follow and whether the task is still open or not:
+
+- Only a state Nagios has finished rechecking counts (a *hard* state), measured on Nagios' own clock.
+- A service is never raised while its host is down - the host is - and gets a full threshold again once the host
+  is back, so a host outage doesn't end in a burst of service tasks. The same after a downtime or an acknowledgement.
+- If it goes down again while the earlier task is **still open**, that task gets a note instead of a second task.
+- When Nagios reports it well again Orbit **adds a note and leaves the task open** for someone to close. A host or
+  service Nagios no longer lists gets a note saying so.
+- A check that can't be trusted - the agent offline, a wrong password, Nagios not updating its status - changes
+  nothing and shows why on the instance.
+
+The raised tasks carry the source *Nagios* (the Tasks list and `list_tasks` filter on it), are created by *System*,
+and show the problem as Nagios last reported it, with a link to Nagios, to whoever can see the task. That includes
+what the check says *now*: if its text changes while the problem lasts (another order joins the list), nothing new is
+raised and no note is added, but the task page shows the latest text and when it was read. The task's description keeps
+what Nagios said when the task was raised.
+
 ## Reports
 
 **Reports** (spec §12, needs **View reports**; at Department scope it is fixed to your own department) takes a date
@@ -369,7 +410,10 @@ And one about assets:
 ## Configuration
 
 See `Orbit.Web/appsettings.json` for defaults and `deploy/orbit.env.example` for the production environment
-variables (`Database:ApplyMigrations`, `DataProtection:KeyRingPath`, `Jobs:*`, `Security:*`, `Agents:*`, `CriticalPath:*`, `Assets:*`, `Attachments:*`, `Actions:*`, `Seed:Admin:*`, `App:BaseUrl`).
+variables (`Database:ApplyMigrations`, `DataProtection:KeyRingPath`, `Jobs:*`, `Security:*`, `Agents:*`, `CriticalPath:*`, `Assets:*`, `Attachments:*`, `Actions:*`, `Nagios:*`, `Seed:Admin:*`, `App:BaseUrl`).
+`Jobs:Nagios:*` schedules the look for Nagios instances that are due (every minute; each instance has its own
+interval), `Nagios:QueryTimeoutSeconds` caps an agent's read of one instance and `Nagios:StaleAfterSeconds` is how
+old Nagios' own status data may be before a check is discarded.
 `Actions:TimeoutSeconds` caps a request action's script, and `Actions:Connections:<name>:Provider` / `ConnectionString`
 name the databases a script on the server may open; an agent's connections go in its own `actions.json` (deploy/README.md).
 `App:BaseUrl` is also the address put into an agent's `configure` command, so it must be the public `https` URL.

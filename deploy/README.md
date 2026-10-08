@@ -135,6 +135,27 @@ a script runs and is not encrypted, so keep it readable by the service account o
 Orbit's **Create actions** permission, which decides who may write them. Needs agent 1.2 or later; the publish is a
 little larger than before, as it carries the C# compiler.
 
+### Nagios monitoring through the agent
+
+The same agent reads **Nagios Core** for Orbit (spec §6.21, agent **1.3** or later). Under *Admin > Nagios* add an
+instance: the address you open Nagios with (as reachable **from the agent's machine**, e.g. `http://nagios.corp/nagios/`),
+a Nagios username and password, the agent that can reach it, how long a host or service may be down before a task is
+raised, and the department the tasks go to. *Test connection* reads Nagios through the agent with the values in the
+form, saved or not, and lists what a check would raise - use it before ticking *Check this instance*, because problems
+already past their threshold are raised at the first check.
+
+- The agent only ever calls `statusjson.cgi`, Nagios' read-only JSON report. Orbit changes nothing in Nagios, so give
+  the user **no command rights**; it does need to see every host and service (`authorized_for_all_hosts` and
+  `authorized_for_all_services` in `cgi.cfg`, or membership of the right contact groups).
+- The agent's machine needs HTTP(S) to the Nagios server. The request goes direct, never through the proxy configured
+  for reaching Orbit. Over plain `http` the Nagios password crosses your network unencrypted; with `https` and a
+  private CA, install the CA on the agent's machine rather than switching certificate validation off.
+- The password is encrypted with the Data Protection key ring below. If the key ring is lost it can't be decrypted and
+  must be re-entered under *Admin > Nagios*; the instance shows why it stopped.
+- Each instance is checked on its own interval (5 minutes by default) by a job that looks every minute
+  (`Jobs__Nagios__*`). `Nagios__StaleAfterSeconds` (300) is how old Nagios' own status data may be before a check is
+  discarded - raise it if `status_update_interval` in `nagios.cfg` is long.
+
 ### Publish the agent
 
 It is a separate project (`Orbit.Agent`) and is *not* part of the web app's publish output. Self-contained, so
@@ -242,4 +263,4 @@ any MFA or conditional access you have on AD/Microsoft 365. Users can turn on Or
 ## Backups
 
 Back up the `orbit` database and the Data Protection key ring directory (`/var/lib/orbit/keys`). The files people attach to
-tasks and projects (spec §6.18) are stored in the database, so a database backup carries them. Losing the key ring signs every user out and invalidates outstanding password-reset links; it does not affect stored data.
+tasks and projects (spec §6.18) are stored in the database, so a database backup carries them. Losing the key ring signs every user out and invalidates outstanding password-reset links; it does not affect stored data, except that the directory bind password and the Nagios passwords (both encrypted with it) must be entered again.

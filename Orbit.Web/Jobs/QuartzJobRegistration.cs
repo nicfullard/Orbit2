@@ -23,6 +23,9 @@ public static class QuartzJobRegistration
                 options.ClockSweep.Enabled, options.ClockSweep.Cron, runOnStartup: false, startupDelay: TimeSpan.Zero);
             Schedule<RequestActionJob>(q, RequestActionJob.Key,
                 options.RequestActions.Enabled, options.RequestActions.Cron, runOnStartup: true, startupDelay: TimeSpan.FromSeconds(20));
+            // No startup run: the agents have not reconnected yet, and the first tick is at most a minute away.
+            Schedule<NagiosPollJob>(q, NagiosPollJob.Key,
+                options.Nagios.Enabled, options.Nagios.Cron, runOnStartup: false, startupDelay: TimeSpan.Zero);
         });
 
         // Runs the scheduler as a hosted service; on shutdown, lets in-flight jobs finish.

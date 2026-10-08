@@ -10,8 +10,8 @@ namespace Orbit.Agent;
 public static class Commands
 {
     public const string Usage = """
-        Orbit Agent - connects your network to Orbit so Orbit can check directory (LDAP / Active Directory) sign-ins and run
-        request actions inside the network.
+        Orbit Agent - connects your network to Orbit so Orbit can check directory (LDAP / Active Directory) sign-ins, run
+        request actions and read Nagios status inside the network.
 
         Usage:
           Orbit.Agent configure --url <orbit url> --token <registration token> [--replace]
@@ -27,7 +27,7 @@ public static class Commands
         (provider: postgres or sqlserver). The file isn't encrypted: keep it readable by the service account only. The
         scripts are C# written in Orbit by whoever holds actions.create there, and run here with this account's rights.
 
-        The agent has no other settings: directory servers and the rest are managed in Orbit.
+        The agent has no other settings: directory servers, Nagios instances and the rest are managed in Orbit.
         """;
 
     public static async Task<int> ConfigureAsync(CliArgs args)

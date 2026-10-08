@@ -1,0 +1,160 @@
+@page "{id:guid}"
+@model Orbit.Pages.Admin.Nagios.DetailsModel
+@{
+    var d = Model.Details;
+    var n = d.Instance;
+    ViewData["Title"] = n.Name;
+    var raised = d.Open.Count(i => i.TaskId is not null);
+    var states = new List<string>();
+    if (n.RaiseHostDown) { states.Add("host Down"); }
+    if (n.RaiseHostUnreachable) { states.Add("host Unreachable"); }
+    if (n.RaiseServiceCritical) { states.Add("service Critical"); }
+    if (n.RaiseServiceWarning) { states.Add("service Warning"); }
+    if (n.RaiseServiceUnknown) { states.Add("service Unknown"); }
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="/Admin/Nagios/Index">Nagios</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@n.Name</li>
+    </ol>
+</nav>
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div>
+        <h1 class="h3 mb-1">@n.Name</h1>
+        <div class="text-muted small">@n.BaseUrl</div>
+    </div>
+    <div class="d-flex gap-2">
+        <form method="post" asp-page-handler="Check" asp-route-id="@n.Id">
+            <button type="submit" class="btn btn-outline-primary btn-sm" disabled="@(!n.Enabled)" title="@(n.Enabled ? null : "Switched off")">Check now</button>
+        </form>
+        <a class="btn btn-primary btn-sm" asp-page="/Admin/Nagios/Edit" asp-route-id="@n.Id">Settings</a>
+    </div>
+</div>
+
+@if (n.Agent is null)
+{
+    <div class="alert alert-danger">The agent this instance was checked through has been deleted, so nothing is checked. Choose another under <a asp-page="/Admin/Nagios/Edit" asp-route-id="@n.Id">Settings</a>.</div>
+}
+else if (n.Enabled && !d.AgentOnline)
+{
+    <div class="alert alert-warning">Agent "@n.Agent.Name" isn't connected, so this instance can't be checked. Nothing is raised or resolved until it is back. <a asp-page="/Admin/Agents/Index">Agents</a></div>
+}
+else if (n.Enabled && !d.AgentQueriesNagios)
+{
+    <div class="alert alert-warning">Agent "@n.Agent.Name" is too old to read Nagios. Update it to version 1.3 or later.</div>
+}
+@if (n.HeldBack > 0)
+{
+    <div class="alert alert-warning">@n.HeldBack @(n.HeldBack == 1 ? "problem is" : "problems are") past the threshold but held back: at most @n.MaxNewTasksPerCheck new tasks are raised in one check. The rest follow on the next checks, longest down first.</div>
+}
+
+<div class="row g-3">
+    <div class="col-lg-8">
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Problems Orbit is watching <span class="text-muted fw-normal">(@d.Open.Count, @raised with a task)</span></div>
+            @if (d.Open.Count == 0)
+            {
+                <div class="card-body text-muted fst-italic">Nothing that counts towards a task right now.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light"><tr><th>Host</th><th>Service</th><th>State</th><th>Since</th><th>Task</th></tr></thead>
+                        <tbody>
+                            @foreach (var i in d.Open)
+                            {
+                                <tr>
+                                    <td>@i.HostName</td>
+                                    <td>@(i.IsService ? i.ServiceDescription : "-")@if (!string.IsNullOrEmpty(i.Output)) { <div class="small text-muted">@Ui.Truncate(i.Output, 140)</div> }</td>
+                                    <td><span class="badge @Ui.NagiosStateBadge(i.State)">@i.State.Label()</span></td>
+                                    <td class="text-nowrap small">@Ui.When(i.ProblemSince)</td>
+                                    <td class="small">
+                                        @if (i.Task is not null)
+                                        {
+                                            <a asp-page="/Tasks/Details" asp-route-id="@i.TaskId" class="font-monospace">@i.Task.Number</a>
+                                            <span class="badge @Ui.StatusBadge(i.Task.Status)">@i.Task.Status.Label()</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted" title="Its threshold is counted from @Ui.When(i.ClockFrom)">not raised</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Ended lately</div>
+            @if (d.Recent.Count == 0)
+            {
+                <div class="card-body text-muted fst-italic">None yet.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="table-light"><tr><th>Host</th><th>Service</th><th>Was</th><th>From</th><th>Ended</th><th>Task</th></tr></thead>
+                        <tbody>
+                            @foreach (var i in d.Recent)
+                            {
+                                <tr>
+                                    <td>@i.HostName</td>
+                                    <td>@(i.IsService ? i.ServiceDescription : "-")</td>
+                                    <td><span class="badge @Ui.NagiosStateBadge(i.State)">@i.State.Label()</span></td>
+                                    <td class="text-nowrap small">@Ui.When(i.ProblemSince)</td>
+                                    <td class="text-nowrap small">@Ui.When(i.ResolvedAt)<div class="text-muted">@(i.Resolution?.Label())</div></td>
+                                    <td class="small">
+                                        @if (i.Task is not null)
+                                        {
+                                            <a asp-page="/Tasks/Details" asp-route-id="@i.TaskId" class="font-monospace">@i.Task.Number</a>
+                                            <span class="badge @Ui.StatusBadge(i.Task.Status)">@i.Task.Status.Label()</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">-</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Last check</div>
+            <div class="card-body">
+                <partial name="_Health" model="n" />
+                <dl class="row small mb-0 mt-2">
+                    <dt class="col-5">Last read</dt><dd class="col-7">@Ui.When(n.LastSucceededAt)</dd>
+                    <dt class="col-5">Last asked</dt><dd class="col-7">@Ui.When(n.LastAttemptAt)</dd>
+                    <dt class="col-5">Agent</dt><dd class="col-7">@(n.Agent?.Name ?? "none")</dd>
+                </dl>
+            </div>
+        </div>
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Settings</div>
+            <div class="card-body">
+                <dl class="row small mb-0">
+                    <dt class="col-5">Raises</dt><dd class="col-7">@string.Join(", ", states)</dd>
+                    <dt class="col-5">Hosts after</dt><dd class="col-7">@n.HostThresholdMinutes min</dd>
+                    <dt class="col-5">Services after</dt><dd class="col-7">@n.ServiceThresholdMinutes min</dd>
+                    <dt class="col-5">Downtime</dt><dd class="col-7">@(n.SkipScheduledDowntime ? "not raised" : "raised")</dd>
+                    <dt class="col-5">Acknowledged</dt><dd class="col-7">@(n.SkipAcknowledged ? "not raised" : "raised")</dd>
+                    <dt class="col-5">Checked every</dt><dd class="col-7">@n.CheckIntervalMinutes min</dd>
+                    <dt class="col-5">Tasks go to</dt><dd class="col-7">@n.Department.Name · @n.TaskPriority</dd>
+                    <dt class="col-5">Signs in as</dt><dd class="col-7">@n.Username@(d.HasPassword ? "" : " (no password stored)")</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>

@@ -403,7 +403,7 @@
             <div class="card-body">
                 @foreach (var c in Model.Comments)
                 {
-                    var isClaude = c.Author is null || c.Author.IsSystemAccount;
+                    var isClaude = c.Author is { IsSystemAccount: true };
                     <div class="border-bottom pb-2 mb-2">
                         <div class="small">
                             <span class="fw-semibold">@Ui.AuthorName(c.Author)</span>
@@ -620,6 +620,40 @@
                     {
                         <dt class="col-5">Recurring</dt>
                         <dd class="col-7"><a asp-page="/Recurring/Details" asp-route-id="@t.RecurringTaskDefinitionId">@t.RecurringTaskDefinition.Title</a></dd>
+                    }
+                    @if (Model.FromNagios is { } nagios)
+                    {
+                        @* The problem this task was raised for (§6.21), as Nagios last reported it. Orbit notes a recovery; it never closes the task. *@
+                        <dt class="col-5">Nagios</dt>
+                        <dd class="col-7">
+                            <div>@(nagios.Service.Length == 0 ? nagios.Host : $"{nagios.Service} on {nagios.Host}")</div>
+                            <div>
+                                @if (nagios.ResolvedAt is null)
+                                {
+                                    <span class="badge @Ui.NagiosStateBadge(nagios.State)">@nagios.State.Label()</span>
+                                    <span class="text-muted">since @Ui.When(nagios.ProblemSince)</span>
+                                }
+                                else if (nagios.Resolution == NagiosResolution.Vanished)
+                                {
+                                    <span class="badge text-bg-secondary">No longer in Nagios</span>
+                                }
+                                else
+                                {
+                                    <span class="badge text-bg-success">Recovered</span>
+                                    <span class="text-muted">@Ui.When(nagios.ResolvedAt)</span>
+                                }
+                            </div>
+                            @if (!string.IsNullOrEmpty(nagios.Output))
+                            {
+                                @* What the check says now, which may have moved on from the description's "when raised" text. *@
+                                <div class="small text-break my-1">
+                                    <span class="text-muted">@(nagios.ResolvedAt is null ? "Nagios says:" : "While down, Nagios last said:")</span>
+                                    @nagios.Output
+                                    @if (nagios.ResolvedAt is null) { <div class="text-muted">as of @Ui.When(nagios.LastSeenAt)</div> }
+                                </div>
+                            }
+                            <div class="text-muted">@nagios.InstanceName@if (nagios.Url is not null) { <text> · <a href="@nagios.Url" target="_blank" rel="noopener noreferrer">Open in Nagios</a></text> }</div>
+                        </dd>
                     }
                     <dt class="col-5">Number</dt><dd class="col-7 font-monospace">@t.Number</dd>
                     <dt class="col-5">Id</dt><dd class="col-7 text-muted key-box">@t.Id</dd>
